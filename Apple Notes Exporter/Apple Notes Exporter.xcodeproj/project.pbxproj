@@ -1,0 +1,581 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		258D3A9329A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9229A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift */; };
+		258D3A9529A7CC2E00858CE1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9429A7CC2E00858CE1 /* ContentView.swift */; };
+		258D3A9729A7CC2F00858CE1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 258D3A9629A7CC2F00858CE1 /* Assets.xcassets */; };
+		258D3A9A29A7CC2F00858CE1 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 258D3A9929A7CC2F00858CE1 /* Preview Assets.xcassets */; };
+		258D3AA529A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3AA429A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift */; };
+		258D3AAF29A7CC2F00858CE1 /* Apple_Notes_ExporterUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3AAE29A7CC2F00858CE1 /* Apple_Notes_ExporterUITests.swift */; };
+		258D3AB129A7CC2F00858CE1 /* Apple_Notes_ExporterUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3AB029A7CC2F00858CE1 /* Apple_Notes_ExporterUITestsLaunchTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		258D3AA129A7CC2F00858CE1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 258D3A8729A7CC2E00858CE1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 258D3A8E29A7CC2E00858CE1;
+			remoteInfo = "Apple Notes Exporter";
+		};
+		258D3AAB29A7CC2F00858CE1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 258D3A8729A7CC2E00858CE1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 258D3A8E29A7CC2E00858CE1;
+			remoteInfo = "Apple Notes Exporter";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Apple Notes Exporter.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		258D3A9229A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Apple_Notes_ExporterApp.swift; sourceTree = "<group>"; };
+		258D3A9429A7CC2E00858CE1 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		258D3A9629A7CC2F00858CE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		258D3A9929A7CC2F00858CE1 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		258D3A9B29A7CC2F00858CE1 /* Apple_Notes_Exporter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Apple_Notes_Exporter.entitlements; sourceTree = "<group>"; };
+		258D3AA029A7CC2F00858CE1 /* Apple Notes ExporterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Apple Notes ExporterTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		258D3AA429A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Apple_Notes_ExporterTests.swift; sourceTree = "<group>"; };
+		258D3AAA29A7CC2F00858CE1 /* Apple Notes ExporterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Apple Notes ExporterUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		258D3AAE29A7CC2F00858CE1 /* Apple_Notes_ExporterUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Apple_Notes_ExporterUITests.swift; sourceTree = "<group>"; };
+		258D3AB029A7CC2F00858CE1 /* Apple_Notes_ExporterUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Apple_Notes_ExporterUITestsLaunchTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		258D3A8C29A7CC2E00858CE1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		258D3A9D29A7CC2F00858CE1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		258D3AA729A7CC2F00858CE1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		258D3A8629A7CC2E00858CE1 = {
+			isa = PBXGroup;
+			children = (
+				258D3A9129A7CC2E00858CE1 /* Apple Notes Exporter */,
+				258D3AA329A7CC2F00858CE1 /* Apple Notes ExporterTests */,
+				258D3AAD29A7CC2F00858CE1 /* Apple Notes ExporterUITests */,
+				258D3A9029A7CC2E00858CE1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		258D3A9029A7CC2E00858CE1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */,
+				258D3AA029A7CC2F00858CE1 /* Apple Notes ExporterTests.xctest */,
+				258D3AAA29A7CC2F00858CE1 /* Apple Notes ExporterUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		258D3A9129A7CC2E00858CE1 /* Apple Notes Exporter */ = {
+			isa = PBXGroup;
+			children = (
+				258D3A9229A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift */,
+				258D3A9429A7CC2E00858CE1 /* ContentView.swift */,
+				258D3A9629A7CC2F00858CE1 /* Assets.xcassets */,
+				258D3A9B29A7CC2F00858CE1 /* Apple_Notes_Exporter.entitlements */,
+				258D3A9829A7CC2F00858CE1 /* Preview Content */,
+			);
+			path = "Apple Notes Exporter";
+			sourceTree = "<group>";
+		};
+		258D3A9829A7CC2F00858CE1 /* Preview Content */ = {
+			isa = PBXGroup;
+			children = (
+				258D3A9929A7CC2F00858CE1 /* Preview Assets.xcassets */,
+			);
+			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		258D3AA329A7CC2F00858CE1 /* Apple Notes ExporterTests */ = {
+			isa = PBXGroup;
+			children = (
+				258D3AA429A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift */,
+			);
+			path = "Apple Notes ExporterTests";
+			sourceTree = "<group>";
+		};
+		258D3AAD29A7CC2F00858CE1 /* Apple Notes ExporterUITests */ = {
+			isa = PBXGroup;
+			children = (
+				258D3AAE29A7CC2F00858CE1 /* Apple_Notes_ExporterUITests.swift */,
+				258D3AB029A7CC2F00858CE1 /* Apple_Notes_ExporterUITestsLaunchTests.swift */,
+			);
+			path = "Apple Notes ExporterUITests";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		258D3A8E29A7CC2E00858CE1 /* Apple Notes Exporter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 258D3AB429A7CC2F00858CE1 /* Build configuration list for PBXNativeTarget "Apple Notes Exporter" */;
+			buildPhases = (
+				258D3A8B29A7CC2E00858CE1 /* Sources */,
+				258D3A8C29A7CC2E00858CE1 /* Frameworks */,
+				258D3A8D29A7CC2E00858CE1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Apple Notes Exporter";
+			productName = "Apple Notes Exporter";
+			productReference = 258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */;
+			productType = "com.apple.product-type.application";
+		};
+		258D3A9F29A7CC2F00858CE1 /* Apple Notes ExporterTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 258D3AB729A7CC2F00858CE1 /* Build configuration list for PBXNativeTarget "Apple Notes ExporterTests" */;
+			buildPhases = (
+				258D3A9C29A7CC2F00858CE1 /* Sources */,
+				258D3A9D29A7CC2F00858CE1 /* Frameworks */,
+				258D3A9E29A7CC2F00858CE1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				258D3AA229A7CC2F00858CE1 /* PBXTargetDependency */,
+			);
+			name = "Apple Notes ExporterTests";
+			productName = "Apple Notes ExporterTests";
+			productReference = 258D3AA029A7CC2F00858CE1 /* Apple Notes ExporterTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		258D3AA929A7CC2F00858CE1 /* Apple Notes ExporterUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 258D3ABA29A7CC2F00858CE1 /* Build configuration list for PBXNativeTarget "Apple Notes ExporterUITests" */;
+			buildPhases = (
+				258D3AA629A7CC2F00858CE1 /* Sources */,
+				258D3AA729A7CC2F00858CE1 /* Frameworks */,
+				258D3AA829A7CC2F00858CE1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				258D3AAC29A7CC2F00858CE1 /* PBXTargetDependency */,
+			);
+			name = "Apple Notes ExporterUITests";
+			productName = "Apple Notes ExporterUITests";
+			productReference = 258D3AAA29A7CC2F00858CE1 /* Apple Notes ExporterUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		258D3A8729A7CC2E00858CE1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1420;
+				LastUpgradeCheck = 1420;
+				TargetAttributes = {
+					258D3A8E29A7CC2E00858CE1 = {
+						CreatedOnToolsVersion = 14.2;
+					};
+					258D3A9F29A7CC2F00858CE1 = {
+						CreatedOnToolsVersion = 14.2;
+						TestTargetID = 258D3A8E29A7CC2E00858CE1;
+					};
+					258D3AA929A7CC2F00858CE1 = {
+						CreatedOnToolsVersion = 14.2;
+						TestTargetID = 258D3A8E29A7CC2E00858CE1;
+					};
+				};
+			};
+			buildConfigurationList = 258D3A8A29A7CC2E00858CE1 /* Build configuration list for PBXProject "Apple Notes Exporter" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 258D3A8629A7CC2E00858CE1;
+			productRefGroup = 258D3A9029A7CC2E00858CE1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				258D3A8E29A7CC2E00858CE1 /* Apple Notes Exporter */,
+				258D3A9F29A7CC2F00858CE1 /* Apple Notes ExporterTests */,
+				258D3AA929A7CC2F00858CE1 /* Apple Notes ExporterUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		258D3A8D29A7CC2E00858CE1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				258D3A9A29A7CC2F00858CE1 /* Preview Assets.xcassets in Resources */,
+				258D3A9729A7CC2F00858CE1 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		258D3A9E29A7CC2F00858CE1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		258D3AA829A7CC2F00858CE1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		258D3A8B29A7CC2E00858CE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				258D3A9529A7CC2E00858CE1 /* ContentView.swift in Sources */,
+				258D3A9329A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		258D3A9C29A7CC2F00858CE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				258D3AA529A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		258D3AA629A7CC2F00858CE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				258D3AB129A7CC2F00858CE1 /* Apple_Notes_ExporterUITestsLaunchTests.swift in Sources */,
+				258D3AAF29A7CC2F00858CE1 /* Apple_Notes_ExporterUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		258D3AA229A7CC2F00858CE1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 258D3A8E29A7CC2E00858CE1 /* Apple Notes Exporter */;
+			targetProxy = 258D3AA129A7CC2F00858CE1 /* PBXContainerItemProxy */;
+		};
+		258D3AAC29A7CC2F00858CE1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 258D3A8E29A7CC2E00858CE1 /* Apple Notes Exporter */;
+			targetProxy = 258D3AAB29A7CC2F00858CE1 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		258D3AB229A7CC2F00858CE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		258D3AB329A7CC2F00858CE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		258D3AB529A7CC2F00858CE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter/Apple_Notes_Exporter.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Apple Notes Exporter";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaremski.Apple-Notes-Exporter";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		258D3AB629A7CC2F00858CE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter/Apple_Notes_Exporter.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Apple Notes Exporter";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaremski.Apple-Notes-Exporter";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		258D3AB829A7CC2F00858CE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaremski.Apple-Notes-ExporterTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Apple Notes Exporter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Apple Notes Exporter";
+			};
+			name = Debug;
+		};
+		258D3AB929A7CC2F00858CE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaremski.Apple-Notes-ExporterTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Apple Notes Exporter.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Apple Notes Exporter";
+			};
+			name = Release;
+		};
+		258D3ABB29A7CC2F00858CE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaremski.Apple-Notes-ExporterUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = "Apple Notes Exporter";
+			};
+			name = Debug;
+		};
+		258D3ABC29A7CC2F00858CE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaremski.Apple-Notes-ExporterUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = "Apple Notes Exporter";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		258D3A8A29A7CC2E00858CE1 /* Build configuration list for PBXProject "Apple Notes Exporter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				258D3AB229A7CC2F00858CE1 /* Debug */,
+				258D3AB329A7CC2F00858CE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		258D3AB429A7CC2F00858CE1 /* Build configuration list for PBXNativeTarget "Apple Notes Exporter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				258D3AB529A7CC2F00858CE1 /* Debug */,
+				258D3AB629A7CC2F00858CE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		258D3AB729A7CC2F00858CE1 /* Build configuration list for PBXNativeTarget "Apple Notes ExporterTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				258D3AB829A7CC2F00858CE1 /* Debug */,
+				258D3AB929A7CC2F00858CE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		258D3ABA29A7CC2F00858CE1 /* Build configuration list for PBXNativeTarget "Apple Notes ExporterUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				258D3ABB29A7CC2F00858CE1 /* Debug */,
+				258D3ABC29A7CC2F00858CE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 258D3A8729A7CC2E00858CE1 /* Project object */;
+}
