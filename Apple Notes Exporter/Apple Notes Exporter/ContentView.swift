@@ -52,7 +52,7 @@ struct ContentView: View {
                 Text("Export").frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent)
             
-            Text("Apple Notes Exporter v0.1 - Copyright © 2023 Konstantin Zaremski - Licensed under the [MIT License](https://kzaremski)")
+            Text("Apple Notes Exporter v0.1 - Copyright © 2023 Konstantin Zaremski - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
