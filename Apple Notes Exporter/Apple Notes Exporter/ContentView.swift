@@ -17,17 +17,60 @@ struct MenuItem: Identifiable {
 }
 
 struct ContentView: View {
-    func getNoteAccounts() {
-        // Connect to the local AppleNotes SQLite3 database
-        let sourceURL = URL(fileURLWithPath: "Library/Group Containers/group.com.apple.notes/NoteStore.sqlite", relativeTo: FileManager.default.homeDirectoryForCurrentUser)
-        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(sourceURL.lastPathComponent)
-        do {
-            try FileManager.default.copyItem(at: sourceURL, to: tempURL)
-            print("File copied to temporary directory: \(tempURL.path)")
-        } catch {
-            print("Error copying file: \(error)")
+    func privilegedCopy(sourcePath: String, destinationPath: String) -> Bool {
+        let authorizationRef: AuthorizationRef? = nil
+        
+        var authStatus: OSStatus = AuthorizationCreate(nil, nil, [], &authorizationRef)
+        guard authStatus == errAuthorizationSuccess else {
+            print("Failed to create authorization: \(authStatus)")
+            return false
         }
         
+        let sourceURL = URL(fileURLWithPath: sourcePath)
+        let destinationURL = URL(fileURLWithPath: destinationPath)
+        
+        var arguments = [String]()
+        arguments.append("-R") // Recursive copy
+        arguments.append(sourceURL.path)
+        arguments.append(destinationURL.path)
+        
+        let task = Process()
+        task.launchPath = "/bin/cp"
+        task.arguments = arguments
+        
+        // Set up the authorization rights
+        var authorizationRightExecute = kAuthorizationRightExecute.withCString { $0 }
+        var rights: [AuthorizationItem] = [
+            AuthorizationItem(name: &authorizationRightExecute, valueLength: 0, value: nil, flags: 0)
+        ]
+        let rightsCount = UInt32(rights.count)
+        var items = AuthorizationRights(count: rightsCount, items: &rights)
+        var authFlags: AuthorizationFlags = [.interactionAllowed, .extendRights, .preAuthorize]
+        
+        // Pre-authorize the authorization reference
+        authStatus = AuthorizationCopyRights(authorizationRef!, &items, nil, authFlags, nil)
+        guard authStatus == errAuthorizationSuccess else {
+            print("Authorization copy rights failed: \(authStatus)")
+            return false
+        }
+        
+        // Execute the privileged task
+        authStatus = AuthorizationExecuteWithPrivileges(authorizationRef!, task.launchPath!, AuthorizationFlags(), task.arguments!, nil)
+        guard authStatus == errAuthorizationSuccess else {
+            print("Failed to execute privileged task: \(authStatus)")
+            return false
+        }
+        
+        return true
+    }
+
+    
+    func getNoteAccounts() {
+        let success = privilegedCopy(sourcePath: "~/Library/Group\\ Containers/group.com.apple.notes/NoteStore.sqlite", destinationPath: "$TMPDIR")
+        
+        // Connect to the local AppleNotes SQLite3 database
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("NoteStore.sqlite")
+                
         var db: OpaquePointer?
         if sqlite3_open(tempURL.path, &db) == SQLITE_OK {
             // Database connection is open, perform SQLite operations
