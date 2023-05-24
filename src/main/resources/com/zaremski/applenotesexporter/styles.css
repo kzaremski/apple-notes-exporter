@@ -19,3 +19,8 @@
 .outputFormatButtonBox > Button:last-child  {
     -fx-background-radius: 0 20 20 0;
 }
+
+.export-button {
+    -fx-background-color: #ccf5ff;
+    -fx-color: white;
+}

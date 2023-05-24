@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import java.util.*?>
+<?import javafx.scene.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<?import javafx.geometry.Insets?>
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.zaremski.applenotesexporter.ProgressController">
+    <padding>
+        <Insets bottom="10.0" left="10.0" right="10.0" top="10.0"/>
+    </padding>
+    <HBox spacing="10.0" alignment="CENTER">
+        <Label text="0%" prefWidth="34" fx:id="progressLabel"/>
+        <ProgressBar fx:id="progressBar" progress="0.0" maxWidth="1.7976931348623157E308" prefWidth="150.0" HBox.hgrow="ALWAYS" prefHeight="50"/>
+        <Button text="Cancel" prefHeight="50" onAction="#handleCancel" fx:id="cancelButton"/>
+    </HBox>
+</VBox>
