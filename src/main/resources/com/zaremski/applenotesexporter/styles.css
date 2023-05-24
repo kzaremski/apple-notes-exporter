@@ -1,0 +1,21 @@
+.title-label {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+}
+
+.footer-label {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.outputFormatButtonBox > Button:not(.first-child):not(.last-child) {
+    -fx-background-radius: 0;
+}
+
+.outputFormatButtonBox > Button:first-child {
+    -fx-background-radius: 20 0 0 20;
+}
+
+.outputFormatButtonBox > Button:last-child  {
+    -fx-background-radius: 0 20 20 0;
+}
