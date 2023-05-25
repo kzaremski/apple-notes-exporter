@@ -8,8 +8,6 @@
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/zaremski/applenotesexporter/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/zaremski/applenotesexporter/Main.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/zaremski/applenotesexporter/MainController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/zaremski/applenotesexporter/MainController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/zaremski/applenotesexporter/main-view.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/zaremski/applenotesexporter/main-view.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/zaremski/applenotesexporter/styles.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/zaremski/applenotesexporter/styles.css" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

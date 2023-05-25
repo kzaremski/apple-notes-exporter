@@ -49,7 +49,7 @@ public class MainController implements Initializable {
 
         // Update the text label
         if (outputDirectory == null) outputDirectoryLabel.setText("Select output file location.");
-        else outputDirectoryLabel.setText(outputDirectory.toPath().toString());
+        else outputDirectoryLabel.setText(outputDirectory.toPath().toString() + "/");
     }
 
     @FXML

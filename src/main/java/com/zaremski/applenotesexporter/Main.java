@@ -7,10 +7,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.ButtonBar;
 import javafx.stage.Stage;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -60,10 +57,18 @@ public class Main extends Application {
             String destinationPath = System.getProperty("java.io.tmpdir") + "NoteStore.sqlite";
             try {
                 // Command to execute with elevated privileges
-                String[] command = { "cp", sourcePath, destinationPath };
+                String[] command = { "sudo", "-S", "-s", "cp", sourcePath, destinationPath };
 
                 // Create the process and start it
                 Process process = new ProcessBuilder(command).start();
+
+                // Get the output stream of the process
+                OutputStream outputStream = process.getOutputStream();
+
+                // Write the password to the output stream
+                String password = "";
+                outputStream.write((password + "\n").getBytes());
+                outputStream.flush();
 
                 // Read the output from the process
                 InputStream inputStream = process.getInputStream();
