@@ -57,18 +57,23 @@ public class Main extends Application {
             String destinationPath = System.getProperty("java.io.tmpdir") + "NoteStore.sqlite";
             try {
                 // Command to execute with elevated privileges
-                String[] command = { "sudo", "-S", "-s", "cp", sourcePath, destinationPath };
+                //String[] command = { "sudo", "-S", "-s", "cp", sourcePath, destinationPath };
+                String appleScriptCode = "tell application \"Notes\"\n" +
+                        "\tset noteList to {}\n" +
+                        "\trepeat with noteFolder in folders\n" +
+                        "\t\trepeat with myNote in notes of noteFolder\n" +
+                        "\t\t\tset noteTitle to name of myNote\n" +
+                        "\t\t\tset noteBody to body of myNote\n" +
+                        "\t\t\tset noteItem to {title:noteTitle, body:noteBody}\n" +
+                        "\t\t\tset end of noteList to noteItem\n" +
+                        "\t\tend repeat\n" +
+                        "\tend repeat\n" +
+                        "\treturn noteList\n" +
+                        "end tell";
+                String[] command = { "osascript", "-e", appleScriptCode };
 
                 // Create the process and start it
                 Process process = new ProcessBuilder(command).start();
-
-                // Get the output stream of the process
-                OutputStream outputStream = process.getOutputStream();
-
-                // Write the password to the output stream
-                String password = "";
-                outputStream.write((password + "\n").getBytes());
-                outputStream.flush();
 
                 // Read the output from the process
                 InputStream inputStream = process.getInputStream();

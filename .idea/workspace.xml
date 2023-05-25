@@ -7,7 +7,6 @@
     <list default="true" id="ea35a3a3-7072-4322-964f-f8a9e8b018bf" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/zaremski/applenotesexporter/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/zaremski/applenotesexporter/Main.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/zaremski/applenotesexporter/MainController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/zaremski/applenotesexporter/MainController.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
