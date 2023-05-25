@@ -19,23 +19,11 @@ extension Scene {
 
 @main
 struct Apple_Notes_ExporterApp: App {
-    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView().onAppear {
+                // Do nothing
+            }
         }.windowResizabilityContentSize()
-    }
-}
-
-class AppDelegate: NSObject, UIApplicationDelegate {
-    func applicationDidFinishLaunching(_ application: UIApplication) {
-        // Call your function here
-        yourFunction()
-    }
-    
-    func yourFunction() {
-        // Implement your function logic here
-        print("App opened!")
     }
 }

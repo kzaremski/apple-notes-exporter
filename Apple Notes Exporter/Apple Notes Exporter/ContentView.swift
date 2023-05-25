@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Foundation
+import UniformTypeIdentifiers
 
 struct MenuItem: Identifiable {
     let id = UUID()
@@ -25,21 +26,28 @@ extension NSAppleEventDescriptor {
     }
 }
 
-struct ContentView: View {
-    func runAppleScript(script: String) {
+struct AppleScript {
+    /**
+     Runs an AppleScript script string with an expected string array result.
+     */
+    func stringArray(script: String) -> [String] {
+        // Create the new NSAppleScript instance
         if let scriptObject = NSAppleScript(source: script) {
+            // Error dictionary
             var errorDict: NSDictionary? = nil
+            // Execute the script, adding to the errorDict if there are errors
             let resultDescriptor = scriptObject.executeAndReturnError(&errorDict)
-            
+            // If there are no errors, return the resultDescriptor after converting it to a string array
             if errorDict == nil {
-                let subjectLines = resultDescriptor.toStringArray()
-                for line in subjectLines {
-                    print(line)
-                }
+                return resultDescriptor.toStringArray()
             }
         }
+        // Return an empty string if no result
+        return []
     }
-    
+}
+
+struct ContentView: View {
     func getNoteAccounts() {
         let loadAllScript = """
             set noteList to {}
@@ -71,52 +79,80 @@ struct ContentView: View {
             return noteList
         """
         
-        runAppleScript(script: countScript)
+        AppleScript().stringArray(script: countScript)
     }
     
-    let notesAccountMenuItems: [MenuItem] = [
-        MenuItem(title: "Option 1") {
-            // Handle action for Option 1
-            
-        },
-        MenuItem(title: "Option 2") {
-            // Handle action for Option 2
-        },
-    ]
+    init() {
+        self._selectedNotesAccount = State(initialValue: notesAccounts.first ?? "")
+    }
     
-    // Body of the
+    /**
+     Select the output file location. It is a ZIP file in the directory of the user's choosing.
+     */
+    func selectOutputFile() {
+        guard let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+        
+        let savePanel = NSSavePanel()
+        // Default file name of something like:   Apple Notes Export 2023-05-25.zip
+        savePanel.allowedContentTypes = [UTType.zip]
+        savePanel.nameFieldStringValue = "Apple Notes Export " + ISO8601DateFormatter().string(from: Date()).split(separator: "T")[0] + ".zip"
+        
+        if savePanel.runModal() == .OK, let exportURL = savePanel.url {
+            self.outputFilePath = exportURL.path
+            self.outputFileURL = exportURL
+        }
+    }
+    
+    // State of the interface and form inputs
+    @State private var notesAccounts: [String] = AppleScript().stringArray(script: """
+            tell application "Notes"
+                set theAccountNames to {}
+                repeat with theAccount in accounts
+                    copy name of theAccount as string to end of theAccountNames
+                end repeat
+            end tell
+        """)
+    @State private var selectedNotesAccount = ""
+    @State private var selectedOutputFormat = "HTML"
+    @State private var outputFilePath = "Select output file location"
+    @State private var outputFileURL: URL?
+    
+    // Body of the ContentView
     var body: some View {
         VStack(alignment: .leading) {
             Text("Step 1: Select Notes Account")
                 .font(.title)
                 .multilineTextAlignment(.leading).lineLimit(1)
-            Menu {
-                ForEach(notesAccountMenuItems) { item in
-                    Button(action: item.action) {
-                        Text(item.title)
-                    }
+            Picker("Input", selection: $selectedNotesAccount) {
+                ForEach(self.notesAccounts, id: \.self) {
+                    Text($0).tag($0)
                 }
-            } label: {
-                Text("Select Notes Account")
-            }
+            }.labelsHidden()
             
             Text("Step 2: Choose Output Document Format")
                 .font(.title)
                 .multilineTextAlignment(.leading).lineLimit(1)
-            ControlGroup {
-                Button {} label: {
-                    Image(systemName: "doc.text")
-                    Text("HTML")
+            Picker("Output", selection: $selectedOutputFormat) {
+                ForEach(["HTML","PDF","RTFD"], id: \.self) {
+                    Text($0)
                 }
-                Button {} label: {
-                    Image(systemName: "doc.append")
-                    Text("PDF")
-                }
-                Button {} label: {
-                    Image(systemName: "doc.richtext")
-                    Text("RTFD")
-                }
-            }
+            }.labelsHidden().pickerStyle(.segmented)
+            /*ControlGroup {
+             Button {} label: {
+             Image(systemName: "doc.text")
+             Text("HTML")
+             }
+             Button {} label: {
+             Image(systemName: "doc.append")
+             Text("PDF")
+             }
+             Button {} label: {
+             Image(systemName: "doc.richtext")
+             Text("RTFD")
+             }
+             }*/
             
             Text("Step 3: Select Output File Destination").font(.title).multilineTextAlignment(.leading).lineLimit(1)
             HStack() {
@@ -125,9 +161,9 @@ struct ContentView: View {
             }
             HStack() {
                 Image(systemName: "folder")
-                Text("Select output file location.").frame(maxWidth: .infinity, alignment: .leading)
+                Text(outputFilePath).frame(maxWidth: .infinity, alignment: .leading)
                 Button {
-                    print("test")
+                    selectOutputFile()
                 } label: {
                     Text("Select")
                 }.padding(.top, 7.0)
@@ -147,10 +183,6 @@ struct ContentView: View {
         }
         .frame(width: 500.0, height: 320.0)
         .padding(10.0)
-    }
-    
-    func greeting() {
-        print("Hello, World!")
     }
 }
 
