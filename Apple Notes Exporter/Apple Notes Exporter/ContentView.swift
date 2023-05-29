@@ -157,10 +157,22 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
 
 struct ContentView: View {
     func exportNotes() {
-        // Open the progress 
+        // Validate
+        if outputFilePath == "Select output file location" {
+            showNoOutputSelectedAlert = true
+            return
+        }
+        if selectedNotesAccount == "" {
+            return
+        }
+        
+        // Open the progress window since we are starting a long process.
         showProgressWindow = true
+        // Do the export in the global DispatcheQueue as an async operation so that it does not block the UI
         DispatchQueue.global().async {
+            // Get notes from the selected account using AppleScript (this takes a while)
             let notes = getNotesUsingAppleScript(noteAccountName: selectedNotesAccount)
+            // Hide the progress window now that we are done
             showProgressWindow = false
         }
     }
@@ -203,6 +215,7 @@ struct ContentView: View {
     @State private var outputFilePath = "Select output file location"
     @State private var outputFileURL: URL?
     @State private var showProgressWindow: Bool = false
+    @State private var showNoOutputSelectedAlert: Bool = false
     
     // Body of the ContentView
     var body: some View {
@@ -256,6 +269,13 @@ struct ContentView: View {
         .padding(10.0)
         .sheet(isPresented: $showProgressWindow) {
             ExportProgressView()
+        }
+        .alert(isPresented: $showNoOutputSelectedAlert) {
+            Alert(
+                title: Text("No Output File Chosen"),
+                message: Text("Please choose the location for the ZIP file containing the exported Apple Notes."),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 }
