@@ -22,8 +22,12 @@ struct Apple_Notes_ExporterApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView().onAppear {
-                // Do nothing
+                NSWindow.allowsAutomaticWindowTabbing = false
             }
-        }.windowResizabilityContentSize()
+        }
+        .commands {
+            CommandGroup(replacing: .newItem, addition: { })
+        }
+        .windowResizabilityContentSize()
     }
 }

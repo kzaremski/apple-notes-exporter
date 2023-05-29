@@ -19,19 +19,29 @@ struct MenuItem: Identifiable {
  Struct that represents an exported Apple Note
  */
 struct Note {
-    var ID: String
-    var title: String
-    var content: String
-    var creationDate: String
-    var modificationDate: String
-    var folder: String
+    var ID: String = ""
+    var title: String = ""
+    var content: String = ""
+    var creationDate: Date = Date()
+    var modificationDate: Date = Date()
+    var folder: String = ""
+    
+    func appleDateStringToDate(inputString: String) -> Date {
+        // DateFormatter based on Apple's format
+        //   eg. Monday, June 21, 2021 at 10:40:09 PM
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm:ss a"
+        dateFormatter.timeZone = TimeZone.current // Current offset
+        // Return the converted output
+        return dateFormatter.date(from: inputString)!
+    }
     
     init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, folder: String) {
         self.ID = ID
         self.title = title
         self.content = content
-        self.creationDate = creationDate
-        self.modificationDate = modificationDate
+        self.creationDate = appleDateStringToDate(inputString: creationDate)
+        self.modificationDate = appleDateStringToDate(inputString: modificationDate)
         self.folder = folder
     }
 }
@@ -155,6 +165,57 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
     return notes
 }
 
+func sanitizeFileNameString(inputFilename: String) -> String {
+    let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
+        .union(.newlines)
+        .union(.illegalCharacters)
+        .union(.controlCharacters)
+    
+    return inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
+}
+
+func createDirectoryIfNotExists(location: URL) {
+    let fileManager = FileManager.default
+    if !fileManager.fileExists(atPath: location.path) {
+        do {
+            try fileManager.createDirectory(at: location, withIntermediateDirectories: false)
+        } catch {
+            print("Error creating directory at \(location.absoluteString)")
+        }
+        
+    }
+}
+
+func noteToStringFormat(note: Note, desiredFormat: String) -> String {
+    var outputString: String = ""
+    switch desiredFormat.uppercased() {
+    case "HTML":
+        outputString =
+"""
+<!Doctype HTML>
+<html>
+    <head>
+        <title>\(note.title)</title>
+    </head>
+    <body>
+        <style>
+            body {
+                padding: 2em;
+                font-family: sans-serif;
+            }
+        </style>
+        <div>
+        \(note.content)
+        </div>
+    </body>
+</html>
+"""
+    default:
+        print("noteToStringFormat: unknown format \(desiredFormat.uppercased())")
+    }
+    return outputString
+}
+
 struct ContentView: View {
     func exportNotes() {
         // Validate
@@ -169,9 +230,30 @@ struct ContentView: View {
         // Open the progress window since we are starting a long process.
         showProgressWindow = true
         // Do the export in the global DispatcheQueue as an async operation so that it does not block the UI
-        DispatchQueue.global().async {
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Generate a UUID to use when creating the temporary directories for this particular export
+            let temporaryWorkingDirectoryName: String = UUID().uuidString
+            
             // Get notes from the selected account using AppleScript (this takes a while)
             let notes = getNotesUsingAppleScript(noteAccountName: selectedNotesAccount)
+            print("Finished getting Apple Notes and their contents via. AppleScript automation")
+            
+            // Create the temporary directory
+            let temporaryWorkingDirectory: URL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent(temporaryWorkingDirectoryName, isDirectory: true)
+            createDirectoryIfNotExists(location: temporaryWorkingDirectory)
+            print("Created temporary working directory: \(temporaryWorkingDirectory.absoluteString)")
+            
+            // Create a direcory within the temp that represents the root of the exported notes account
+            var zipRootDirectoryName = outputFileURL?.lastPathComponent
+            zipRootDirectoryName = zipRootDirectoryName?.replacingOccurrences(of: ".zip", with: "")
+            let zipRootDirectory: URL = temporaryWorkingDirectory.appendingPathComponent(zipRootDirectoryName ?? "export", isDirectory: true)
+            createDirectoryIfNotExists(location: zipRootDirectory)
+            
+            // Loop through the notes and write them to output files, dynamically creating their containing folders as needed
+            for note in notes {
+                print(note.folder)
+            }
+            
             // Hide the progress window now that we are done
             showProgressWindow = false
         }
@@ -185,14 +267,11 @@ struct ContentView: View {
      Select the output file location. It is a ZIP file in the directory of the user's choosing.
      */
     func selectOutputFile() {
-        guard let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return
-        }
-        
         let savePanel = NSSavePanel()
         // Default file name of something like:   Apple Notes Export 2023-05-25.zip
         savePanel.allowedContentTypes = [UTType.zip]
-        savePanel.nameFieldStringValue = "Apple Notes Export " + ISO8601DateFormatter().string(from: Date()).split(separator: "T")[0] + ".zip"
+        //savePanel.nameFieldStringValue = "Apple Notes Export " + ISO8601DateFormatter().string(from: Date()).split(separator: "T")[0] + ".zip"
+        savePanel.nameFieldStringValue = "applenotes.zip"
         
         if savePanel.runModal() == .OK, let exportURL = savePanel.url {
             self.outputFilePath = exportURL.path
