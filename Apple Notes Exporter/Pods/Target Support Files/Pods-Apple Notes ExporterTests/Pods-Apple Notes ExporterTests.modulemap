@@ -1,0 +1,6 @@
+framework module Pods_Apple_Notes_ExporterTests {
+  umbrella header "Pods-Apple Notes ExporterTests-umbrella.h"
+
+  export *
+  module * { export * }
+}

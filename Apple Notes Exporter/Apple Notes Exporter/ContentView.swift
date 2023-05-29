@@ -8,6 +8,7 @@
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
+import SSZipArchive
 
 struct MenuItem: Identifiable {
     let id = UUID()
@@ -24,7 +25,7 @@ struct Note {
     var content: String = ""
     var creationDate: Date = Date()
     var modificationDate: Date = Date()
-    var folder: String = ""
+    var path: [String] = []
     
     func appleDateStringToDate(inputString: String) -> Date {
         // DateFormatter based on Apple's format
@@ -36,13 +37,13 @@ struct Note {
         return dateFormatter.date(from: inputString)!
     }
     
-    init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, folder: String) {
+    init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, path: [String]) {
         self.ID = ID
         self.title = title
         self.content = content
         self.creationDate = appleDateStringToDate(inputString: creationDate)
         self.modificationDate = appleDateStringToDate(inputString: modificationDate)
-        self.folder = folder
+        self.path = path
     }
 }
 
@@ -81,6 +82,15 @@ struct AppleScript {
 func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
     // Script to export the notes from the current account
     let exportScript = """
+        on replaceText(this_text, search_string, replacement_string)
+            set AppleScript's text item delimiters to the search_string
+            set the item_list to every text item of this_text
+            set AppleScript's text item delimiters to the replacement_string
+            set this_text to the item_list as string
+            set AppleScript's text item delimiters to ""
+            return this_text
+        end replaceText
+    
         set noteList to {}
         tell application "Notes"
             repeat with theAccount in accounts
@@ -99,13 +109,13 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
                     set noteContent to body of currentNote as string
                     -- Get the path of the note internally to Apple Notes
                     set currentContainer to container of currentNote
-                    set internalPath to name of currentContainer
-                    repeat until name of currentContainer as string = name of default account as string
-                        set currentContainer to container of currentContainer
-                        if name of currentContainer as string ≠ name of default account then
-                            set internalPath to (name of currentContainer & "/" & internalPath)
-                        end if
-                    end repeat
+                    set internalPath to {name of currentContainer}
+                        repeat until name of currentContainer as string = name of default account as string
+                            set currentContainer to container of currentContainer
+                            if name of currentContainer as string ≠ name of default account then
+                                set beginning of internalPath to name of currentContainer as string
+                            end if
+                        end repeat
                     -- Build the object
                     set noteListObject to {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath}
                     -- Add to the list
@@ -123,6 +133,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
     let resultDescriptor = script.executeAndReturnError(&errorDict)
     // If there are errors, return and do nothing
     if errorDict != nil {
+        print(errorDict?.description)
         return []
     }
     
@@ -155,7 +166,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
             content: recordDescriptor.atIndex(3)?.stringValue ?? "",
             creationDate: recordDescriptor.atIndex(4)?.stringValue ?? "",
             modificationDate: recordDescriptor.atIndex(5)?.stringValue ?? "",
-            folder: recordDescriptor.atIndex(6)?.stringValue ?? ""
+            path: recordDescriptor.atIndex(6)!.toStringArray()
         )
         // Add the note to the list of notes
         notes.append(newNote)
@@ -174,6 +185,39 @@ func sanitizeFileNameString(inputFilename: String) -> String {
     return inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
 }
 
+func zipDirectory(at sourceURL: URL, to destinationURL: URL) {
+    guard let archive = Archive(url: destinationURL, accessMode: .create) else {
+        print("Failed to create ZIP archive at \(destinationURL)")
+        return
+    }
+    
+    let fileManager = FileManager.default
+    let sourcePath = sourceURL.path
+    
+    guard let enumerator = fileManager.enumerator(atPath: sourcePath) else {
+        print("Failed to enumerate files in directory at \(sourceURL)")
+        return
+    }
+    
+    for case let filePath as String in enumerator {
+        let fullPath = sourcePath + "/" + filePath
+        
+        do {
+            let attributes = try fileManager.attributesOfItem(atPath: fullPath)
+            
+            if let fileSize = attributes[.size] as? UInt64 {
+                let fileData = try Data(contentsOf: URL(fileURLWithPath: fullPath))
+                let entry = ArchiveEntry(data: fileData, path: filePath, uncompressedSize: fileSize)
+                try archive.addEntry(entry)
+            }
+        } catch {
+            print("Failed to add file at \(fullPath) to ZIP archive: \(error)")
+        }
+    }
+    
+    archive.close()
+}
+
 func createDirectoryIfNotExists(location: URL) {
     let fileManager = FileManager.default
     if !fileManager.fileExists(atPath: location.path) {
@@ -186,7 +230,7 @@ func createDirectoryIfNotExists(location: URL) {
     }
 }
 
-func noteToStringFormat(note: Note, desiredFormat: String) -> String {
+func noteToOutputData(note: Note, desiredFormat: String) -> Data {
     var outputString: String = ""
     switch desiredFormat.uppercased() {
     case "HTML":
@@ -210,10 +254,11 @@ func noteToStringFormat(note: Note, desiredFormat: String) -> String {
     </body>
 </html>
 """
+        return outputString.data(using: .utf8)!
     default:
         print("noteToStringFormat: unknown format \(desiredFormat.uppercased())")
     }
-    return outputString
+    return outputString.data(using: .utf8)!
 }
 
 struct ContentView: View {
@@ -251,7 +296,27 @@ struct ContentView: View {
             
             // Loop through the notes and write them to output files, dynamically creating their containing folders as needed
             for note in notes {
-                print(note.folder)
+                // ** Create the containing directories of the note file
+                // Start at the root
+                var currentPath = URL(string: zipRootDirectory.absoluteString)
+                // Loop through each string in the path array and create the directories if they are not already created
+                for directory in note.path {
+                    // Set the current path to the current directory name, sanitized
+                    currentPath = URL(string: currentPath!.absoluteString)!
+                        .appendingPathComponent(sanitizeFileNameString(inputFilename: directory), isDirectory:true)
+                    // Create it if it does not exist
+                    createDirectoryIfNotExists(location: currentPath!)
+                }
+                // Set the path to the filename of the note based on the current format
+                let outputFileURL: URL = URL(string: currentPath!.absoluteString)!.appendingPathComponent(sanitizeFileNameString(inputFilename: note.title) + "." + selectedOutputFormat.lowercased())
+                // Write the note to the file
+                let noteFileData: Data = noteToOutputData(note: note, desiredFormat: selectedOutputFormat.lowercased())
+                do {
+                    try noteFileData.write(to: outputFileURL)
+                } catch {
+                    print("Failed to write note \(outputFileURL.absoluteString)")
+                    continue
+                }
             }
             
             // Hide the progress window now that we are done
