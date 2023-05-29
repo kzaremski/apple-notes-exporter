@@ -15,6 +15,27 @@ struct MenuItem: Identifiable {
     let action: () -> Void
 }
 
+/**
+ Struct that represents an exported Apple Note
+ */
+struct Note {
+    var ID: String
+    var title: String
+    var content: String
+    var creationDate: String
+    var modificationDate: String
+    var folder: String
+    
+    init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, folder: String) {
+        self.ID = ID
+        self.title = title
+        self.content = content
+        self.creationDate = creationDate
+        self.modificationDate = modificationDate
+        self.folder = folder
+    }
+}
+
 extension NSAppleEventDescriptor {
     func toStringArray() -> [String] {
         guard let listDescriptor = self.coerce(toDescriptorType: typeAEList) else {
@@ -24,66 +45,6 @@ extension NSAppleEventDescriptor {
         return (0..<listDescriptor.numberOfItems)
             .compactMap { listDescriptor.atIndex($0 + 1)?.stringValue }
     }
-    
-    func toStringDictionary() -> [String : String] {
-        guard let listDescriptor = self.coerce(toDescriptorType: typeAERecord) else {
-            return [:]
-        }
-        
-        print(listDescriptor)
-        
-        return [:]
-        
-        //return (0..<listDescriptor.numberOfItems).compactMap { listDescriptor.atIndex($0 + 1)?.stringValue }
-    }
-    
-        /*func convertToSwiftObject(descriptor: NSAppleEventDescriptor) -> Any? {
-        switch descriptor.descriptorType {
-        case .nullDescriptor:
-            return nil
-        case .booleanDescriptor:
-            return descriptor.booleanValue
-        case .typeUTF8Text, .typeUnicodeText:
-            return descriptor.stringValue
-        case .typeInteger:
-            return descriptor.intValue
-        case .typeFloat:
-            return descriptor.floatValue
-        case .typeDouble:
-            return descriptor.doubleValue
-        case .dateDescriptor:
-            return descriptor.dateValue
-        case .descriptorTypeAlias:
-            return descriptor.fileURLValue
-        case .listDescriptor:
-            var swiftArray = [Any]()
-            for i in 1...descriptor.numberOfItems {
-                if let itemDescriptor = descriptor.descriptor(at: i) {
-                    if let item = convertToSwiftObject(itemDescriptor) {
-                        swiftArray.append(item)
-                    }
-                }
-            }
-            return swiftArray
-        case .recordDescriptor:
-            var swiftDictionary = [String: Any]()
-            if let keysDescriptor = descriptor.coerce(toDescriptorType: .typeAEList) {
-                let keysCount = keysDescriptor.numberOfItems
-                for i in 1...keysCount {
-                    if let keyDescriptor = keysDescriptor.descriptor(at: i),
-                       let key = keyDescriptor.stringValue,
-                       let valueDescriptor = descriptor.descriptor(forKeyword: keyDescriptor.typeCodeValue) {
-                        if let value = convertToSwiftObject(valueDescriptor) {
-                            swiftDictionary[key] = value
-                        }
-                    }
-                }
-            }
-            return swiftDictionary
-        default:
-            return descriptor.stringValue
-        }
-    }*/
 }
 
 struct AppleScript {
@@ -105,49 +66,103 @@ struct AppleScript {
         // Return an empty string if no result
         return []
     }
+}
+
+func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
+    // Script to export the notes from the current account
+    let exportScript = """
+        set noteList to {}
+        tell application "Notes"
+            repeat with theAccount in accounts
+                if name of theAccount as string = "\(noteAccountName)" then
+                    set chosenAccount to theAccount
+                end if
+            end repeat
+            repeat with currentNote in notes of chosenAccount
+                set noteLocked to password protected of currentNote as boolean
+                if not noteLocked then
+                    -- Get properties of the not if it is not locked
+                    set modificationDate to modification date of currentNote as string
+                    set creationDate to creation date of currentNote as string
+                    set noteID to id of currentNote as string
+                    set noteTitle to name of currentNote as string
+                    set noteContent to body of currentNote as string
+                    -- Get the path of the note internally to Apple Notes
+                    set currentContainer to container of currentNote
+                    set internalPath to name of currentContainer
+                    repeat until name of currentContainer as string = name of default account as string
+                        set currentContainer to container of currentContainer
+                        if name of currentContainer as string ≠ name of default account then
+                            set internalPath to (name of currentContainer & "/" & internalPath)
+                        end if
+                    end repeat
+                    -- Build the object
+                    set noteListObject to {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath}
+                    -- Add to the list
+                    set end of noteList to noteListObject
+                end if
+            end repeat
+        end tell
+        return noteList
+    """
     
-    func stringDictionary(script: String) -> [String : String] {
-        // Create the new NSAppleScript instance
-        if let scriptObject = NSAppleScript(source: script) {
-            // Error dictionary
-            var errorDict: NSDictionary? = nil
-            // Execute the script, adding to the errorDict if there are errors
-            let resultDescriptor = scriptObject.executeAndReturnError(&errorDict)
-            // If there are no errors, return the resultDescriptor after converting it to a string array
-            if errorDict == nil {
-                return resultDescriptor.toStringDictionary()
-            }
-        }
-        // Return an empty string if no result
-        return [:]
+    // Error handling
+    var errorDict: NSDictionary? = nil
+    // Execute the script, adding to the errorDict if there are errors
+    let script: NSAppleScript = NSAppleScript(source: exportScript)!
+    let resultDescriptor = script.executeAndReturnError(&errorDict)
+    // If there are errors, return and do nothing
+    if errorDict != nil {
+        return []
     }
+    
+    // Take action with the resulting Apple Event desciptor in order to export and format the notes
+    let listDescriptor = resultDescriptor.coerce(toDescriptorType: typeAEList)!
+    
+    // Empty array of output notes
+    var notes: [Note] = []
+    
+    // Iterate through the typeAEList
+    for listIndex in 0 ... listDescriptor.numberOfItems {
+        // This record is just a list of strings in a particular order since I could not figure out typeAERecord
+        guard let recordDescriptor = listDescriptor.atIndex(listIndex)?.coerce(toDescriptorType: typeAEList) else {
+            // If it doesn't work, just skip it for now
+            continue
+        }
+        // Create a new note from the AppleScript object based on the indexes of the values provided in the Apple Event descriptor
+        //   {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath}
+        //   {
+        //      noteID,             1
+        //      noteTitle,          2
+        //      noteContent,        3
+        //      creationDate,       4
+        //      modificationDate,   5
+        //      internalPath        6
+        //  }
+        let newNote = Note(
+            ID: recordDescriptor.atIndex(1)?.stringValue ?? "",
+            title: recordDescriptor.atIndex(2)?.stringValue ?? "",
+            content: recordDescriptor.atIndex(3)?.stringValue ?? "",
+            creationDate: recordDescriptor.atIndex(4)?.stringValue ?? "",
+            modificationDate: recordDescriptor.atIndex(5)?.stringValue ?? "",
+            folder: recordDescriptor.atIndex(6)?.stringValue ?? ""
+        )
+        // Add the note to the list of notes
+        notes.append(newNote)
+    }
+    
+    // Return the list of Apple Notes
+    return notes
 }
 
 struct ContentView: View {
     func exportNotes() {
-        // Script to export the notes from the current account
-        let exportScript = """
-            set noteList to {}
-            tell application "Notes"
-                repeat with theAccount in accounts
-                    if name of theAccount as string = "\(selectedNotesAccount)" then
-                        set chosenAccount to theAccount
-                    end if
-                end repeat
-                repeat with noteFolder in folders
-                    repeat with myNote in notes of noteFolder
-                        set noteTitle to name of myNote
-                        set noteBody to body of myNote
-        --body:noteBody,
-                        set noteItem to {title:noteTitle, folder:noteFolder}
-                        set end of noteList to noteItem
-                    end repeat
-                end repeat
-                return noteList
-            end tell
-        """
-        
-        AppleScript().stringDictionary(script: exportScript)
+        // Open the progress 
+        showProgressWindow = true
+        DispatchQueue.global().async {
+            let notes = getNotesUsingAppleScript(noteAccountName: selectedNotesAccount)
+            showProgressWindow = false
+        }
     }
     
     init() {
@@ -175,17 +190,19 @@ struct ContentView: View {
     
     // State of the interface and form inputs
     @State private var notesAccounts: [String] = AppleScript().stringArray(script: """
+            set theAccountNames to {}
             tell application "Notes"
-                set theAccountNames to {}
                 repeat with theAccount in accounts
                     copy name of theAccount as string to end of theAccountNames
                 end repeat
             end tell
+            return theAccountNames
         """)
     @State private var selectedNotesAccount = ""
     @State private var selectedOutputFormat = "HTML"
     @State private var outputFilePath = "Select output file location"
     @State private var outputFileURL: URL?
+    @State private var showProgressWindow: Bool = false
     
     // Body of the ContentView
     var body: some View {
@@ -194,8 +211,8 @@ struct ContentView: View {
                 .font(.title)
                 .multilineTextAlignment(.leading).lineLimit(1)
             Picker("Input", selection: $selectedNotesAccount) {
-                ForEach(self.notesAccounts, id: \.self) {
-                    Text($0).tag($0)
+                ForEach(self.notesAccounts, id: \.self) { account in
+                    Text(account).tag(account)
                 }
             }.labelsHidden()
             
@@ -207,20 +224,6 @@ struct ContentView: View {
                     Text($0)
                 }
             }.labelsHidden().pickerStyle(.segmented)
-            /*ControlGroup {
-             Button {} label: {
-             Image(systemName: "doc.text")
-             Text("HTML")
-             }
-             Button {} label: {
-             Image(systemName: "doc.append")
-             Text("PDF")
-             }
-             Button {} label: {
-             Image(systemName: "doc.richtext")
-             Text("RTFD")
-             }
-             }*/
             
             Text("Step 3: Select Output File Destination").font(.title).multilineTextAlignment(.leading).lineLimit(1)
             HStack() {
@@ -251,6 +254,9 @@ struct ContentView: View {
         }
         .frame(width: 500.0, height: 320.0)
         .padding(10.0)
+        .sheet(isPresented: $showProgressWindow) {
+            ExportProgressView()
+        }
     }
 }
 

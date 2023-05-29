@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		253F59DD2A246D8E00E39EBB /* ExportProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253F59DC2A246D8E00E39EBB /* ExportProgressView.swift */; };
 		258D3A9329A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9229A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift */; };
 		258D3A9529A7CC2E00858CE1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9429A7CC2E00858CE1 /* ContentView.swift */; };
 		258D3A9729A7CC2F00858CE1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 258D3A9629A7CC2F00858CE1 /* Assets.xcassets */; };
@@ -34,6 +35,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		253F59DC2A246D8E00E39EBB /* ExportProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportProgressView.swift; sourceTree = "<group>"; };
 		258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Apple Notes Exporter.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		258D3A9229A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Apple_Notes_ExporterApp.swift; sourceTree = "<group>"; };
 		258D3A9429A7CC2E00858CE1 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -102,6 +104,7 @@
 				258D3A9629A7CC2F00858CE1 /* Assets.xcassets */,
 				258D3A9B29A7CC2F00858CE1 /* Apple_Notes_Exporter.entitlements */,
 				258D3A9829A7CC2F00858CE1 /* Preview Content */,
+				253F59DC2A246D8E00E39EBB /* ExportProgressView.swift */,
 			);
 			path = "Apple Notes Exporter";
 			sourceTree = "<group>";
@@ -263,6 +266,7 @@
 			files = (
 				258D3A9529A7CC2E00858CE1 /* ContentView.swift in Sources */,
 				258D3A9329A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift in Sources */,
+				253F59DD2A246D8E00E39EBB /* ExportProgressView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
