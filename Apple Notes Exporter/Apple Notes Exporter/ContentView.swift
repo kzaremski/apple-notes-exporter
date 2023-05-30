@@ -8,6 +8,8 @@
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
+import WebKit
+import Quartz
 
 struct MenuItem: Identifiable {
     let id = UUID()
@@ -43,6 +45,85 @@ struct Note {
         self.creationDate = appleDateStringToDate(inputString: creationDate)
         self.modificationDate = appleDateStringToDate(inputString: modificationDate)
         self.path = path
+    }
+    
+    /**
+        Convert the current note object in to an HTML document string.
+     */
+    func toHTMLString() -> String {
+        let outputHTMLString: String =
+"""
+<!Doctype HTML>
+<html>
+    <head>
+        <title>\(self.title)</title>
+    </head>
+    <body>
+        <style>
+            body {
+                padding: 2em;
+                font-family: sans-serif;
+            }
+        </style>
+        <div>
+        \(self.content)
+        </div>
+    </body>
+</html>
+"""
+        return outputHTMLString
+    }
+    
+    func toAttributedString() -> NSAttributedString {
+        let htmlString = self.toHTMLString()
+        do {
+            var attributedString: NSAttributedString
+            try attributedString = NSMutableAttributedString(
+                data: htmlString.data(using: .unicode) ?? Data(),
+                options: [
+                    .documentType: NSAttributedString.DocumentType.html,
+                    .characterEncoding: String.Encoding.utf8.rawValue
+                ],
+                documentAttributes: nil
+            )
+            return attributedString
+        } catch {
+            print("Failed to convert note to NSAttributedString")
+        }
+        return NSAttributedString()
+    }
+    
+    /**
+     Write the note to an output file.
+     */
+    func toOutputFile(location: URL, format: String) {
+        switch format.uppercased() {
+        case "HTML":
+            try? self.toHTMLString().data(using: .utf8)!
+                .write(to: location)
+        case "RTFD":
+            let attributedString = self.toAttributedString()
+            try? attributedString.rtfd(
+                from: NSRange(location: 0, length: attributedString.length),
+                documentAttributes: [:])!
+                .write(to: location)
+        case "MD":
+            let attributedString = self.toAttributedString()
+            try? attributedString.string.data(using: .utf8)!
+                .write(to: location)
+        case "RTF":
+            let attributedString = self.toAttributedString()
+            try? attributedString.rtf(
+                from: NSRange(location: 0, length: attributedString.length),
+                documentAttributes: [:])!
+                .write(to: location)
+        case "TXT":
+            let attributedString = self.toAttributedString()
+            try? attributedString.string.data(using: .utf8)!
+                .write(to: location)
+        default:
+            try? Data().write(to: location)
+        }
     }
 }
 
@@ -176,6 +257,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
 }
 
 func sanitizeFileNameString(inputFilename: String) -> String {
+    // Define CharacterSet of invalid characters which we will remove from the filenames
     let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
         .union(.newlines)
         .union(.illegalCharacters)
@@ -220,37 +302,6 @@ func createDirectoryIfNotExists(location: URL) {
         }
         
     }
-}
-
-func noteToOutputData(note: Note, desiredFormat: String) -> Data {
-    var outputString: String = ""
-    switch desiredFormat.uppercased() {
-    case "HTML":
-        outputString =
-"""
-<!Doctype HTML>
-<html>
-    <head>
-        <title>\(note.title)</title>
-    </head>
-    <body>
-        <style>
-            body {
-                padding: 2em;
-                font-family: sans-serif;
-            }
-        </style>
-        <div>
-        \(note.content)
-        </div>
-    </body>
-</html>
-"""
-        return outputString.data(using: .utf8)!
-    default:
-        print("noteToStringFormat: unknown format \(desiredFormat.uppercased())")
-    }
-    return outputString.data(using: .utf8)!
 }
 
 struct ContentView: View {
@@ -300,17 +351,10 @@ struct ContentView: View {
                     createDirectoryIfNotExists(location: currentPath!)
                 }
                 // Set the path to the filename of the note based on the current format
-                var outputFileName: String = sanitizeFileNameString(inputFilename: note.title) + "." + selectedOutputFormat.lowercased()
+                let outputFileName: String = sanitizeFileNameString(inputFilename: note.title) + "." + selectedOutputFormat.lowercased()
                 let outputFileURL: URL = URL(string: currentPath!.absoluteString)!.appendingPathComponent(outputFileName)
                 // Write the note to the file
-                let noteFileData: Data = noteToOutputData(note: note, desiredFormat: selectedOutputFormat.lowercased())
-                do {
-                    try noteFileData.write(to: outputFileURL)
-                } catch {
-                    print("Failed to write note \(outputFileURL.absoluteString)")
-                    continue
-                }
-                print("Wrote note output file \(outputFileURL.absoluteString)")
+                note.toOutputFile(location: outputFileURL, format: selectedOutputFormat)
             }
             
             // ZIP the working directory to the output file directory
@@ -376,7 +420,7 @@ struct ContentView: View {
                 .font(.title)
                 .multilineTextAlignment(.leading).lineLimit(1)
             Picker("Output", selection: $selectedOutputFormat) {
-                ForEach(["HTML","PDF","RTFD"], id: \.self) {
+                ForEach(["HTML","PDF","RTFD","MD","RTF","TXT"], id: \.self) {
                     Text($0)
                 }
             }.labelsHidden().pickerStyle(.segmented)
