@@ -8,7 +8,6 @@
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
-import SSZipArchive
 
 struct MenuItem: Identifiable {
     let id = UUID()
@@ -110,9 +109,9 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
                     -- Get the path of the note internally to Apple Notes
                     set currentContainer to container of currentNote
                     set internalPath to {name of currentContainer}
-                        repeat until name of currentContainer as string = name of default account as string
+                        repeat until name of currentContainer as string = name of chosenAccount as string
                             set currentContainer to container of currentContainer
-                            if name of currentContainer as string ≠ name of default account then
+                            if name of currentContainer as string ≠ name of chosenAccount then
                                 set beginning of internalPath to name of currentContainer as string
                             end if
                         end repeat
@@ -181,41 +180,34 @@ func sanitizeFileNameString(inputFilename: String) -> String {
         .union(.newlines)
         .union(.illegalCharacters)
         .union(.controlCharacters)
-    
-    return inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
+    // Filter out the illegal characters
+    let output = inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
+    // Filter out Emojis for more reliable unzipping
+    return output.unicodeScalars.filter { !($0.properties.isEmoji && $0.properties.isEmojiPresentation) }.map { String($0) }.joined()
 }
 
-func zipDirectory(at sourceURL: URL, to destinationURL: URL) {
-    guard let archive = Archive(url: destinationURL, accessMode: .create) else {
-        print("Failed to create ZIP archive at \(destinationURL)")
-        return
-    }
-    
-    let fileManager = FileManager.default
-    let sourcePath = sourceURL.path
-    
-    guard let enumerator = fileManager.enumerator(atPath: sourcePath) else {
-        print("Failed to enumerate files in directory at \(sourceURL)")
-        return
-    }
-    
-    for case let filePath as String in enumerator {
-        let fullPath = sourcePath + "/" + filePath
-        
+func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
+    // NSFileCoordinator
+    let coordinator = NSFileCoordinator()
+    let zipIntent = NSFileAccessIntent.readingIntent(with: inputDirectory, options: [.forUploading])
+    // ZIP the input directory
+    coordinator.coordinate(with: [zipIntent], queue: .main) { errorQ in
+        if let error = errorQ {
+            print("Error: \(error)")
+            return
+        }
+        // Get the location of the ZIP file to be copied
+        let coordinatorOutputFile = zipIntent.url
+        // Copy the output to the output ZIP file location
         do {
-            let attributes = try fileManager.attributesOfItem(atPath: fullPath)
-            
-            if let fileSize = attributes[.size] as? UInt64 {
-                let fileData = try Data(contentsOf: URL(fileURLWithPath: fullPath))
-                let entry = ArchiveEntry(data: fileData, path: filePath, uncompressedSize: fileSize)
-                try archive.addEntry(entry)
+            if FileManager.default.fileExists(atPath: outputZipFile.path) {
+                try FileManager.default.removeItem(at: outputZipFile)
             }
-        } catch {
-            print("Failed to add file at \(fullPath) to ZIP archive: \(error)")
+            try FileManager.default.copyItem(at: coordinatorOutputFile, to: outputZipFile)
+        } catch (let error) {
+            print("Failed to copy \(coordinatorOutputFile) to \(outputZipFile): \(error)")
         }
     }
-    
-    archive.close()
 }
 
 func createDirectoryIfNotExists(location: URL) {
@@ -308,7 +300,8 @@ struct ContentView: View {
                     createDirectoryIfNotExists(location: currentPath!)
                 }
                 // Set the path to the filename of the note based on the current format
-                let outputFileURL: URL = URL(string: currentPath!.absoluteString)!.appendingPathComponent(sanitizeFileNameString(inputFilename: note.title) + "." + selectedOutputFormat.lowercased())
+                var outputFileName: String = sanitizeFileNameString(inputFilename: note.title) + "." + selectedOutputFormat.lowercased()
+                let outputFileURL: URL = URL(string: currentPath!.absoluteString)!.appendingPathComponent(outputFileName)
                 // Write the note to the file
                 let noteFileData: Data = noteToOutputData(note: note, desiredFormat: selectedOutputFormat.lowercased())
                 do {
@@ -317,10 +310,16 @@ struct ContentView: View {
                     print("Failed to write note \(outputFileURL.absoluteString)")
                     continue
                 }
+                print("Wrote note output file \(outputFileURL.absoluteString)")
             }
+            
+            // ZIP the working directory to the output file directory
+            zipDirectory(inputDirectory: zipRootDirectory, outputZipFile: outputFileURL!)
+            print("Zipped output directory to the user-selected output file")
             
             // Hide the progress window now that we are done
             showProgressWindow = false
+            print("Done!")
         }
     }
     
