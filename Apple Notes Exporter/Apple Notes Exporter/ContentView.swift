@@ -8,8 +8,8 @@
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
-import WebKit
-import Quartz
+import AppKit
+import Cocoa
 
 struct MenuItem: Identifiable {
     let id = UUID()
@@ -27,6 +27,7 @@ struct Note {
     var creationDate: Date = Date()
     var modificationDate: Date = Date()
     var path: [String] = []
+    var attachments: [String] = []
     
     func appleDateStringToDate(inputString: String) -> Date {
         // DateFormatter based on Apple's format
@@ -38,13 +39,14 @@ struct Note {
         return dateFormatter.date(from: inputString)!
     }
     
-    init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, path: [String]) {
+    init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, path: [String], attachments: [String]) {
         self.ID = ID
         self.title = title
         self.content = content
         self.creationDate = appleDateStringToDate(inputString: creationDate)
         self.modificationDate = appleDateStringToDate(inputString: modificationDate)
         self.path = path
+        self.attachments = attachments
     }
     
     /**
@@ -75,22 +77,31 @@ struct Note {
     }
     
     func toAttributedString() -> NSAttributedString {
-        let htmlString = self.toHTMLString()
+        // Get the HTML content of the note
+        var htmlString = self.toHTMLString()
         do {
-            var attributedString: NSAttributedString
+            // Empty NSAttributedString
+            var attributedString: NSMutableAttributedString = NSMutableAttributedString()
+            // Set the NSAttributed string to the contents of the HTML output, converted to NSAttributedString
             try attributedString = NSMutableAttributedString(
-                data: htmlString.data(using: .unicode) ?? Data(),
+                data: htmlString.data(using: .utf8) ?? Data(),
                 options: [
                     .documentType: NSAttributedString.DocumentType.html,
                     .characterEncoding: String.Encoding.utf8.rawValue
                 ],
                 documentAttributes: nil
             )
+            print(attributedString.string)
+            
+            // Replace all Base64 images with NSAttributedString attachments
+            attributedString
+            
+            // Hand back the attributed string
             return attributedString
         } catch {
             print("Failed to convert note to NSAttributedString")
         }
-        return NSAttributedString()
+        return NSMutableAttributedString()
     }
     
     /**
@@ -101,6 +112,9 @@ struct Note {
         case "HTML":
             try? self.toHTMLString().data(using: .utf8)!
                 .write(to: location)
+        case "PDF":
+            let attributedString = self.toAttributedString()
+            //let formatter = NSSimpleTextPrintFormatter(attributedText: attributedString)
         case "RTFD":
             let attributedString = self.toAttributedString()
             try? attributedString.rtfd(
@@ -109,6 +123,7 @@ struct Note {
                 .write(to: location)
         case "MD":
             let attributedString = self.toAttributedString()
+            
             try? attributedString.string.data(using: .utf8)!
                 .write(to: location)
         case "RTF":
@@ -246,7 +261,8 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
             content: recordDescriptor.atIndex(3)?.stringValue ?? "",
             creationDate: recordDescriptor.atIndex(4)?.stringValue ?? "",
             modificationDate: recordDescriptor.atIndex(5)?.stringValue ?? "",
-            path: recordDescriptor.atIndex(6)!.toStringArray()
+            path: recordDescriptor.atIndex(6)!.toStringArray(),
+            attachments: []
         )
         // Add the note to the list of notes
         notes.append(newNote)
@@ -254,18 +270,6 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
     
     // Return the list of Apple Notes
     return notes
-}
-
-func sanitizeFileNameString(inputFilename: String) -> String {
-    // Define CharacterSet of invalid characters which we will remove from the filenames
-    let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
-        .union(.newlines)
-        .union(.illegalCharacters)
-        .union(.controlCharacters)
-    // Filter out the illegal characters
-    let output = inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
-    // Filter out Emojis for more reliable unzipping
-    return output.unicodeScalars.filter { !($0.properties.isEmoji && $0.properties.isEmojiPresentation) }.map { String($0) }.joined()
 }
 
 func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
@@ -305,6 +309,22 @@ func createDirectoryIfNotExists(location: URL) {
 }
 
 struct ContentView: View {
+    func sanitizeFileNameString(inputFilename: String) -> String {
+        // Define CharacterSet of invalid characters which we will remove from the filenames
+        var invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
+            .union(.newlines)
+            .union(.illegalCharacters)
+            .union(.controlCharacters)
+        // If we are exporting to markdown, then there are even more invalid characters
+        if selectedOutputFormat == "MD" {
+            invalidCharacters = invalidCharacters.union(CharacterSet(charactersIn: "[#]^"))
+        }
+        // Filter out the illegal characters
+        let output = inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
+        // Filter out Emojis for more reliable unzipping
+        return output.unicodeScalars.filter { !($0.properties.isEmoji && $0.properties.isEmojiPresentation) }.map { String($0) }.joined()
+    }
+    
     func exportNotes() {
         // Validate
         if outputFilePath == "Select output file location" {
@@ -405,6 +425,14 @@ struct ContentView: View {
     @State private var showNoOutputSelectedAlert: Bool = false
     
     // Body of the ContentView
+    let outputFormats: [String] = [
+        "HTML",
+        "PDF",
+        "RTFD",
+        "MD",
+        "RTF",
+        "TXT",
+    ]
     var body: some View {
         VStack(alignment: .leading) {
             Text("Step 1: Select Notes Account")
@@ -419,11 +447,18 @@ struct ContentView: View {
             Text("Step 2: Choose Output Document Format")
                 .font(.title)
                 .multilineTextAlignment(.leading).lineLimit(1)
-            Picker("Output", selection: $selectedOutputFormat) {
-                ForEach(["HTML","PDF","RTFD","MD","RTF","TXT"], id: \.self) {
-                    Text($0)
-                }
-            }.labelsHidden().pickerStyle(.segmented)
+            HStack {
+                Picker("Output", selection: $selectedOutputFormat) {
+                    ForEach(outputFormats, id: \.self) {
+                        Text($0)
+                    }
+                }.labelsHidden().pickerStyle(.segmented)
+                Button {
+                    // open settings
+                } label: {
+                    Image(systemName: "gear")
+                }.disabled(true)
+            }
             
             Text("Step 3: Select Output File Destination").font(.title).multilineTextAlignment(.leading).lineLimit(1)
             HStack() {
