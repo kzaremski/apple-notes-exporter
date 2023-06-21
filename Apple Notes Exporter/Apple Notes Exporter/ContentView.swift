@@ -76,9 +76,12 @@ struct Note {
         return outputHTMLString
     }
     
-    func toAttributedString() -> NSAttributedString {
+    func toAttributedString(images: Bool) -> NSAttributedString {
         // Get the HTML content of the note
         var htmlString = self.toHTMLString()
+        if images {
+            htmlString = htmlString.replacingOccurrences(of: "<img", with: "[ANE[img")
+        }
         do {
             // Empty NSAttributedString
             var attributedString: NSMutableAttributedString = NSMutableAttributedString()
@@ -91,10 +94,32 @@ struct Note {
                 ],
                 documentAttributes: nil
             )
-            print(attributedString.string)
             
-            // Replace all Base64 images with NSAttributedString attachments
-            attributedString
+            // If we are supposed to have images inserted inline
+            if images {
+                // Replace all Base64 images with NSAttributedString attachments
+                let imageTags = /(\[ANE\[img).*(src=")(.+?)(")(.+?)(>)/
+                let matches = attributedString.string.matches(of: imageTags)
+                for match in matches {
+                    // The first part of the match is the image tag
+                    let matchedTag = String(match.0)
+                    // Get the SRC of the image
+                    let imageSources = /src\s*=\s*"(.+?)"/
+                    let imageSourceMatch = matchedTag.firstMatch(of: imageSources)!
+                    let imageSource = String(imageSourceMatch.0).split(separator: /(")/)[1].split(separator: /(,)/)[1]
+                    // Create an image
+                    let imageAttachment = NSTextAttachment()
+                    let imageData = Data(base64Encoded: imageSource.data(using: .utf8)!)!
+                    imageAttachment.image = NSImage(data: imageData)
+                    let imageAttachmentString = NSAttributedString(attachment: imageAttachment)
+                    // Get the position of the image tag text in the greater attributedString=
+                    let imageTagPosition = attributedString.mutableString.range(of: matchedTag).lowerBound
+                    // Replace the image text the matched tag in the greater attributedString to nothing
+                    attributedString.mutableString.replaceOccurrences(of: matchedTag, with: "", range: NSRange(location: 0, length: attributedString.mutableString.length))
+                    // Insert the image attachment string at the position of the old tag
+                    attributedString.insert(imageAttachmentString, at: imageTagPosition)
+                }
+            }
             
             // Hand back the attributed string
             return attributedString
@@ -107,37 +132,55 @@ struct Note {
     /**
      Write the note to an output file.
      */
-    func toOutputFile(location: URL, format: String) {
+    func toOutputFile(location: URL, fileName: String, format: String) {
+        // Roll through a series of filenames until we get to one that does not exist
+        let fileManager = FileManager.default
+        // Initial filename & output URL
+        var outputFileName = fileName + "." + format.lowercased()
+        var outputFileURL: URL = URL(string: location.absoluteString)!.appendingPathComponent(outputFileName)
+        // Filenumber starts counting at zero
+        var outputFileNumber: Int = 0;
+        // Roll through and incremernt a (3) parenthesis number at the end of the filename until we get to a filename that does not exist
+        while (fileManager.fileExists(atPath: outputFileURL.path)) {
+            // Increment the file number
+            outputFileNumber = outputFileNumber + 1
+            // Create a new filename & path with that output number
+            outputFileName = fileName + " (\(outputFileNumber))." + format.lowercased()
+            outputFileURL = URL(string: location.absoluteString)!.appendingPathComponent(outputFileName)
+        }
+        
         switch format.uppercased() {
         case "HTML":
             try? self.toHTMLString().data(using: .utf8)!
-                .write(to: location)
+                .write(to: outputFileURL)
         case "PDF":
-            let attributedString = self.toAttributedString()
-            //let formatter = NSSimpleTextPrintFormatter(attributedText: attributedString)
+            // Export as attributed string data
+            let attributedString = self.toAttributedString(images: true)
+            // Create PDF document
+            let printFormatter = PrintFormatter()
         case "RTFD":
-            let attributedString = self.toAttributedString()
+            let attributedString = self.toAttributedString(images: true)
             try? attributedString.rtfd(
                 from: NSRange(location: 0, length: attributedString.length),
                 documentAttributes: [:])!
-                .write(to: location)
+                .write(to: outputFileURL)
         case "MD":
-            let attributedString = self.toAttributedString()
+            let attributedString = self.toAttributedString(images: true)
             
             try? attributedString.string.data(using: .utf8)!
-                .write(to: location)
+                .write(to: outputFileURL)
         case "RTF":
-            let attributedString = self.toAttributedString()
+            let attributedString = self.toAttributedString(images: false)
             try? attributedString.rtf(
                 from: NSRange(location: 0, length: attributedString.length),
                 documentAttributes: [:])!
-                .write(to: location)
+                .write(to: outputFileURL)
         case "TXT":
-            let attributedString = self.toAttributedString()
+            let attributedString = self.toAttributedString(images: false)
             try? attributedString.string.data(using: .utf8)!
-                .write(to: location)
+                .write(to: outputFileURL)
         default:
-            try? Data().write(to: location)
+            try? Data().write(to: outputFileURL)
         }
     }
 }
@@ -202,6 +245,8 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
                     set noteID to id of currentNote as string
                     set noteTitle to name of currentNote as string
                     set noteContent to body of currentNote as string
+                    -- Build an array of attachments
+                    set attachements to {}
                     -- Get the path of the note internally to Apple Notes
                     set currentContainer to container of currentNote
                     set internalPath to {name of currentContainer}
@@ -212,7 +257,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
                             end if
                         end repeat
                     -- Build the object
-                    set noteListObject to {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath}
+                    set noteListObject to {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath,attachments}
                     -- Add to the list
                     set end of noteList to noteListObject
                 end if
@@ -228,7 +273,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
     let resultDescriptor = script.executeAndReturnError(&errorDict)
     // If there are errors, return and do nothing
     if errorDict != nil {
-        print(errorDict?.description)
+        print(errorDict!.description)
         return []
     }
     
@@ -371,10 +416,10 @@ struct ContentView: View {
                     createDirectoryIfNotExists(location: currentPath!)
                 }
                 // Set the path to the filename of the note based on the current format
-                let outputFileName: String = sanitizeFileNameString(inputFilename: note.title) + "." + selectedOutputFormat.lowercased()
-                let outputFileURL: URL = URL(string: currentPath!.absoluteString)!.appendingPathComponent(outputFileName)
+                let outputFileName = sanitizeFileNameString(inputFilename: note.title)
+                let outputDirectoryURL: URL = URL(string: currentPath!.absoluteString)!
                 // Write the note to the file
-                note.toOutputFile(location: outputFileURL, format: selectedOutputFormat)
+                note.toOutputFile(location: outputDirectoryURL, fileName: outputFileName, format: selectedOutputFormat)
             }
             
             // ZIP the working directory to the output file directory
@@ -428,8 +473,8 @@ struct ContentView: View {
     let outputFormats: [String] = [
         "HTML",
         "PDF",
-        "RTFD",
-        "MD",
+        // "RTFD", // Disabled until I can figure these two out
+        // "MD",
         "RTF",
         "TXT",
     ]
@@ -447,7 +492,7 @@ struct ContentView: View {
             Text("Step 2: Choose Output Document Format")
                 .font(.title)
                 .multilineTextAlignment(.leading).lineLimit(1)
-            HStack {
+            HStack() {
                 Picker("Output", selection: $selectedOutputFormat) {
                     ForEach(outputFormats, id: \.self) {
                         Text($0)
@@ -482,7 +527,7 @@ struct ContentView: View {
                 Text("Export").frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent)
             
-            Text("Apple Notes Exporter v0.1 - Copyright © 2023 Konstantin Zaremski - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
+            Text("Apple Notes Exporter v0.1 - Copyright © 2023 [Konstantin Zaremski](https://www.zaremski.com) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)

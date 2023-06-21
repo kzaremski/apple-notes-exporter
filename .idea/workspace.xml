@@ -6,7 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="ea35a3a3-7072-4322-964f-f8a9e8b018bf" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/Apple Notes Exporter/Apple Notes Exporter.xcodeproj/project.xcworkspace/xcuserdata/kzaremski.xcuserdatad/UserInterfaceState.xcuserstate" beforeDir="false" afterPath="$PROJECT_DIR$/Apple Notes Exporter/Apple Notes Exporter.xcodeproj/project.xcworkspace/xcuserdata/kzaremski.xcuserdatad/UserInterfaceState.xcuserstate" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Apple Notes Exporter/Apple Notes Exporter/Apple_Notes_Exporter.entitlements" beforeDir="false" afterPath="$PROJECT_DIR$/Apple Notes Exporter/Apple Notes Exporter/Apple_Notes_Exporter.entitlements" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Apple Notes Exporter/Apple Notes Exporter/ContentView.swift" beforeDir="false" afterPath="$PROJECT_DIR$/Apple Notes Exporter/Apple Notes Exporter/ContentView.swift" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
