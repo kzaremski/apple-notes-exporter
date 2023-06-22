@@ -157,7 +157,27 @@ struct Note {
             // Export as attributed string data
             let attributedString = self.toAttributedString(images: true)
             // Create PDF document
-            let printFormatter = PrintFormatter()
+            //   Dimensions:
+            //   8.5x11 (Letter) = 612 points wide X 792 points tall
+            var pageBox = CGRect(x: 0.0, y: 0.0, width: 612.0, height: 792.0)
+            let pdfContext = CGContext(outputFileURL as CFURL, mediaBox: &pageBox, nil)
+            // Create framesetter using the AttributedStrings
+            let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
+            
+            var pageRange = CFRange()
+            let textRange = CFRange(location: 0, length: attributedString.length)
+            let pageSize = CGSize(width: 468.0, height: 648.0)
+            CTFramesetterSuggestFrameSizeWithConstraints(framesetter, textRange, nil, pageSize, &pageRange)
+            
+            let pageRect = CGRect(x: 72.0, y: 72.0, width: 468.0, height: 648.0)
+            let framePath = CGPath(rect: pageRect, transform: nil)
+            let frame = CTFramesetterCreateFrame(framesetter, pageRange, framePath, nil)
+            
+            pdfContext?.beginPDFPage(nil)
+            CTFrameDraw(frame, pdfContext!)
+            pdfContext?.endPDFPage()
+            
+            pdfContext?.closePDF()
         case "RTFD":
             let attributedString = self.toAttributedString(images: true)
             try? attributedString.rtfd(
