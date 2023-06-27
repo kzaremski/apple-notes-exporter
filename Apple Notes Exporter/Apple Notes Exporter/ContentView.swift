@@ -58,6 +58,7 @@ struct Note {
 <!Doctype HTML>
 <html>
     <head>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
         <title>\(self.title)</title>
     </head>
     <body>
@@ -76,12 +77,10 @@ struct Note {
         return outputHTMLString
     }
     
-    func toAttributedString(images: Bool) -> NSAttributedString {
+    func toAttributedString() -> NSAttributedString {
         // Get the HTML content of the note
-        var htmlString = self.toHTMLString()
-        if images {
-            htmlString = htmlString.replacingOccurrences(of: "<img", with: "[ANE[img")
-        }
+        let htmlString = self.toHTMLString()
+        
         do {
             // Empty NSAttributedString
             var attributedString: NSMutableAttributedString = NSMutableAttributedString()
@@ -95,30 +94,54 @@ struct Note {
                 documentAttributes: nil
             )
             
-            // If we are supposed to have images inserted inline
-            if images {
-                // Replace all Base64 images with NSAttributedString attachments
-                let imageTags = /(\[ANE\[img).*(src=")(.+?)(")(.+?)(>)/
-                let matches = attributedString.string.matches(of: imageTags)
-                for match in matches {
-                    // The first part of the match is the image tag
-                    let matchedTag = String(match.0)
-                    // Get the SRC of the image
-                    let imageSources = /src\s*=\s*"(.+?)"/
-                    let imageSourceMatch = matchedTag.firstMatch(of: imageSources)!
-                    let imageSource = String(imageSourceMatch.0).split(separator: /(")/)[1].split(separator: /(,)/)[1]
-                    // Create an image
-                    let imageAttachment = NSTextAttachment()
-                    let imageData = Data(base64Encoded: imageSource.data(using: .utf8)!)!
-                    imageAttachment.image = NSImage(data: imageData)
-                    let imageAttachmentString = NSAttributedString(attachment: imageAttachment)
-                    // Get the position of the image tag text in the greater attributedString=
-                    let imageTagPosition = attributedString.mutableString.range(of: matchedTag).lowerBound
-                    // Replace the image text the matched tag in the greater attributedString to nothing
-                    attributedString.mutableString.replaceOccurrences(of: matchedTag, with: "", range: NSRange(location: 0, length: attributedString.mutableString.length))
-                    // Insert the image attachment string at the position of the old tag
-                    attributedString.insert(imageAttachmentString, at: imageTagPosition)
-                }
+            // Hand back the attributed string
+            return attributedString
+        } catch {
+            print("Failed to convert note to NSAttributedString")
+        }
+        return NSMutableAttributedString()
+    }
+    
+    func toAttributedStringWithImages() -> NSAttributedString {
+        // Get the HTML content of the note
+        var htmlString = self.toHTMLString()
+        htmlString = htmlString.replacingOccurrences(of: "<img", with: "[ANE[img")
+        
+        do {
+            // Empty NSAttributedString
+            var attributedString: NSMutableAttributedString = NSMutableAttributedString()
+            // Set the NSAttributed string to the contents of the HTML output, converted to NSAttributedString
+            try attributedString = NSMutableAttributedString(
+                data: htmlString.data(using: .utf8) ?? Data(),
+                options: [
+                    .documentType: NSAttributedString.DocumentType.html,
+                    .characterEncoding: String.Encoding.utf8.rawValue
+                ],
+                documentAttributes: nil
+            )
+            
+            // Replace all Base64 images with NSAttributedString attachments
+            let imageTags = /(\[ANE\[img).*(src=")(.+?)(")(.+?)(>)/
+            let matches = attributedString.string.matches(of: imageTags)
+            for match in matches {
+                // The first part of the match is the image tag
+                let matchedTag = String(match.0)
+                // Get the SRC of the image
+                let imageSources = /src\s*=\s*"(.+?)"/
+                let imageSourceMatch = matchedTag.firstMatch(of: imageSources)!
+                let imageSource = String(imageSourceMatch.0).split(separator: /(")/)[1].split(separator: /(,)/)[1]
+                // Create an image
+                let imageAttachment = NSTextAttachment()
+                let imageData = Data(base64Encoded: imageSource.data(using: .utf8)!)!
+                let image: NSImage = NSImage(data: imageData)!
+                imageAttachment.image = image
+                let imageAttachmentString = NSAttributedString(attachment: imageAttachment)
+                // Get the position of the image tag text in the greater attributedString=
+                let imageTagPosition = attributedString.mutableString.range(of: matchedTag).lowerBound
+                // Replace the image text the matched tag in the greater attributedString to nothing
+                attributedString.mutableString.replaceOccurrences(of: matchedTag, with: "", range: NSRange(location: 0, length: attributedString.mutableString.length))
+                // Insert the image attachment string at the position of the old tag
+                attributedString.insert(imageAttachmentString, at: imageTagPosition)
             }
             
             // Hand back the attributed string
@@ -155,6 +178,10 @@ struct Note {
                 .write(to: outputFileURL)
         case "PDF":
             // Export as attributed string data
+            let htmlString = self.toHTMLString()
+            
+            /*
+                  ** OLD IMPLEMENTATION, functions as far
             let attributedString = self.toAttributedString(images: true)
             // Create PDF document
             //   Dimensions:
@@ -178,25 +205,26 @@ struct Note {
             pdfContext?.endPDFPage()
             
             pdfContext?.closePDF()
+            */
         case "RTFD":
-            let attributedString = self.toAttributedString(images: true)
+            let attributedString = self.toAttributedString()
             try? attributedString.rtfd(
                 from: NSRange(location: 0, length: attributedString.length),
                 documentAttributes: [:])!
                 .write(to: outputFileURL)
         case "MD":
-            let attributedString = self.toAttributedString(images: true)
+            let attributedString = self.toAttributedString()
             
             try? attributedString.string.data(using: .utf8)!
                 .write(to: outputFileURL)
         case "RTF":
-            let attributedString = self.toAttributedString(images: false)
+            let attributedString = self.toAttributedString()
             try? attributedString.rtf(
                 from: NSRange(location: 0, length: attributedString.length),
                 documentAttributes: [:])!
                 .write(to: outputFileURL)
         case "TXT":
-            let attributedString = self.toAttributedString(images: false)
+            let attributedString = self.toAttributedString()
             try? attributedString.string.data(using: .utf8)!
                 .write(to: outputFileURL)
         default:
@@ -319,6 +347,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
         //      creationDate,       4
         //      modificationDate,   5
         //      internalPath        6
+        //      attachments         7
         //  }
         let newNote = Note(
             ID: recordDescriptor.atIndex(1)?.stringValue ?? "",
