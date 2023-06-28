@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import WebKit
 import Foundation
 import UniformTypeIdentifiers
 import AppKit
@@ -15,6 +16,30 @@ struct MenuItem: Identifiable {
     let id = UUID()
     let title: String
     let action: () -> Void
+}
+
+/**
+ Convert an HTML file specified by the input URL into a PDF written to the output URL.
+ */
+func WKHTMLtoPDF(input: URL, output: URL) {
+    // Get the location of the bundled executable
+    let binaryURL = Bundle.main.url(forResource: "wkhtmltopdf", withExtension: nil)
+    
+    // Create process for the conversion
+    let task = Process()
+    task.executableURL = binaryURL
+    
+    // Set input and output file arguments for the WKHTMLtoPDF binary
+    task.arguments = ["--quiet", input.absoluteString, output.absoluteString]
+    
+    // Attempt the conversion
+    do {
+        try task.run()
+        task.waitUntilExit()
+        print("WKHTMLtoPDF: \(output.absoluteString)")
+    } catch {
+        print("Fail WKHTMLtoPDF for (\(output.absoluteString)): \(error)")
+    }
 }
 
 /**
@@ -177,9 +202,50 @@ struct Note {
             try? self.toHTMLString().data(using: .utf8)!
                 .write(to: outputFileURL)
         case "PDF":
-            // Export as attributed string data
             let htmlString = self.toHTMLString()
             
+            DispatchQueue.main.sync {
+                let config = WKPDFConfiguration()
+                config.rect = CGRect(x: 0, y: 0, width: 792, height: 612)
+                let webView = WKWebView()
+                webView.loadHTMLString(htmlString, baseURL: nil)
+                webView.evaluateJavaScript("document.readyState == \"complete\"") { result, error in
+                    if (error != nil) {
+                        print(error!.localizedDescription)
+                        return
+                    } else if result as? Int == 1 {
+                        webView.createPDF(configuration: config) { result in
+                            switch result {
+                                case .success(let data):
+                                    try! data.write(to: outputFileURL)
+                                case .failure(let error):
+                                    print(error)
+                            }
+                        }
+                    } else {
+                        return
+                    }
+                }
+            }
+            /*
+            // URL for the temportary HTML file
+            let tempHTMLFile = URL(string: outputFileURL.absoluteString + ".html")!
+            
+            // Export as HTML file
+            try? self.toHTMLString().data(using: .utf8)!
+                .write(to: tempHTMLFile)
+            
+            // WKHTMLtoPDF conversion of the above HTML file to a PDF file
+            WKHTMLtoPDF(input: tempHTMLFile, output: outputFileURL)
+            // Then cleanup by deleting the temporary file
+            do {
+                if FileManager.default.fileExists(atPath: tempHTMLFile.absoluteString) {
+                    try FileManager.default.removeItem(at: tempHTMLFile)
+                }
+            } catch {
+                print("\(error)")
+            }*/
+                        
             /*
                   ** OLD IMPLEMENTATION, functions as far
             let attributedString = self.toAttributedString(images: true)
@@ -517,6 +583,7 @@ struct ContentView: View {
     @State private var outputFileURL: URL?
     @State private var showProgressWindow: Bool = false
     @State private var showNoOutputSelectedAlert: Bool = false
+    @State private var showErrorExportingAlert: Bool = false
     
     // Body of the ContentView
     let outputFormats: [String] = [
@@ -590,6 +657,13 @@ struct ContentView: View {
             Alert(
                 title: Text("No Output File Chosen"),
                 message: Text("Please choose the location for the ZIP file containing the exported Apple Notes."),
+                dismissButton: .default(Text("OK"))
+            )
+        }
+        .alert(isPresented: $showErrorExportingAlert) {
+            Alert(
+                title: Text("Failed To Export Notes"),
+                message: Text("An unknown error prevented the program from exporting your Apple notes."),
                 dismissButton: .default(Text("OK"))
             )
         }
