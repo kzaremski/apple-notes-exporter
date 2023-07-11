@@ -89,6 +89,7 @@ struct Note {
     var modificationDate: Date = Date()
     var path: [String] = []
     var attachments: [String] = []
+    var tags: [String] = []
     
     func appleDateStringToDate(inputString: String) -> Date {
         // DateFormatter based on Apple's format
@@ -100,14 +101,15 @@ struct Note {
         return dateFormatter.date(from: inputString)!
     }
     
-    init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, path: [String], attachments: [String]) {
+    init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, path: [String], attachments: [String], tags: [String]) {
         self.ID = ID
         self.title = title
-        self.content = content
+        self.content = content.replacingOccurrences(of: "\u{2028}", with: "<br>").replacingOccurrences(of: "\u{2029}", with: "<br>")
         self.creationDate = appleDateStringToDate(inputString: creationDate)
         self.modificationDate = appleDateStringToDate(inputString: modificationDate)
         self.path = path
         self.attachments = attachments
+        self.tags = tags
     }
     
     /**
@@ -355,33 +357,33 @@ struct Note {
             } catch {
                 print("\(error)")
             }
-                        
+            
             /*
-                  ** OLD IMPLEMENTATION, functions as far
-            let attributedString = self.toAttributedString(images: true)
-            // Create PDF document
-            //   Dimensions:
-            //   8.5x11 (Letter) = 612 points wide X 792 points tall
-            var pageBox = CGRect(x: 0.0, y: 0.0, width: 612.0, height: 792.0)
-            let pdfContext = CGContext(outputFileURL as CFURL, mediaBox: &pageBox, nil)
-            // Create framesetter using the AttributedStrings
-            let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
-            
-            var pageRange = CFRange()
-            let textRange = CFRange(location: 0, length: attributedString.length)
-            let pageSize = CGSize(width: 468.0, height: 648.0)
-            CTFramesetterSuggestFrameSizeWithConstraints(framesetter, textRange, nil, pageSize, &pageRange)
-            
-            let pageRect = CGRect(x: 72.0, y: 72.0, width: 468.0, height: 648.0)
-            let framePath = CGPath(rect: pageRect, transform: nil)
-            let frame = CTFramesetterCreateFrame(framesetter, pageRange, framePath, nil)
-            
-            pdfContext?.beginPDFPage(nil)
-            CTFrameDraw(frame, pdfContext!)
-            pdfContext?.endPDFPage()
-            
-            pdfContext?.closePDF()
-            */
+             ** OLD IMPLEMENTATION, functions as far
+             let attributedString = self.toAttributedString(images: true)
+             // Create PDF document
+             //   Dimensions:
+             //   8.5x11 (Letter) = 612 points wide X 792 points tall
+             var pageBox = CGRect(x: 0.0, y: 0.0, width: 612.0, height: 792.0)
+             let pdfContext = CGContext(outputFileURL as CFURL, mediaBox: &pageBox, nil)
+             // Create framesetter using the AttributedStrings
+             let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
+             
+             var pageRange = CFRange()
+             let textRange = CFRange(location: 0, length: attributedString.length)
+             let pageSize = CGSize(width: 468.0, height: 648.0)
+             CTFramesetterSuggestFrameSizeWithConstraints(framesetter, textRange, nil, pageSize, &pageRange)
+             
+             let pageRect = CGRect(x: 72.0, y: 72.0, width: 468.0, height: 648.0)
+             let framePath = CGPath(rect: pageRect, transform: nil)
+             let frame = CTFramesetterCreateFrame(framesetter, pageRange, framePath, nil)
+             
+             pdfContext?.beginPDFPage(nil)
+             CTFrameDraw(frame, pdfContext!)
+             pdfContext?.endPDFPage()
+             
+             pdfContext?.closePDF()
+             */
         case "RTFD":
             let attributedString = self.toAttributedString()
             try? attributedString.rtfd(
@@ -389,9 +391,61 @@ struct Note {
                 documentAttributes: [:])!
                 .write(to: outputFileURL)
         case "MD":
-            let attributedString = self.toAttributedString()
+            // Get the HTML string of the content (less common tags)
+            let htmlStringLines = self.content
+                .replacingOccurrences(of: "<div>", with: "")
+                .replacingOccurrences(of: "</div>", with: "")
+                .replacingOccurrences(of: "<br>", with: "")
+                .replacingOccurrences(of: "<object>", with: "")
+                .replacingOccurrences(of: "</object>", with: "")
+                .split(separator: "\n")
             
-            try? attributedString.string.data(using: .utf8)!
+            // Create an output string
+            var outputString =
+"""
+---
+title: \(fileName)
+tags: \(self.tags.joined(separator: ", "))
+---
+"""
+            
+            // The above is gross
+            outputString = ""
+   
+            // Mode
+            let MD_CONVERSION_MODE_NORMAL = 0
+            let MD_CONVERSION_MODE_ORDEREDLIST = 1
+            let MD_CONVERSION_MODE_UNORDEREDLIST = 2
+            let MD_CONVERSION_MODE_TABLE = 3
+            var mode = MD_CONVERSION_MODE_NORMAL
+            
+            // For each HTML line
+            for htmlLine in htmlStringLines {
+                // Markdown line
+                var markdownLine = String(htmlLine)
+                
+                // ** Conversion
+                // Headings
+                markdownLine = markdownLine.replacingOccurrences(of: "<h1>", with: "\n# ").replacingOccurrences(of: "</h1>", with: "")
+                markdownLine = markdownLine.replacingOccurrences(of: "<h2>", with: "\n## ").replacingOccurrences(of: "</h2>", with: "")
+                markdownLine = markdownLine.replacingOccurrences(of: "<h3>", with: "\n### ").replacingOccurrences(of: "</h3>", with: "")
+                markdownLine = markdownLine.replacingOccurrences(of: "<h4>", with: "\n#### ").replacingOccurrences(of: "</h4>", with: "")
+                markdownLine = markdownLine.replacingOccurrences(of: "<h5>", with: "\n##### ").replacingOccurrences(of: "</h5>", with: "")
+                markdownLine = markdownLine.replacingOccurrences(of: "<h6>", with: "\n###### ").replacingOccurrences(of: "</h6>", with: "")
+                // Styles
+                markdownLine = markdownLine.replacingOccurrences(of: "<b>", with: "**").replacingOccurrences(of: "</b>", with: "**")
+                markdownLine = markdownLine.replacingOccurrences(of: "<i>", with: "*").replacingOccurrences(of: "</i>", with: "*")
+                // MD doesnt have underline because the creator is opinionated!  markdownLine = markdownLine.replacingOccurrences(of: "<i>", with: "*").replacingOccurrences(of: "</i>", with: "*")
+                markdownLine = markdownLine.replacingOccurrences(of: "<tt>", with: "`").replacingOccurrences(of: "</tt>", with: "`")
+            
+                // Mode changes
+                
+                // Add the markdown line to the output string
+                outputString = outputString + "\n" + markdownLine
+            }
+            
+            // Create
+            try? outputString.data(using: .utf8)!
                 .write(to: outputFileURL)
         case "RTF":
             let attributedString = self.toAttributedString()
@@ -455,15 +509,6 @@ struct AppleScript {
 func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
     // Script to export the notes from the current account
     let exportScript = """
-        on replaceText(this_text, search_string, replacement_string)
-            set AppleScript's text item delimiters to the search_string
-            set the item_list to every text item of this_text
-            set AppleScript's text item delimiters to the replacement_string
-            set this_text to the item_list as string
-            set AppleScript's text item delimiters to ""
-            return this_text
-        end replaceText
-    
         set noteList to {}
         tell application "Notes"
             repeat with theAccount in accounts
@@ -485,6 +530,8 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
                     repeat with theAttachment in attachments of currentNote
                         set end of noteAttachments to id of theAttachment as string
                     end repeat
+                    -- Build an array of note tags
+                    set noteTags to {}
                     -- Get the path of the note internally to Apple Notes
                     set currentContainer to container of currentNote
                     set internalPath to {name of currentContainer}
@@ -495,7 +542,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
                             end if
                         end repeat
                     -- Build the object
-                    set noteListObject to {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath,noteAttachments}
+                    set noteListObject to {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath,noteAttachments,noteTags}
                     -- Add to the list
                     set end of noteList to noteListObject
                 end if
@@ -511,6 +558,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
     let resultDescriptor = script.executeAndReturnError(&errorDict)
     // If there are errors, return and do nothing
     if errorDict != nil {
+        print("AppleScript in getNotes failed")
         print(errorDict!.description)
         return []
     }
@@ -546,7 +594,8 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
             creationDate: recordDescriptor.atIndex(4)?.stringValue ?? "",
             modificationDate: recordDescriptor.atIndex(5)?.stringValue ?? "",
             path: recordDescriptor.atIndex(6)!.toStringArray(),
-            attachments: recordDescriptor.atIndex(7)!.toStringArray()
+            attachments: recordDescriptor.atIndex(7)!.toStringArray(),
+            tags: recordDescriptor.atIndex(8)!.toStringArray()
         )
         // Add the note to the list of notes
         notes.append(newNote)
