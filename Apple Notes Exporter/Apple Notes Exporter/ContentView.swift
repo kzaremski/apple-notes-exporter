@@ -47,19 +47,22 @@ func WKHTMLtoPDF(input: URL, output: URL) {
  */
 struct NoteContentModelElement {
     // Type constants
-    let title = 0;
-    let heading = 1;
-    let subheading = 2;
-    let body = 3;
-    let monospaced = 4;
-    let bulletList = 5;
-    let dashList = 6;
-    let numberList = 7;
-    let checkbox = 8;
-    let table = 9;
-    let image = 10;
-    let attachment = 11;
+    struct TYPE {
+        let title = 0;
+        let heading = 1;
+        let subheading = 2;
+        let body = 3;
+        let monospaced = 4;
+        let bulletList = 5;
+        let dashList = 6;
+        let numberList = 7;
+        let checkbox = 8;
+        let table = 9;
+        let image = 10;
+        let attachment = 11;
+    }
     
+    // Data fields
     var type: Int
     
     init(type: Int) {
@@ -105,6 +108,18 @@ struct Note {
         self.modificationDate = appleDateStringToDate(inputString: modificationDate)
         self.path = path
         self.attachments = attachments
+    }
+    
+    /**
+     Create a little box that is a link to the supplied attachment.
+     */
+    func htmlAttachmentLinkString(linkTitle: String, linkPath: String) -> String {
+        return
+"""
+<a href="\(linkPath)">
+    <h5></h5>
+</a>
+"""
     }
     
     /**
@@ -230,9 +245,91 @@ struct Note {
             outputFileURL = URL(string: location.absoluteString)!.appendingPathComponent(outputFileName)
         }
         
-        // Export note attachments if we are directed to do so
-        if shouldExportAttachments {
+        // Export note attachments (if there are any) if we are directed to do so
+        if shouldExportAttachments && self.attachments.count > 0 {
+            // Create a directory for the attachments
+            let attachmentDirectoryName = outputFileNumber > 0 ? fileName + " (\(outputFileNumber)) Attachments" : fileName + " Attachments"
+            let attachmentDirectoryURL = URL(string: location.absoluteString)!.appendingPathComponent(attachmentDirectoryName)
+            do {
+                // Create the directory
+                try fileManager.createDirectory(at: attachmentDirectoryURL, withIntermediateDirectories: false)
+            } catch {
+                print("Failed to create attachment directory: \(error)")
+            }
             
+            
+            // For each ID in the Array of Attachment IDs
+            for attachmentIDString in attachments {
+                // Script to export the current attachment
+                let attachmentIDStringSanitized = attachmentIDString.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+                let attachmentSaveScript = """
+                    set savePath to (POSIX file "\(attachmentDirectoryURL.path)/\(attachmentIDStringSanitized)")
+                    tell application "Notes"
+                        repeat with theAttachment in attachments
+                            if id of theAttachment as string is "\(attachmentIDString)" then
+                                save theAttachment in file savePath
+                                return {name of theAttachment, creation date of theAttachment as string, modification date of theAttachment as string}
+                            end if
+                        end repeat
+                    end tell
+                    return {"", "", ""}
+                """
+                
+                // Error handling
+                var errorDict: NSDictionary? = nil
+                // Execute the script, adding to the errorDict if there are errors
+                let script: NSAppleScript = NSAppleScript(source: attachmentSaveScript)!
+                let resultDescriptor = script.executeAndReturnError(&errorDict)
+                // If there are errors, do nothing
+                if errorDict != nil {
+                    print(errorDict!.description)
+                    continue
+                }
+                
+                // Get the properties of the attachment
+                let originalFileName = resultDescriptor.atIndex(1)?.stringValue ?? ""
+                let creationDate = appleDateStringToDate(inputString: resultDescriptor.atIndex(2)?.stringValue ?? "")
+                let modificationDate = appleDateStringToDate(inputString: resultDescriptor.atIndex(3)?.stringValue ?? "")
+                
+                // Rename the AppleScript-outputted file to a good file name
+                var attachmentNameComponents = originalFileName.split(separator: ".")
+                let attachmentExtension = attachmentNameComponents.removeLast()
+                // Reassemble the filename
+                let attachmentName = attachmentNameComponents.joined(separator: ".")
+                var attachmentFileName = attachmentName + "." + attachmentExtension
+                
+                // Filenumber starts counting at zero
+                var attachmentFileNumber: Int = 0;
+                // Roll through and incremernt a (3) parenthesis number at the end of the filename until we get to a filename that does not exist
+                while (fileManager.fileExists(atPath: URL(string: attachmentDirectoryURL.absoluteString)!.appendingPathComponent(attachmentFileName).path)) {
+                    // Increment the file number
+                    attachmentFileNumber = attachmentFileNumber + 1
+                    // Create a new filename with that output number
+                    attachmentFileName = attachmentName + " (\(attachmentFileNumber))." + attachmentExtension
+                }
+                
+                // Create URL objects
+                let originalAttachmentURL = URL(string: attachmentDirectoryURL.absoluteString)!.appendingPathComponent(attachmentIDStringSanitized)
+                let attachmentURL = URL(string: attachmentDirectoryURL.absoluteString)!.appendingPathComponent(attachmentFileName)
+                
+                // Rename the UUID file to a proper filename
+                do {
+                    try fileManager.moveItem(at: originalAttachmentURL, to: attachmentURL)
+                } catch {
+                    print("Failed to rename attachment \(originalAttachmentURL.path) to \(attachmentURL.path)")
+                }
+                
+                // Set the properties of the attachment file
+                let attributes = [
+                    FileAttributeKey.creationDate: creationDate,
+                    FileAttributeKey.modificationDate: modificationDate,
+                ]
+                do {
+                    try fileManager.setAttributes(attributes, ofItemAtPath: attachmentURL.path(percentEncoded: false))
+                } catch {
+                    print(error)
+                }
+            }
         }
         
         // Export the actual note
@@ -316,7 +413,7 @@ struct Note {
             FileAttributeKey.modificationDate: self.modificationDate,
         ]
         do {
-            try FileManager.default.setAttributes(attributes, ofItemAtPath: outputFileURL.path(percentEncoded: false))
+            try fileManager.setAttributes(attributes, ofItemAtPath: outputFileURL.path(percentEncoded: false))
         } catch {
             print(error)
         }
@@ -384,7 +481,10 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
                     set noteTitle to name of currentNote as string
                     set noteContent to body of currentNote as string
                     -- Build an array of attachments
-                    set attachements to {}
+                    set noteAttachments to {}
+                    repeat with theAttachment in attachments of currentNote
+                        set end of noteAttachments to id of theAttachment as string
+                    end repeat
                     -- Get the path of the note internally to Apple Notes
                     set currentContainer to container of currentNote
                     set internalPath to {name of currentContainer}
@@ -395,7 +495,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
                             end if
                         end repeat
                     -- Build the object
-                    set noteListObject to {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath,attachments}
+                    set noteListObject to {noteID,noteTitle,noteContent,creationDate,modificationDate,internalPath,noteAttachments}
                     -- Add to the list
                     set end of noteList to noteListObject
                 end if
@@ -446,7 +546,7 @@ func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
             creationDate: recordDescriptor.atIndex(4)?.stringValue ?? "",
             modificationDate: recordDescriptor.atIndex(5)?.stringValue ?? "",
             path: recordDescriptor.atIndex(6)!.toStringArray(),
-            attachments: []
+            attachments: recordDescriptor.atIndex(7)!.toStringArray()
         )
         // Add the note to the list of notes
         notes.append(newNote)
