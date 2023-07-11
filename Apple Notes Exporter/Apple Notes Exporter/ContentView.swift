@@ -43,6 +43,39 @@ func WKHTMLtoPDF(input: URL, output: URL) {
 }
 
 /**
+ Individual element within a note content model
+ */
+struct NoteContentModelElement {
+    // Type constants
+    let title = 0;
+    let heading = 1;
+    let subheading = 2;
+    let body = 3;
+    let monospaced = 4;
+    let bulletList = 5;
+    let dashList = 6;
+    let numberList = 7;
+    let checkbox = 8;
+    let table = 9;
+    let image = 10;
+    let attachment = 11;
+    
+    var type: Int
+    
+    init(type: Int) {
+        // Set the type and content
+        self.type = type
+    }
+}
+
+/**
+ Model representing the
+ */
+struct NoteContentModel {
+    var content: [NoteContentModelElement] = [];
+}
+
+/**
  Struct that represents an exported Apple Note
  */
 struct Note {
@@ -180,7 +213,7 @@ struct Note {
     /**
      Write the note to an output file.
      */
-    func toOutputFile(location: URL, fileName: String, format: String) {
+    func toOutputFile(location: URL, fileName: String, format: String, shouldExportAttachments: Bool) {
         // Roll through a series of filenames until we get to one that does not exist
         let fileManager = FileManager.default
         // Initial filename & output URL
@@ -197,37 +230,17 @@ struct Note {
             outputFileURL = URL(string: location.absoluteString)!.appendingPathComponent(outputFileName)
         }
         
+        // Export note attachments if we are directed to do so
+        if shouldExportAttachments {
+            
+        }
+        
+        // Export the actual note
         switch format.uppercased() {
         case "HTML":
             try? self.toHTMLString().data(using: .utf8)!
                 .write(to: outputFileURL)
         case "PDF":
-            let htmlString = self.toHTMLString()
-            
-            DispatchQueue.main.sync {
-                let config = WKPDFConfiguration()
-                config.rect = CGRect(x: 0, y: 0, width: 792, height: 612)
-                let webView = WKWebView()
-                webView.loadHTMLString(htmlString, baseURL: nil)
-                webView.evaluateJavaScript("document.readyState == \"complete\"") { result, error in
-                    if (error != nil) {
-                        print(error!.localizedDescription)
-                        return
-                    } else if result as? Int == 1 {
-                        webView.createPDF(configuration: config) { result in
-                            switch result {
-                                case .success(let data):
-                                    try! data.write(to: outputFileURL)
-                                case .failure(let error):
-                                    print(error)
-                            }
-                        }
-                    } else {
-                        return
-                    }
-                }
-            }
-            /*
             // URL for the temportary HTML file
             let tempHTMLFile = URL(string: outputFileURL.absoluteString + ".html")!
             
@@ -244,7 +257,7 @@ struct Note {
                 }
             } catch {
                 print("\(error)")
-            }*/
+            }
                         
             /*
                   ** OLD IMPLEMENTATION, functions as far
@@ -295,6 +308,17 @@ struct Note {
                 .write(to: outputFileURL)
         default:
             try? Data().write(to: outputFileURL)
+        }
+        
+        // Set the properties of the outputted file (creation date and the modification date)
+        let attributes = [
+            FileAttributeKey.creationDate: self.creationDate,
+            FileAttributeKey.modificationDate: self.modificationDate,
+        ]
+        do {
+            try FileManager.default.setAttributes(attributes, ofItemAtPath: outputFileURL.path(percentEncoded: false))
+        } catch {
+            print(error)
         }
     }
 }
@@ -534,7 +558,7 @@ struct ContentView: View {
                 let outputFileName = sanitizeFileNameString(inputFilename: note.title)
                 let outputDirectoryURL: URL = URL(string: currentPath!.absoluteString)!
                 // Write the note to the file
-                note.toOutputFile(location: outputDirectoryURL, fileName: outputFileName, format: selectedOutputFormat)
+                note.toOutputFile(location: outputDirectoryURL, fileName: outputFileName, format: selectedOutputFormat, shouldExportAttachments: true)
             }
             
             // ZIP the working directory to the output file directory
@@ -588,9 +612,9 @@ struct ContentView: View {
     // Body of the ContentView
     let outputFormats: [String] = [
         "HTML",
-        "PDF",
-        // "RTFD", // Disabled until I can figure these two out
-        // "MD",
+        // "PDF",   // Disabled until I can figure these two out
+        // "RTFD",
+        "MD",
         "RTF",
         "TXT",
     ]
@@ -657,13 +681,6 @@ struct ContentView: View {
             Alert(
                 title: Text("No Output File Chosen"),
                 message: Text("Please choose the location for the ZIP file containing the exported Apple Notes."),
-                dismissButton: .default(Text("OK"))
-            )
-        }
-        .alert(isPresented: $showErrorExportingAlert) {
-            Alert(
-                title: Text("Failed To Export Notes"),
-                message: Text("An unknown error prevented the program from exporting your Apple notes."),
                 dismissButton: .default(Text("OK"))
             )
         }
