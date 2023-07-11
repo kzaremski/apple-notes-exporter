@@ -474,38 +474,6 @@ tags: \(self.tags.joined(separator: ", "))
     }
 }
 
-extension NSAppleEventDescriptor {
-    func toStringArray() -> [String] {
-        guard let listDescriptor = self.coerce(toDescriptorType: typeAEList) else {
-            return []
-        }
-        
-        return (0..<listDescriptor.numberOfItems)
-            .compactMap { listDescriptor.atIndex($0 + 1)?.stringValue }
-    }
-}
-
-struct AppleScript {
-    /**
-     Runs an AppleScript script string with an expected string array result.
-     */
-    func stringArray(script: String) -> [String] {
-        // Create the new NSAppleScript instance
-        if let scriptObject = NSAppleScript(source: script) {
-            // Error dictionary
-            var errorDict: NSDictionary? = nil
-            // Execute the script, adding to the errorDict if there are errors
-            let resultDescriptor = scriptObject.executeAndReturnError(&errorDict)
-            // If there are no errors, return the resultDescriptor after converting it to a string array
-            if errorDict == nil {
-                return resultDescriptor.toStringArray()
-            }
-        }
-        // Return an empty string if no result
-        return []
-    }
-}
-
 func getNotesUsingAppleScript(noteAccountName: String) -> [Note] {
     // Script to export the notes from the current account
     let exportScript = """
@@ -720,10 +688,6 @@ struct ContentView: View {
         }
     }
     
-    init() {
-        self._selectedNotesAccount = State(initialValue: notesAccounts.first ?? "")
-    }
-    
     /**
      Select the output file location. It is a ZIP file in the directory of the user's choosing.
      */
@@ -740,17 +704,16 @@ struct ContentView: View {
         }
     }
     
+    func setNotesAccounts(notesAccounts: [String]) {
+        self.notesAccounts = notesAccounts
+        self.selectedNotesAccount = notesAccounts.first ?? ""
+        self.loaded = true
+    }
+    
     // State of the interface and form inputs
-    @State private var notesAccounts: [String] = AppleScript().stringArray(script: """
-            set theAccountNames to {}
-            tell application "Notes"
-                repeat with theAccount in accounts
-                    copy name of theAccount as string to end of theAccountNames
-                end repeat
-            end tell
-            return theAccountNames
-        """)
-    @State private var selectedNotesAccount = ""
+    @State private var notesAccounts: [String] = ["Loading..."]
+    @State private var selectedNotesAccount = "Loading..."
+    @State private var loaded: Bool = false
     @State private var selectedOutputFormat = "HTML"
     @State private var outputFilePath = "Select output file location"
     @State private var outputFileURL: URL?
@@ -815,6 +778,7 @@ struct ContentView: View {
             }) {
                 Text("Export").frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent)
+                .disabled(!loaded)
             
             Text("Apple Notes Exporter v0.1 - Copyright © 2023 [Konstantin Zaremski](https://www.zaremski.com) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
@@ -823,6 +787,23 @@ struct ContentView: View {
         }
         .frame(width: 500.0, height: 320.0)
         .padding(10.0)
+        .onAppear() {
+            // Load the Apple Notes Accounts on startup
+            DispatchQueue.global(qos: .userInitiated).async {
+                var result:[String] = []
+                    result = AppleScript.stringArray(script: """
+                        set theAccountNames to {}
+                        tell application "Notes"
+                            repeat with theAccount in accounts
+                                copy name of theAccount as string to end of theAccountNames
+                            end repeat
+                        end tell
+                        return theAccountNames
+                    """)
+                // Set the accounts
+                setNotesAccounts(notesAccounts: result)
+            }
+        }
         .sheet(isPresented: $showProgressWindow) {
             ExportProgressView()
         }
