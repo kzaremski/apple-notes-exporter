@@ -43,7 +43,7 @@ I was not going to let PDF be the functionality that made me lose my resolve to 
 ## Installation
 Make sure that you have "App Store and Identified Developers" set as your app install sources in the "Privacy & Security" section of System Settings in MacOS.
 
-When opening the app you may be met with a message:
+When opening the app as downloaded from the releases page you may be met with a message:
 
 ```
 "Apple Notes Exporter" can't be opened because Apple cannot check it for malicious software.
