@@ -1,7 +1,7 @@
 # apple-notes-exporter
 MacOS app written in Swift that exports Apple Notes (including iCloud Notes) to a multitude of formats preserving note folder structure.
 
-![Screenshot of version 0.1 of the Apple Notes Exporter](screenshots/v0.1.png)
+![Screenshot of version 0.1 of the Apple Notes Exporter](screenshots/v0.2.png)
 
 ## Export Formats
 * HTML
@@ -33,12 +33,13 @@ I also tried my own solution: embed a binary for WKHTMLtoPDF in the app, but App
 I was not going to let PDF be the functionality that made me lose my resolve to finish at least a first version of this project.
 
 ## Compatibility & System Requirements
-* MacOS Ventura
-    * Some of the features that I am using are not available on the older MacOS versions.
-    * I am going to work on figuring out the older classes (whose documentation has been deprecated & scrubbed) in alternative to some of the more modern stuff
-    * I would like to eventually target Big Sur or later, but this is the best right now.
+* MacOS Big Sur 11.0 or higher
+    * Some of the features that I am using are not available in earlier MacOS versions.
+    * I was able to backport from Ventura back to Big Sur, but any further would have required rewrites of the UI because of the changes made to the MacOS UI at that time.
 * Intel or Apple Silicon Mac
-* 3MB Disk Space
+* Disk Space
+    * 3MB to accommodate the app itself
+    * Additional space for your exported notes
 
 ## Installation
 Make sure that you have "App Store and Identified Developers" set as your app install sources in the "Privacy & Security" section of System Settings in MacOS.
