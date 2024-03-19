@@ -18,65 +18,7 @@ struct MenuItem: Identifiable {
     let action: () -> Void
 }
 
-/**
- Convert an HTML file specified by the input URL into a PDF written to the output URL.
- */
-func WKHTMLtoPDF(input: URL, output: URL) {
-    // Get the location of the bundled executable
-    let binaryURL = Bundle.main.url(forResource: "wkhtmltopdf", withExtension: nil)
-    
-    // Create process for the conversion
-    let task = Process()
-    task.executableURL = binaryURL
-    
-    // Set input and output file arguments for the WKHTMLtoPDF binary
-    task.arguments = ["--quiet", input.absoluteString, output.absoluteString]
-    
-    // Attempt the conversion
-    do {
-        try task.run()
-        task.waitUntilExit()
-        print("WKHTMLtoPDF: \(output.absoluteString)")
-    } catch {
-        print("Fail WKHTMLtoPDF for (\(output.absoluteString)): \(error)")
-    }
-}
 
-/**
- Individual element within a note content model
- */
-struct NoteContentModelElement {
-    // Type constants
-    struct TYPE {
-        let title = 0;
-        let heading = 1;
-        let subheading = 2;
-        let body = 3;
-        let monospaced = 4;
-        let bulletList = 5;
-        let dashList = 6;
-        let numberList = 7;
-        let checkbox = 8;
-        let table = 9;
-        let image = 10;
-        let attachment = 11;
-    }
-    
-    // Data fields
-    var type: Int
-    
-    init(type: Int) {
-        // Set the type and content
-        self.type = type
-    }
-}
-
-/**
- Model representing the
- */
-struct NoteContentModel {
-    var content: [NoteContentModelElement] = [];
-}
 
 /**
  Struct that represents an exported Apple Note
@@ -168,56 +110,6 @@ struct Note {
                 ],
                 documentAttributes: nil
             )
-            
-            // Hand back the attributed string
-            return attributedString
-        } catch {
-            print("Failed to convert note to NSAttributedString")
-        }
-        return NSMutableAttributedString()
-    }
-    
-    func toAttributedStringWithImages() -> NSAttributedString {
-        // Get the HTML content of the note
-        var htmlString = self.toHTMLString()
-        htmlString = htmlString.replacingOccurrences(of: "<img", with: "[ANE[img")
-        
-        do {
-            // Empty NSAttributedString
-            var attributedString: NSMutableAttributedString = NSMutableAttributedString()
-            // Set the NSAttributed string to the contents of the HTML output, converted to NSAttributedString
-            try attributedString = NSMutableAttributedString(
-                data: htmlString.data(using: .utf8) ?? Data(),
-                options: [
-                    .documentType: NSAttributedString.DocumentType.html,
-                    .characterEncoding: String.Encoding.utf8.rawValue
-                ],
-                documentAttributes: nil
-            )
-            
-            // Replace all Base64 images with NSAttributedString attachments
-            let imageTags = /(\[ANE\[img).*(src=")(.+?)(")(.+?)(>)/
-            let matches = attributedString.string.matches(of: imageTags)
-            for match in matches {
-                // The first part of the match is the image tag
-                let matchedTag = String(match.0)
-                // Get the SRC of the image
-                let imageSources = /src\s*=\s*"(.+?)"/
-                let imageSourceMatch = matchedTag.firstMatch(of: imageSources)!
-                let imageSource = String(imageSourceMatch.0).split(separator: /(")/)[1].split(separator: /(,)/)[1]
-                // Create an image
-                let imageAttachment = NSTextAttachment()
-                let imageData = Data(base64Encoded: imageSource.data(using: .utf8)!)!
-                let image: NSImage = NSImage(data: imageData)!
-                imageAttachment.image = image
-                let imageAttachmentString = NSAttributedString(attachment: imageAttachment)
-                // Get the position of the image tag text in the greater attributedString=
-                let imageTagPosition = attributedString.mutableString.range(of: matchedTag).lowerBound
-                // Replace the image text the matched tag in the greater attributedString to nothing
-                attributedString.mutableString.replaceOccurrences(of: matchedTag, with: "", range: NSRange(location: 0, length: attributedString.mutableString.length))
-                // Insert the image attachment string at the position of the old tag
-                attributedString.insert(imageAttachmentString, at: imageTagPosition)
-            }
             
             // Hand back the attributed string
             return attributedString
@@ -327,7 +219,7 @@ struct Note {
                     FileAttributeKey.modificationDate: modificationDate,
                 ]
                 do {
-                    try fileManager.setAttributes(attributes, ofItemAtPath: attachmentURL.path(percentEncoded: false))
+                    try fileManager.setAttributes(attributes, ofItemAtPath: attachmentURL.absoluteString)
                 } catch {
                     print(error)
                 }
@@ -340,50 +232,7 @@ struct Note {
             try? self.toHTMLString().data(using: .utf8)!
                 .write(to: outputFileURL)
         case "PDF":
-            // URL for the temportary HTML file
-            let tempHTMLFile = URL(string: outputFileURL.absoluteString + ".html")!
-            
-            // Export as HTML file
-            try? self.toHTMLString().data(using: .utf8)!
-                .write(to: tempHTMLFile)
-            
-            // WKHTMLtoPDF conversion of the above HTML file to a PDF file
-            WKHTMLtoPDF(input: tempHTMLFile, output: outputFileURL)
-            // Then cleanup by deleting the temporary file
-            do {
-                if FileManager.default.fileExists(atPath: tempHTMLFile.absoluteString) {
-                    try FileManager.default.removeItem(at: tempHTMLFile)
-                }
-            } catch {
-                print("\(error)")
-            }
-            
-            /*
-             ** OLD IMPLEMENTATION, functions as far
-             let attributedString = self.toAttributedString(images: true)
-             // Create PDF document
-             //   Dimensions:
-             //   8.5x11 (Letter) = 612 points wide X 792 points tall
-             var pageBox = CGRect(x: 0.0, y: 0.0, width: 612.0, height: 792.0)
-             let pdfContext = CGContext(outputFileURL as CFURL, mediaBox: &pageBox, nil)
-             // Create framesetter using the AttributedStrings
-             let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
-             
-             var pageRange = CFRange()
-             let textRange = CFRange(location: 0, length: attributedString.length)
-             let pageSize = CGSize(width: 468.0, height: 648.0)
-             CTFramesetterSuggestFrameSizeWithConstraints(framesetter, textRange, nil, pageSize, &pageRange)
-             
-             let pageRect = CGRect(x: 72.0, y: 72.0, width: 468.0, height: 648.0)
-             let framePath = CGPath(rect: pageRect, transform: nil)
-             let frame = CTFramesetterCreateFrame(framesetter, pageRange, framePath, nil)
-             
-             pdfContext?.beginPDFPage(nil)
-             CTFrameDraw(frame, pdfContext!)
-             pdfContext?.endPDFPage()
-             
-             pdfContext?.closePDF()
-             */
+            return
         case "RTFD":
             let attributedString = self.toAttributedString()
             try? attributedString.rtfd(
@@ -467,7 +316,7 @@ tags: \(self.tags.joined(separator: ", "))
             FileAttributeKey.modificationDate: self.modificationDate,
         ]
         do {
-            try fileManager.setAttributes(attributes, ofItemAtPath: outputFileURL.path(percentEncoded: false))
+            try fileManager.setAttributes(attributes, ofItemAtPath: outputFileURL.absoluteString)
         } catch {
             print(error)
         }
@@ -721,6 +570,9 @@ struct ContentView: View {
     @State private var showNoOutputSelectedAlert: Bool = false
     @State private var showErrorExportingAlert: Bool = false
     
+    // Get version number
+    let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    
     // Body of the ContentView
     let outputFormats: [String] = [
         "HTML",
@@ -750,11 +602,11 @@ struct ContentView: View {
                         Text($0)
                     }
                 }.labelsHidden().pickerStyle(.segmented)
-                Button {
-                    // open settings
-                } label: {
-                    Image(systemName: "gear")
-                }.disabled(true)
+                // Button {
+                //     // open settings
+                // } label: {
+                //     Image(systemName: "gear")
+                // }.disabled(true)
             }
             
             Text("Step 3: Select Output File Destination").font(.title).multilineTextAlignment(.leading).lineLimit(1)
@@ -776,11 +628,12 @@ struct ContentView: View {
             Button(action: {
                 exportNotes()
             }) {
-                Text("Export").frame(maxWidth: .infinity)
-            }.buttonStyle(.borderedProminent)
-                .disabled(!loaded)
+                Text("Export").frame(maxWidth: .infinity).font(.headline)
+            }
+            .buttonStyle(BorderedProminentButtonStyle())
+            .disabled(!loaded)
             
-            Text("Apple Notes Exporter v0.1 - Copyright © 2023 [Konstantin Zaremski](https://www.zaremski.com) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
+            Text("Apple Notes Exporter v\(appVersion!) - Copyright © 2024 [Konstantin Zaremski](https://www.zaremski.com) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
@@ -805,7 +658,24 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showProgressWindow) {
-            ExportProgressView()
+            VStack {
+                ProgressView {
+                    Text("Exporting")
+                    .bold()
+                }
+            }
+            .frame(width: 160.0, height: 120.0)
+            .allowsHitTesting(true)
+            .onAppear {
+                NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    // Check if the pressed key is the Escape key
+                    if event.keyCode == 53 {
+                        // Prevent the event from propagating, hence preventing dismissal
+                        return nil
+                    }
+                    return event
+                }
+            }
         }
         .alert(isPresented: $showNoOutputSelectedAlert) {
             Alert(
@@ -814,6 +684,17 @@ struct ContentView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+    }
+}
+
+struct BorderedProminentButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(8)
+            .foregroundColor(.white)
+            .background(configuration.isPressed ? Color.blue.opacity(0.8) : Color.blue)
+            .cornerRadius(6)
+            
     }
 }
 

@@ -7,9 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		253F59DD2A246D8E00E39EBB /* ExportProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253F59DC2A246D8E00E39EBB /* ExportProgressView.swift */; };
 		2573ECD22A5D843D008591E7 /* AppleScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2573ECD12A5D843D008591E7 /* AppleScript.swift */; };
-		258D3A9329A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9229A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift */; };
+		258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */; };
 		258D3A9529A7CC2E00858CE1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9429A7CC2E00858CE1 /* ContentView.swift */; };
 		258D3A9729A7CC2F00858CE1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 258D3A9629A7CC2F00858CE1 /* Assets.xcassets */; };
 		258D3A9A29A7CC2F00858CE1 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 258D3A9929A7CC2F00858CE1 /* Preview Assets.xcassets */; };
@@ -50,10 +49,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		253F59DC2A246D8E00E39EBB /* ExportProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportProgressView.swift; sourceTree = "<group>"; };
 		2573ECD12A5D843D008591E7 /* AppleScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScript.swift; sourceTree = "<group>"; };
 		258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Apple Notes Exporter.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		258D3A9229A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Apple_Notes_ExporterApp.swift; sourceTree = "<group>"; };
+		258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleNotesExporterApp.swift; sourceTree = "<group>"; };
 		258D3A9429A7CC2E00858CE1 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		258D3A9629A7CC2F00858CE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		258D3A9929A7CC2F00858CE1 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -115,12 +113,11 @@
 			isa = PBXGroup;
 			children = (
 				2596C4D52A1F1DEE00EFF4F3 /* Apple-Notes-Exporter-Info.plist */,
-				258D3A9229A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift */,
+				258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */,
 				258D3A9429A7CC2E00858CE1 /* ContentView.swift */,
 				258D3A9629A7CC2F00858CE1 /* Assets.xcassets */,
 				258D3A9B29A7CC2F00858CE1 /* Apple_Notes_Exporter.entitlements */,
 				258D3A9829A7CC2F00858CE1 /* Preview Content */,
-				253F59DC2A246D8E00E39EBB /* ExportProgressView.swift */,
 				2573ECD12A5D843D008591E7 /* AppleScript.swift */,
 			);
 			path = "Apple Notes Exporter";
@@ -287,8 +284,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				258D3A9529A7CC2E00858CE1 /* ContentView.swift in Sources */,
-				258D3A9329A7CC2E00858CE1 /* Apple_Notes_ExporterApp.swift in Sources */,
-				253F59DD2A246D8E00E39EBB /* ExportProgressView.swift in Sources */,
+				258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */,
 				2573ECD22A5D843D008591E7 /* AppleScript.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -377,7 +373,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -432,7 +428,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -449,10 +445,10 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter/Apple_Notes_Exporter.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = "";
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = Q7TB7B38LW;
@@ -468,8 +464,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -486,10 +482,10 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter/Apple_Notes_Exporter.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = "";
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = Q7TB7B38LW;
@@ -505,8 +501,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
