@@ -40,7 +40,7 @@ struct Note {
         dateFormatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm:ss a"
         dateFormatter.timeZone = TimeZone.current // Current offset
         // Return the converted output
-        return dateFormatter.date(from: inputString)!
+        return dateFormatter.date(from: inputString) ?? Date()
     }
     
     init(ID: String, title: String, content: String, creationDate: String, modificationDate: String, path: [String], attachments: [String], tags: [String]) {
