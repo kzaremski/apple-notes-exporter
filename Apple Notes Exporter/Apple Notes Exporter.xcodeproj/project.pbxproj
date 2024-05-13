@@ -7,9 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		2573ECD22A5D843D008591E7 /* AppleScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2573ECD12A5D843D008591E7 /* AppleScript.swift */; };
+		257242442BF1878B00BD9A67 /* note.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242432BF1878B00BD9A67 /* note.swift */; };
+		257242462BF18F7700BD9A67 /* utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242452BF18F7700BD9A67 /* utilities.swift */; };
+		2573ECD22A5D843D008591E7 /* script.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2573ECD12A5D843D008591E7 /* script.swift */; };
+		257E911D2BF26F030052606E /* export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257E911C2BF26F030052606E /* export.swift */; };
+		257E911F2BF26FC10052606E /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257E911E2BF26FC10052606E /* ExportView.swift */; };
+		257E91212BF26FD30052606E /* NoteSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257E91202BF26FD30052606E /* NoteSelectorView.swift */; };
 		258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */; };
-		258D3A9529A7CC2E00858CE1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9429A7CC2E00858CE1 /* ContentView.swift */; };
+		258D3A9529A7CC2E00858CE1 /* AppleNotesExporterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9429A7CC2E00858CE1 /* AppleNotesExporterView.swift */; };
 		258D3A9729A7CC2F00858CE1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 258D3A9629A7CC2F00858CE1 /* Assets.xcassets */; };
 		258D3A9A29A7CC2F00858CE1 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 258D3A9929A7CC2F00858CE1 /* Preview Assets.xcassets */; };
 		258D3AA529A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3AA429A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift */; };
@@ -49,10 +54,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		2573ECD12A5D843D008591E7 /* AppleScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScript.swift; sourceTree = "<group>"; };
+		257242432BF1878B00BD9A67 /* note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = note.swift; sourceTree = "<group>"; };
+		257242452BF18F7700BD9A67 /* utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = utilities.swift; sourceTree = "<group>"; };
+		2573ECD12A5D843D008591E7 /* script.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = script.swift; sourceTree = "<group>"; };
+		257E911C2BF26F030052606E /* export.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = export.swift; sourceTree = "<group>"; };
+		257E911E2BF26FC10052606E /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
+		257E91202BF26FD30052606E /* NoteSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteSelectorView.swift; sourceTree = "<group>"; };
 		258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Apple Notes Exporter.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleNotesExporterApp.swift; sourceTree = "<group>"; };
-		258D3A9429A7CC2E00858CE1 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		258D3A9429A7CC2E00858CE1 /* AppleNotesExporterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleNotesExporterView.swift; sourceTree = "<group>"; };
 		258D3A9629A7CC2F00858CE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		258D3A9929A7CC2F00858CE1 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		258D3A9B29A7CC2F00858CE1 /* Apple_Notes_Exporter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Apple_Notes_Exporter.entitlements; sourceTree = "<group>"; };
@@ -114,11 +124,16 @@
 			children = (
 				2596C4D52A1F1DEE00EFF4F3 /* Apple-Notes-Exporter-Info.plist */,
 				258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */,
-				258D3A9429A7CC2E00858CE1 /* ContentView.swift */,
+				258D3A9429A7CC2E00858CE1 /* AppleNotesExporterView.swift */,
 				258D3A9629A7CC2F00858CE1 /* Assets.xcassets */,
 				258D3A9B29A7CC2F00858CE1 /* Apple_Notes_Exporter.entitlements */,
 				258D3A9829A7CC2F00858CE1 /* Preview Content */,
-				2573ECD12A5D843D008591E7 /* AppleScript.swift */,
+				2573ECD12A5D843D008591E7 /* script.swift */,
+				257242432BF1878B00BD9A67 /* note.swift */,
+				257242452BF18F7700BD9A67 /* utilities.swift */,
+				257E911C2BF26F030052606E /* export.swift */,
+				257E911E2BF26FC10052606E /* ExportView.swift */,
+				257E91202BF26FD30052606E /* NoteSelectorView.swift */,
 			);
 			path = "Apple Notes Exporter";
 			sourceTree = "<group>";
@@ -283,9 +298,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				258D3A9529A7CC2E00858CE1 /* ContentView.swift in Sources */,
+				257242462BF18F7700BD9A67 /* utilities.swift in Sources */,
+				257242442BF1878B00BD9A67 /* note.swift in Sources */,
+				258D3A9529A7CC2E00858CE1 /* AppleNotesExporterView.swift in Sources */,
+				257E91212BF26FD30052606E /* NoteSelectorView.swift in Sources */,
+				257E911D2BF26F030052606E /* export.swift in Sources */,
 				258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */,
-				2573ECD22A5D843D008591E7 /* AppleScript.swift in Sources */,
+				2573ECD22A5D843D008591E7 /* script.swift in Sources */,
+				257E911F2BF26FC10052606E /* ExportView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -448,7 +468,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = Q7TB7B38LW;
@@ -465,7 +485,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
-				MARKETING_VERSION = 0.2;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -485,7 +505,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = Q7TB7B38LW;
@@ -502,7 +522,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
-				MARKETING_VERSION = 0.2;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

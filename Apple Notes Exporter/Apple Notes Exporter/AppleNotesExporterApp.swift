@@ -7,6 +7,21 @@
 
 import SwiftUI
 
+let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+let OUTPUT_FORMATS: [String] = [
+    "PDF",
+    "HTML",
+    "TEX",
+    "MD",
+    "RTF",
+    "TXT",
+]
+let OUTPUT_TYPES: [String] = [
+    "Folder",
+    "TAR Archive",
+    "ZIP Archive",
+]
+
 extension Scene {
     func windowResizabilityContentSize() -> some Scene {
         if #available(macOS 13.0, *) {
@@ -17,13 +32,26 @@ extension Scene {
     }
 }
 
+class AppDelegate: NSObject, NSApplicationDelegate {    
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
+    }
+}
+
+class AppleNotesExporterData {
+    static var accounts: [NoteAccount] = []
+}
+
 @main
 struct Apple_Notes_ExporterApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
     var body: some Scene {
-        WindowGroup {
-            ContentView().onAppear {
+        WindowGroup(id: "main") {
+            AppleNotesExporterView().onAppear {
                 NSWindow.allowsAutomaticWindowTabbing = false
             }
+            
         }
         .commands {
             CommandGroup(replacing: .newItem, addition: { })
