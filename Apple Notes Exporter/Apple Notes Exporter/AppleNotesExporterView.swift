@@ -162,13 +162,7 @@ struct AppleNotesExporterView: View {
         .frame(width: 500.0, height: 340.0)
         .padding(10.0)
         .onAppear() {
-            let accounts = AppleNotesScriptLayer.getAllAccounts()
-            print(accounts)
-            for account in accounts {
-                let accountName = AppleNotesScriptLayer.getAccountName(xid: account)
-                print("\(account) -- \(accountName)")
-            }
-            print(AppleNotesScriptLayer.getAccountNotes(xid: "x-coredata://52C0C5E5-8726-4ABB-9AD7-96BEC5184BDC/ICAccount/p2158"))
+            
         }
         .sheet(isPresented: $showProgressWindow) {
             VStack {
