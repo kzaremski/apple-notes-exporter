@@ -51,12 +51,11 @@ struct SelectorLineItem: View {
 }
 
 struct NoteSelectorView: View {
+    @Binding var data: [ICItem]
     @Binding var showNoteSelectorView: Bool
     @Binding var selectedNotesCount: Int
     @Binding var fromAccountsCount: Int
     @Binding var initialLoadComplete: Bool
-    
-    @State var data = AppleNotesExporterData.root
     
     var body: some View {
         VStack {
@@ -70,6 +69,9 @@ struct NoteSelectorView: View {
                         if data.count > 0 {
                             OutlineGroup(data, children: \.children) { item in
                                 SelectorLineItem(item: item)
+                            }
+                            .onAppear {
+                                self.data = AppleNotesExporterData.root
                             }
                         } else {
                             Text("No notes or note accounts were found!")
@@ -92,11 +94,6 @@ struct NoteSelectorView: View {
                 
                 Button {
                     showNoteSelectorView = false
-                } label: {
-                    Text("Cancel")
-                }
-                Button {
-                    //
                 } label: {
                     Text("Done")
                 }

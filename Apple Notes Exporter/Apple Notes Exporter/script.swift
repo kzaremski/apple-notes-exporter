@@ -112,8 +112,28 @@ struct AppleNotesScriptLayer {
         }
     }
     
+    static func getFolderName(xid: String) -> String {
+        let output = AppleScript.stringOutput(
+            """
+            tell application id "com.apple.Notes"
+                return name of folder id "\(xid)"
+            end tell
+            """
+        );
+        
+        return output
+    }
+    
     static func getNoteName(xid: String) -> String {
-        return ""
+        let output = AppleScript.stringOutput(
+            """
+            tell application id "com.apple.Notes"
+                return name of note id "\(xid)"
+            end tell
+            """
+        );
+        
+        return output
     }
     
     static func getNoteLockedStatus(xid: String) -> Bool {
@@ -138,5 +158,17 @@ struct AppleNotesScriptLayer {
     
     static func getNotePath(xid: String) -> String {
         return ""
+    }
+    
+    static func getAttachmentName(xid: String) -> String {
+        let output = AppleScript.stringOutput(
+            """
+            tell application id "com.apple.Notes"
+                return name of attachment id "\(xid)"
+            end tell
+            """
+        );
+        
+        return output
     }
 }

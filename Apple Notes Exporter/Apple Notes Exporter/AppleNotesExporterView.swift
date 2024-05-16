@@ -78,6 +78,8 @@ struct AppleNotesExporterView: View {
     // ** State
     // If the initial load is complete
     @State private var initialLoadComplete: Bool = false
+    // Data
+    @State private var dataRoot: [ICItem] = AppleNotesExporterData.root
     // How many notes from how many accounts
     @State private var selectedNotesCount: Int = 0
     @State private var fromAccountsCount: Int = 0
@@ -167,6 +169,7 @@ struct AppleNotesExporterView: View {
             DispatchQueue.global(qos: .userInitiated).async {
                 self.initialLoadComplete = false
                 initialLoad()
+                self.dataRoot = AppleNotesExporterData.root
                 self.initialLoadComplete = true
             }
         }
@@ -199,6 +202,7 @@ struct AppleNotesExporterView: View {
         }
         .sheet(isPresented: $showNoteSelectorView) {
             NoteSelectorView(
+                data: $dataRoot,
                 showNoteSelectorView: $showNoteSelectorView,
                 selectedNotesCount: $selectedNotesCount,
                 fromAccountsCount: $fromAccountsCount,

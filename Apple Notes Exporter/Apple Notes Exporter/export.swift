@@ -58,11 +58,12 @@ func initialLoad() {
     let accounts = AppleNotesScriptLayer.getAllAccounts()
     for accountXID in accounts {
         var ICAccount = ICItem(xid: accountXID)
-        ICAccount.name = accountXID
+        ICAccount.loadName()
         let notes = AppleNotesScriptLayer.getAccountNotes(xid: accountXID)
+        var i = 1;
         for noteXID in notes {
             var ICNote = ICItem(xid: noteXID)
-            ICNote.name = noteXID
+            ICNote.loadName()
             ICAccount.appendChild(child: ICNote)
         }
         AppleNotesExporterData.root.append(ICAccount)

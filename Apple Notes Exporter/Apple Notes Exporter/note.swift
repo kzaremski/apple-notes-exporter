@@ -91,4 +91,19 @@ struct ICItem: Identifiable, Hashable, CustomStringConvertible {
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
+    
+    mutating func loadName() {
+        switch type {
+        case .ICAccount:
+            self.name = AppleNotesScriptLayer.getAccountName(xid: self.xid)
+        case .ICFolder:
+            self.name = AppleNotesScriptLayer.getFolderName(xid: self.xid)
+        case .ICNote:
+            self.name = AppleNotesScriptLayer.getNoteName(xid: self.xid)
+        case .ICAttachment:
+            self.name = AppleNotesScriptLayer.getAttachmentName(xid: self.xid)
+        case .Invalid:
+            self.name = self.xid
+        }
+    }
 }
