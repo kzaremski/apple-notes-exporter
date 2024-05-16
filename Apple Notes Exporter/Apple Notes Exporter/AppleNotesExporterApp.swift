@@ -39,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 class AppleNotesExporterData {
-    static var accounts: [NoteAccount] = []
+    static var root: [ICItem] = []
 }
 
 @main

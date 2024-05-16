@@ -28,47 +28,65 @@ struct LoaderLine: View {
     }
 }
 
+struct SelectorLineItem: View {
+    @State var item: ICItem
+    @State var selected: Bool = false
+    
+    init(item: ICItem) {
+        self.item = item
+        self.selected = item.selected
+    }
+    
+    var body: some View {
+        HStack {
+            Image(systemName: item.icon).padding([.leading], 5).frame(width: 20)
+            Text("\(item.description)").frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(1) // Limit the text to one line
+                .truncationMode(.tail)
+            Toggle("", isOn: $selected)
+                .toggleStyle(.checkbox)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct NoteSelectorView: View {
     @Binding var showNoteSelectorView: Bool
     @Binding var selectedNotesCount: Int
     @Binding var fromAccountsCount: Int
+    @Binding var initialLoadComplete: Bool
     
-    let items = ["Item 1", "Item 2", "Item 3", "Item 4", "Item 5"] // Example items
+    @State var data = AppleNotesExporterData.root
     
     var body: some View {
         VStack {
-            Text("Select the accounts and foldes that you would like to include in the export.")
+            Text("Select the accounts, folders, and notes that you would like to include in the export.")
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
             
             VStack {
                 List {
-                    ForEach(items, id: \.self) { item in
-                        HStack {
-                            Image(systemName: "globe")
-                            Text(item)
-                        }
-                    }
-                    List {
-                        ForEach(items, id: \.self) { item in
-                            HStack {
-                                Image(systemName: "globe")
-                                Text(item)
+                    if (initialLoadComplete) {
+                        if data.count > 0 {
+                            OutlineGroup(data, children: \.children) { item in
+                                SelectorLineItem(item: item)
                             }
+                        } else {
+                            Text("No notes or note accounts were found!")
                         }
+                    } else {
+                        LoaderLine(label: "Querying Apple Notes for accounts, this may take a few minutes...")
                     }
-                    LoaderLine(label: "Querying Apple Notes for accounts...")
                 }
-                //.listStyle(PlainListStyle())
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxHeight: .infinity, alignment: .leading)
             .border(Color.gray, width: 1)
             .padding([.top, .bottom], 5)
-                   
+            
             HStack {
                 HStack {
+                    Image(systemName: "info.circle")
                     Text("Notes that are locked with a password cannot be exported.")
-                
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 

@@ -58,3 +58,13 @@ func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
         }
     }
 }
+
+func appleDateStringToDate(inputString: String) -> Date {
+    // DateFormatter based on Apple's format
+    //   eg. Monday, June 21, 2021 at 10:40:09 PM
+    let dateFormatter = DateFormatter()
+    dateFormatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm:ss a"
+    dateFormatter.timeZone = TimeZone.current // Current offset
+    // Return the converted output
+    return dateFormatter.date(from: inputString) ?? Date()
+}
