@@ -7,6 +7,15 @@
 
 import Foundation
 
+func toFixed(_ number: Double, _ fractionDigits: Int) -> String {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.minimumFractionDigits = fractionDigits
+    formatter.maximumFractionDigits = fractionDigits
+    
+    return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
+}
+
 func sanitizeFileNameString(inputFilename: String, outputFormat: String) -> String {
     // Define CharacterSet of invalid characters which we will remove from the filenames
     var invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")

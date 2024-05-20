@@ -38,8 +38,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-class AppleNotesExporterData {
-    static var root: [ICItem] = []
+class AppleNotesExporterState: ObservableObject {
+    @Published var root: [ICItem] = []
+    @Published var allNotes: [ICItem] = []
+    @Published var initialLoadMessage: String = "Loading..."
 }
 
 @main

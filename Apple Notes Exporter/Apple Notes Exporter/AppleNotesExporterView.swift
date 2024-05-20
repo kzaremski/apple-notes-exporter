@@ -79,7 +79,7 @@ struct AppleNotesExporterView: View {
     // If the initial load is complete
     @State private var initialLoadComplete: Bool = false
     // Data
-    @State private var dataRoot: [ICItem] = AppleNotesExporterData.root
+    @ObservedObject private var sharedState = AppleNotesExporterState()
     // How many notes from how many accounts
     @State private var selectedNotesCount: Int = 0
     @State private var fromAccountsCount: Int = 0
@@ -126,7 +126,7 @@ struct AppleNotesExporterView: View {
                 // }.disabled(true)
             }
             
-            Text("Step 3: Select Destination").font(.title).multilineTextAlignment(.leading).lineLimit(1)
+            Text("Step 3: Set Destination").font(.title).multilineTextAlignment(.leading).lineLimit(1)
             Picker("Output", selection: $outputType.onChange(resetOutputPath)) {
                 ForEach(OUTPUT_TYPES, id: \.self) {
                     Text($0)
@@ -168,8 +168,7 @@ struct AppleNotesExporterView: View {
         .onAppear() {
             DispatchQueue.global(qos: .userInitiated).async {
                 self.initialLoadComplete = false
-                initialLoad()
-                self.dataRoot = AppleNotesExporterData.root
+                initialLoad(sharedState: sharedState)
                 self.initialLoadComplete = true
             }
         }
@@ -202,7 +201,7 @@ struct AppleNotesExporterView: View {
         }
         .sheet(isPresented: $showNoteSelectorView) {
             NoteSelectorView(
-                data: $dataRoot,
+                sharedState: sharedState,
                 showNoteSelectorView: $showNoteSelectorView,
                 selectedNotesCount: $selectedNotesCount,
                 fromAccountsCount: $fromAccountsCount,

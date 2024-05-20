@@ -51,7 +51,7 @@ struct SelectorLineItem: View {
 }
 
 struct NoteSelectorView: View {
-    @Binding var data: [ICItem]
+    @ObservedObject var sharedState: AppleNotesExporterState
     @Binding var showNoteSelectorView: Bool
     @Binding var selectedNotesCount: Int
     @Binding var fromAccountsCount: Int
@@ -66,20 +66,43 @@ struct NoteSelectorView: View {
             VStack {
                 List {
                     if (initialLoadComplete) {
-                        if data.count > 0 {
-                            OutlineGroup(data, children: \.children) { item in
+                        if sharedState.root.count > 0 {
+                            OutlineGroup(sharedState.root, children: \.children) { item in
                                 SelectorLineItem(item: item)
-                            }
-                            .onAppear {
-                                self.data = AppleNotesExporterData.root
                             }
                         } else {
                             Text("No notes or note accounts were found!")
                         }
                     } else {
-                        LoaderLine(label: "Querying Apple Notes for accounts, this may take a few minutes...")
+                        LoaderLine(label: sharedState.initialLoadMessage)
+                        if false {
+                            HStack {
+                                VStack {
+                                    Image(systemName: "info.circle")
+                                }.frame(maxHeight: .infinity, alignment: .top)
+                                
+                                VStack {
+                                    Text("If you have a very large notes library querying them can take a long time. If you just want to select accounts and folders, you can skip querying notes for their details. Notes will still appear in the selector, but will have their ID in place of their titles. Skipping this initial query will not affect export time.")
+                                        .multilineTextAlignment(.leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .lineLimit(nil)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                            }
+                            .frame(maxHeight: .infinity, alignment: .leading)
+                            
+                            Button {
+                                //showNoteSelectorView = false
+                            } label: {
+                                Text("Skip Note Query")
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                            .padding([.leading], 20)
+                            .padding([.top], 10)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
             .frame(maxHeight: .infinity, alignment: .leading)
             .border(Color.gray, width: 1)
