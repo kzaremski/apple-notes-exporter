@@ -24,6 +24,12 @@ extension Binding {
     }
 }
 
+extension UTType {
+    static var tar: UTType {
+        UTType(exportedAs: "public.tar-archive", conformingTo: .data)
+    }
+}
+
 struct AppleNotesExporterView: View {
     @Environment(\.openURL) var openURL
 
@@ -33,12 +39,19 @@ struct AppleNotesExporterView: View {
     }
     
     func triggerExportNotes() {
-        // Validate
-        if outputPath == "" {
-            showNoOutputSelectedAlert = true
+        // ** Validate
+        // No notes selected
+        if self.sharedState.selectedNotesCount == 0 {
+            self.activeAlert = .noneSelected
+            self.showAlert = true
             return
         }
-        
+        // No output folder or file chosen
+        if self.outputPath == "" {
+            self.activeAlert = .noOutput
+            self.showAlert = true
+            return
+        }
         
         // Show the progress window
         setProgressWindow(state: true)
@@ -55,24 +68,47 @@ struct AppleNotesExporterView: View {
     }
     
     /**
-     Select the output file location. It is a ZIP file in the directory of the user's choosing.
+     Select the output file or folder location.
      */
-    func selectOutputFile() {
-        let savePanel = NSSavePanel()
-        // Default file name of something like:   Apple Notes Export 2023-05-25.zip
-        savePanel.allowedContentTypes = [UTType.zip]
-        //savePanel.nameFieldStringValue = "Apple Notes Export " + ISO8601DateFormatter().string(from: Date()).split(separator: "T")[0] + ".zip"
-        savePanel.nameFieldStringValue = "applenotes.zip"
-        
-        if savePanel.runModal() == .OK, let exportURL = savePanel.url {
-            self.outputURL = exportURL
-            self.outputPath = exportURL.path as String
+    func selectOutputDestination() {
+        if outputType == "Folder" {
+            let openPanel = NSOpenPanel()
+            
+            openPanel.canChooseDirectories = true
+            openPanel.canCreateDirectories = true
+            openPanel.canChooseFiles = false
+            openPanel.prompt = "Select Folder"
+
+            if openPanel.runModal() == .OK, let exportURL = openPanel.url {
+                self.outputURL = exportURL
+                self.outputPath = exportURL.path as String
+            }
+        } else {
+            let savePanel = NSSavePanel()
+            
+            if self.outputType == "ZIP Archive" {
+                savePanel.allowedContentTypes = [UTType.zip]
+                savePanel.nameFieldStringValue = "applenotes.zip"
+            } else if self.outputType == "TAR Archive" {
+                savePanel.allowedContentTypes = [UTType.tar]
+                savePanel.nameFieldStringValue = "applenotes.tar"
+            }
+            
+            if savePanel.runModal() == .OK, let exportURL = savePanel.url {
+                self.outputURL = exportURL
+                self.outputPath = exportURL.path as String
+            }
         }
     }
     
     func resetOutputPath(newOutputType: String) {
         self.outputURL = nil;
         self.outputPath = "";
+    }
+    
+    private enum ActiveAlert {
+        case noneSelected
+        case noOutput
     }
     
     // ** State
@@ -88,8 +124,9 @@ struct AppleNotesExporterView: View {
     // Show/hide different views
     @State private var showNoteSelectorView: Bool = false
     @State private var showProgressWindow: Bool = false
-    @State private var showNoOutputSelectedAlert: Bool = false
     @State private var showErrorExportingAlert: Bool = false
+    @State private var showAlert: Bool = false
+    @State private var activeAlert: ActiveAlert = .noneSelected
     
     // Body of the ContentView
     var body: some View {
@@ -140,7 +177,7 @@ struct AppleNotesExporterView: View {
                         (outputType == "Folder" ? "Select output folder" : "Select output file location")
                 ).frame(maxWidth: .infinity, alignment: .leading)
                 Button {
-                    selectOutputFile()
+                    selectOutputDestination()
                 } label: {
                     Text("Select")
                 }.padding(.top, 7.0)
@@ -190,12 +227,22 @@ struct AppleNotesExporterView: View {
                 }
             }
         }
-        .alert(isPresented: $showNoOutputSelectedAlert) {
-            Alert(
-                title: Text("No Output Location Chosen"),
-                message: Text("Please choose the location for the archive file or folder that will contain the exported Apple Notes."),
-                dismissButton: .default(Text("OK"))
-            )
+        .alert(isPresented: $showAlert) {
+            switch self.activeAlert {
+            case .noneSelected:
+                Alert(
+                    title: Text("No Notes Selected for Export"),
+                    message: Text("Please select at least one note that you would like to export."),
+                    dismissButton: .default(Text("OK"))
+                )
+            case .noOutput:
+                Alert(
+                    title: Text("No Output Location Chosen"),
+                    message: Text("Please choose the location for the archive file or folder that will contain the exported Apple Notes."),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
+            
         }
         .sheet(isPresented: $showNoteSelectorView) {
             NoteSelectorView(

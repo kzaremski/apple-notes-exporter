@@ -17,18 +17,22 @@ enum ICItemType {
 }
 
 class ICItem: Identifiable, Hashable, CustomStringConvertible {
-    let id: UUID                    // UUID for identification within OutlineGroups
-    var type: ICItemType            // Type of the ICItem (ICAccount, ICFolder, ICNote, ICAttachment)
-    var children: [ICItem]? = nil   // Children (if this ICItem can have children)
-    var selected: Bool              // If the item is selected for exporting
-    var proportionSelected: Float   // Proportion of the item that is selected
-    var xid: String                 // XID of the ICItem itself
-    var container: String           // XID of the ICItem's parent container (parent ICItem)
-    var account: String             // XID of the account that owns this ICItem
-    var name: String                // Name of the ICItem (eg. title of note, folder name, account name)
-    var creationDate: Date          // Date of creation (if applicable)
-    var modificationDate: Date      // Date of last modification (if applicable)
-    var content: String             // Body/content of the item (if applicable)
+    let id: UUID                            // UUID for identification within OutlineGroups
+    var xid: String                         // XID of the ICItem itself
+    var type: ICItemType                    // Type of the ICItem (ICAccount, ICFolder, ICNote, ICAttachment)
+    var children: [ICItem]? = nil           // Children (if this ICItem can have children)
+    var selected: Bool = false              // If the item is selected for exporting
+    var proportionSelected: Float = 0.0     // Proportion of the item that is selected
+    var container: String = ""              // XID of the ICItem's parent container (parent ICItem)
+    var account: String = ""                // XID of the account that owns this ICItem
+    var name: String = ""                   // Name of the ICItem (eg. title of note, folder name, account name)
+    var creationDate: Date = Date()         // Date of creation (if applicable)
+    var modificationDate: Date = Date()     // Date of last modification (if applicable)
+    var content: String = ""                // Body/content of the item (if applicable)
+    var pending: Bool = false               // Flag for if the note is pending exporting
+    var loaded: Bool = false                // Flag for if the note is completely loaded
+    var exported: Bool = false              // Flag for if the main note content has been exported to an output file
+    var attachmentsExported: Bool = false   // Flag for if the note's attachments have been exported
     
     init(xid: String) {
         self.id = UUID()
@@ -46,14 +50,6 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
             self.type = .Invalid
             print("Warning: This XID did not yield a clue as to what kind of object it is: \(xid)")
         }
-        self.selected = false
-        self.container = ""
-        self.name = ""
-        self.content = ""
-        self.creationDate = Date()
-        self.modificationDate = Date()
-        self.proportionSelected = 0.0
-        self.account = ""
     }
     
     /**

@@ -42,6 +42,7 @@ class AppleNotesExporterState: ObservableObject {
     @Published var root: [ICItem] = []
     @Published var itemByXID: [String:ICItem] = [:]
     @Published var allNotes: [ICItem] = []
+    
     @Published var initialLoadMessage: String = "Loading..."
     
     @Published var selectedNotesCount: Int = 0
@@ -51,7 +52,7 @@ class AppleNotesExporterState: ObservableObject {
     
     func update() {
         // Update the proportion selected for all items
-        for (key, value) in itemByXID {
+        for (_, value) in itemByXID {
             // Update the proportion selected
             value.updateProportionSelected()
         }
