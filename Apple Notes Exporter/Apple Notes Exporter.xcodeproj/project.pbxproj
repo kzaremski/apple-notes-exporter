@@ -20,7 +20,6 @@
 		258D3AA529A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3AA429A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift */; };
 		258D3AAF29A7CC2F00858CE1 /* Apple_Notes_ExporterUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3AAE29A7CC2F00858CE1 /* Apple_Notes_ExporterUITests.swift */; };
 		258D3AB129A7CC2F00858CE1 /* Apple_Notes_ExporterUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3AB029A7CC2F00858CE1 /* Apple_Notes_ExporterUITestsLaunchTests.swift */; };
-		25EB77202BFA9E2600A35E62 /* ScriptingBridge.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 25EB771F2BFA9E2600A35E62 /* ScriptingBridge.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -81,7 +80,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				25EB77202BFA9E2600A35E62 /* ScriptingBridge.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

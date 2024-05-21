@@ -40,8 +40,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 class AppleNotesExporterState: ObservableObject {
     @Published var root: [ICItem] = []
+    @Published var itemByXID: [String:ICItem] = [:]
     @Published var allNotes: [ICItem] = []
     @Published var initialLoadMessage: String = "Loading..."
+    
+    @Published var stateHash: UUID = UUID()
+    
+    func update() {
+        // Update the proportion selected for all items
+        for (key, value) in itemByXID {
+            // Update the proportion selected
+            value.updateProportionSelected()
+        }
+        // Update the stateHash, which forces re-renders
+        self.stateHash = UUID()
+    }
+    
+    func findItem(xid: String) -> ICItem? {
+        // For each account in the root
+        for item in root {
+            // Check if the current item's xid matches the desired xid
+            if item.xid == xid {
+                return item
+            }
+            // Check if the current item's children contain the desired xid
+            if let found = item.find(xid: xid) {
+                return found
+            }
+        }
+        
+        // Return nil if nothing found
+        return nil
+    }
 }
 
 @main

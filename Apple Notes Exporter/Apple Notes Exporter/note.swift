@@ -20,7 +20,8 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
     let id: UUID                    // UUID for identification within OutlineGroups
     var type: ICItemType            // Type of the ICItem (ICAccount, ICFolder, ICNote, ICAttachment)
     var children: [ICItem]? = nil   // Children (if this ICItem can have children)
-    var selected: Bool = false      // If the ICItem is selected for exporting
+    var selected: Bool              // If the item is selected for exporting
+    var proportionSelected: Float   // Proportion of the item that is selected
     var xid: String                 // XID of the ICItem itself
     var container: String           // XID of the ICItem's parent container (parent ICItem)
     var name: String                // Name of the ICItem (eg. title of note, folder name, account name)
@@ -50,6 +51,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         self.content = ""
         self.creationDate = Date()
         self.modificationDate = Date()
+        self.proportionSelected = 0.0
     }
     
     /**
@@ -120,6 +122,62 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         case .Invalid:
             self.container = ""
         }
+    }
+    
+    func updateProportionSelected() {
+        switch type {
+        case .ICAccount, .ICFolder:
+            // Not selectable if there are no children
+            if self.children == nil {
+                self.proportionSelected = 0.0
+            }
+            // Proportion selected (proportion of each item x in children / number of children)
+            var x: Float = 0.0
+            let n: Int = self.children!.count
+            // Total up x
+            for item in children! {
+                item.updateProportionSelected()
+                x += item.proportionSelected
+            }
+            // Calculate the proportion
+            let p: Float = Float(x) / Float(n)
+            self.proportionSelected = p
+        case .ICNote:
+            self.proportionSelected = self.selected ? 1.0 : 0.0
+        case .ICAttachment:
+            self.proportionSelected = 0.0
+        case .Invalid:
+            self.proportionSelected = 0.0
+        }
+    }
+    
+    func toggleSelected(to: Bool? = nil) {
+        // Get the proportion selected
+        self.updateProportionSelected()
+        
+        // Decide if we should select all or select none
+        let newSelected: Bool = (to != nil ? to! : self.proportionSelected != 1.0)
+        
+        switch type {
+        case .ICAccount, .ICFolder:
+            // Not selectable if there are no children
+            if self.children == nil {
+                self.selected = false
+            }
+            // Toggle all sub-items
+            for item in self.children! {
+                item.toggleSelected(to: newSelected)
+            }
+        case .ICNote:
+            self.selected = newSelected
+        case .ICAttachment:
+            break
+        case .Invalid:
+            break
+        }
+        
+        // Update the proportion selected
+        self.updateProportionSelected()
     }
     
     /**

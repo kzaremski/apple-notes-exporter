@@ -29,22 +29,43 @@ struct LoaderLine: View {
 }
 
 struct SelectorLineItem: View {
-    @State var item: ICItem
-    @State var selected: Bool = false
+    @ObservedObject var sharedState: AppleNotesExporterState
+    var itemXID: String
     
-    init(item: ICItem) {
-        self.item = item
-        self.selected = item.selected
+    private func getImage(level: Float) -> String {
+        if level == 1.0 {
+            return "checkmark.square"
+        } else if level == 0.0 {
+            return "square"
+        } else {
+            return "minus.square"
+        }
+    }
+    
+    func toggleSelected() {
+        self.sharedState.itemByXID[itemXID]!.toggleSelected()
+        self.sharedState.update()
+    }
+    
+    init(sharedState: AppleNotesExporterState, itemXID: String) {
+        self.sharedState = sharedState
+        self.itemXID = itemXID
     }
     
     var body: some View {
         HStack {
-            Image(systemName: item.icon).padding([.leading], 5).frame(width: 20)
-            Text("\(item.description)").frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: self.sharedState.itemByXID[itemXID]!.icon).padding([.leading], 5).frame(width: 20)
+            Text("\(self.sharedState.itemByXID[itemXID]!.description)").frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1) // Limit the text to one line
                 .truncationMode(.tail)
-            Toggle("", isOn: $selected)
-                .toggleStyle(.checkbox)
+            
+            Button {
+                toggleSelected()
+            } label: {
+                Image(systemName: getImage(level: self.sharedState.itemByXID[itemXID]!.proportionSelected)).padding([.leading], 5).frame(width: 23)
+            }
+            .buttonStyle(BorderlessButtonStyle())
+            
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -68,7 +89,7 @@ struct NoteSelectorView: View {
                     if (initialLoadComplete) {
                         if sharedState.root.count > 0 {
                             OutlineGroup(sharedState.root, children: \.children) { item in
-                                SelectorLineItem(item: item)
+                                SelectorLineItem(sharedState: sharedState, itemXID: item.xid)
                             }
                         } else {
                             Text("No notes or note accounts were found!")
