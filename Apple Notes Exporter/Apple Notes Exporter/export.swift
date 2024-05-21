@@ -129,6 +129,7 @@ func initialLoad(sharedState: AppleNotesExporterState) {
             let note = ICItem(xid: current["xid"]!)
             note.name = current["name"]!
             note.container = current["container"]!
+            note.account = account.xid
             
             // Store the note against its XID
             itemByXID[note.xid] = note
@@ -141,6 +142,7 @@ func initialLoad(sharedState: AppleNotesExporterState) {
                 let newItem = ICItem(xid: item.container)
                 newItem.loadName()
                 newItem.loadContainer()
+                newItem.account = account.xid
                 // Add the current item as a child of the parent folder (new item)
                 newItem.appendChild(child: item)
                 

@@ -80,9 +80,6 @@ struct AppleNotesExporterView: View {
     @State private var initialLoadComplete: Bool = false
     // Data
     @ObservedObject private var sharedState = AppleNotesExporterState()
-    // How many notes from how many accounts
-    @State private var selectedNotesCount: Int = 0
-    @State private var fromAccountsCount: Int = 0
     // Preferences
     @State private var outputFormat = "HTML"
     @State private var outputPath: String = ""
@@ -102,7 +99,8 @@ struct AppleNotesExporterView: View {
                 .multilineTextAlignment(.leading).lineLimit(1)
             HStack() {
                 Image(systemName: "list.bullet.clipboard")
-                Text("0 notes from 0 accounts").frame(maxWidth: .infinity, alignment: .leading)
+                Text("\(self.sharedState.selectedNotesCount) note\(self.sharedState.selectedNotesCount == 1 ? "" : "s") from \(self.sharedState.fromAccountsCount) account\(self.sharedState.fromAccountsCount == 1 ? "" : "s")")
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button {
                     showNoteSelectorView = true
                 } label: {
@@ -203,8 +201,6 @@ struct AppleNotesExporterView: View {
             NoteSelectorView(
                 sharedState: sharedState,
                 showNoteSelectorView: $showNoteSelectorView,
-                selectedNotesCount: $selectedNotesCount,
-                fromAccountsCount: $fromAccountsCount,
                 initialLoadComplete: $initialLoadComplete
             ).frame(width: 600, height: 400)
         }

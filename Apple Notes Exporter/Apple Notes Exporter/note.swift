@@ -24,6 +24,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
     var proportionSelected: Float   // Proportion of the item that is selected
     var xid: String                 // XID of the ICItem itself
     var container: String           // XID of the ICItem's parent container (parent ICItem)
+    var account: String             // XID of the account that owns this ICItem
     var name: String                // Name of the ICItem (eg. title of note, folder name, account name)
     var creationDate: Date          // Date of creation (if applicable)
     var modificationDate: Date      // Date of last modification (if applicable)
@@ -52,6 +53,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         self.creationDate = Date()
         self.modificationDate = Date()
         self.proportionSelected = 0.0
+        self.account = ""
     }
     
     /**

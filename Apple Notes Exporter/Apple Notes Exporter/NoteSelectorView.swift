@@ -7,13 +7,6 @@
 
 import SwiftUI
 
-struct MenuItem: Identifiable {
-    var id = UUID()
-    var name: String
-    var image: String
-    var subMenuItems: [MenuItem]?
-}
-
 struct LoaderLine: View {
     let label: String
     
@@ -74,8 +67,6 @@ struct SelectorLineItem: View {
 struct NoteSelectorView: View {
     @ObservedObject var sharedState: AppleNotesExporterState
     @Binding var showNoteSelectorView: Bool
-    @Binding var selectedNotesCount: Int
-    @Binding var fromAccountsCount: Int
     @Binding var initialLoadComplete: Bool
     
     var body: some View {

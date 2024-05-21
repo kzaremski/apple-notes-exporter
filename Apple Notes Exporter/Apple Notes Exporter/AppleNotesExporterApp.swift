@@ -44,6 +44,9 @@ class AppleNotesExporterState: ObservableObject {
     @Published var allNotes: [ICItem] = []
     @Published var initialLoadMessage: String = "Loading..."
     
+    @Published var selectedNotesCount: Int = 0
+    @Published var fromAccountsCount: Int = 0
+    
     @Published var stateHash: UUID = UUID()
     
     func update() {
@@ -52,6 +55,19 @@ class AppleNotesExporterState: ObservableObject {
             // Update the proportion selected
             value.updateProportionSelected()
         }
+        // ** Update the totals
+        var totalSelectedNotes = 0
+        var selectedAccounts: Set<String> = []
+        for note in self.allNotes {
+            if note.selected {
+                // Increment total
+                totalSelectedNotes += 1
+                // Add it to the set of selected accounts
+                selectedAccounts.insert(note.account)
+            }
+        }
+        self.selectedNotesCount = totalSelectedNotes
+        self.fromAccountsCount = selectedAccounts.count
         // Update the stateHash, which forces re-renders
         self.stateHash = UUID()
     }
