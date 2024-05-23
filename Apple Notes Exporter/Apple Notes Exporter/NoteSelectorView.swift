@@ -87,31 +87,6 @@ struct NoteSelectorView: View {
                         }
                     } else {
                         LoaderLine(label: sharedState.initialLoadMessage)
-                        if false {
-                            HStack {
-                                VStack {
-                                    Image(systemName: "info.circle")
-                                }.frame(maxHeight: .infinity, alignment: .top)
-                                
-                                VStack {
-                                    Text("If you have a very large notes library querying them can take a long time. If you just want to select accounts and folders, you can skip querying notes for their details. Notes will still appear in the selector, but will have their ID in place of their titles. Skipping this initial query will not affect export time.")
-                                        .multilineTextAlignment(.leading)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .lineLimit(nil)
-                                }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                            }
-                            .frame(maxHeight: .infinity, alignment: .leading)
-                            
-                            Button {
-                                //showNoteSelectorView = false
-                            } label: {
-                                Text("Skip Note Query")
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                            .padding([.leading], 20)
-                            .padding([.top], 10)
-                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

@@ -7,62 +7,112 @@
 
 import Foundation
 
-func exportNotes(outputURL: URL, outputFormat: String, outputType: String) {
-    // Generate a UUID to use when creating the temporary directories for this particular export
-    //let temporaryWorkingDirectoryName: String = UUID().uuidString
-    
-    //// Get notes from the selected account using AppleScript (this takes a while)
-    ////let notes = getNotesUsingAppleScript(noteAccountName: "notesAccount")
-    //let notes: [Note] = []
-    //print("Finished getting Apple Notes and their contents via. AppleScript automation")
-    //
-    //// Create the temporary directory
-    //let temporaryWorkingDirectory: URL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: //true).appendingPathComponent(temporaryWorkingDirectoryName, isDirectory: true)
-    //createDirectoryIfNotExists(location: temporaryWorkingDirectory)
-    //print("Created temporary working directory: \(temporaryWorkingDirectory.absoluteString)")
-    //
-    //// Create a direcory within the temp that represents the root of the exported notes account
-    //var zipRootDirectoryName = outputURL.lastPathComponent
-    //zipRootDirectoryName = zipRootDirectoryName.replacingOccurrences(of: ".zip", with: "")
-    //let zipRootDirectory: URL = temporaryWorkingDirectory.appendingPathComponent(zipRootDirectoryName, isDirectory: true)
-    //createDirectoryIfNotExists(location: zipRootDirectory)
-    //
-    //// Loop through the notes and write them to output files, dynamically creating their containing folders as needed
-    //for note in notes {
-    //    // ** Create the containing directories of the note file
-    //    // Start at the root
-    //    var currentPath = URL(string: zipRootDirectory.absoluteString)
-    //    // Loop through each string in the path array and create the directories if they are not already created
-    //    for directory in note.path {
-    //        // Set the current path to the current directory name, sanitized
-    //        currentPath = URL(string: currentPath!.absoluteString)!
-    //            .appendingPathComponent(sanitizeFileNameString(inputFilename: directory, outputFormat: outputFormat), //isDirectory:true)
-    //        // Create it if it does not exist
-    //        createDirectoryIfNotExists(location: currentPath!)
-    //    }
-    //    // Set the path to the filename of the note based on the current format
-    //    let outputFileName = sanitizeFileNameString(inputFilename: note.title, outputFormat: outputFormat)
-    //    let outputDirectoryURL: URL = URL(string: currentPath!.absoluteString)!
-    //    // Write the note to the file
-    //    note.toOutputFile(location: outputDirectoryURL, fileName: outputFileName, format: outputFormat, //shouldExportAttachments: true)
-    //}
-    //
-    //// ZIP the working directory to the output file directory
-    //zipDirectory(inputDirectory: zipRootDirectory, outputZipFile: outputURL)
-    //print("Zipped output directory to the user-selected output file")
-    //
-    //print("Done!")
-}
-
-func initialLoad(sharedState: AppleNotesExporterState) {
-    // Time formatter (for the time remaining)
-    func formatTime(_ timeInterval: TimeInterval) -> String {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute, .second]
-        formatter.unitsStyle = .abbreviated
-        return formatter.string(from: timeInterval)!
+func exportNotes(sharedState: AppleNotesExporterState, outputURL: URL, outputFormat: String) {
+    // Reset the export message and progress
+    DispatchQueue.main.sync {
+        sharedState.exporting = true
+        sharedState.shouldCancelExport = false
+        sharedState.exportDone = false
+        sharedState.exportPercentage = 0.0
+        sharedState.exportMessage = "Starting export..."
     }
     
+    /**
+     See if we should cancel the export, and set the export message accordingly.
+     */
+    func shouldCancelExport() -> Bool {
+        if sharedState.shouldCancelExport {
+            DispatchQueue.main.async {
+                sharedState.exportMessage = sharedState.exporting ? "Cancelling export..." : "Export has been cancelled!"
+            }
+        }
+        return sharedState.shouldCancelExport
+    }
+    
+    func updateExportProgress(_ p: Float, _ message: String) {
+        DispatchQueue.main.async {
+            sharedState.exportPercentage = p
+            sharedState.exportMessage = message
+        }
+    }
+    
+    func getExportProgress() -> (total: Int, done: Int) {
+        let total = sharedState.selectedNotes.count
+        let done  = sharedState.selectedNotes.filter { $0.saved }.count
+        return (total, done)
+    }
+    
+    // Set the start time (to be used for time remaining calculations)
+    let startTime = Date()
+    
+    func exportItem(item: ICItem, baseURL: URL) {
+        if !shouldCancelExport() {
+            if item.type == .ICAccount || item.type == .ICFolder {
+                // Create a directory at the current base URL for the account or the folder
+                let folderURL = baseURL.appendingPathComponent(item.name)
+                createDirectoryIfNotExists(location: folderURL)
+                // If no children return
+                guard let children = item.children else {
+                    return
+                }
+                for child in children {
+                    exportItem(item: child, baseURL: folderURL)
+                }
+            } else {
+                // ** Update the progress
+                let progress = getExportProgress()
+                if progress.done >= 9 {
+                    // Calculate time remaining
+                    //let percentComplete = (Double(progress.done) / Double(progress.total)) * 100
+                    let elapsedTime = -startTime.timeIntervalSinceNow
+                    let estimatedRemainingTime = ((elapsedTime * 1.00) / Double(progress.done + 1)) * Double(progress.total + 1 - (progress.done + 1))
+                    let remainingTimeString = timeRemainingFormatter(estimatedRemainingTime)
+                    updateExportProgress(Float(progress.done) / Float(progress.total), "Exporting note \(progress.done + 1) of \(progress.total) (\(remainingTimeString) remaining)")
+                } else {
+                    updateExportProgress(Float(progress.done) / Float(progress.total), "Exporting note \(progress.done + 1) of \(progress.total)")
+                }
+                
+                // Load the entire note
+                item.exporting = true
+                item.load()
+                
+                // Save the note to file
+                item.save(toFolder: baseURL, format: outputFormat, withAttachments: true)
+                
+                // Update status of this note
+                item.exporting = false
+                
+                DispatchQueue.main.async {
+                    sharedState.refresh()
+                }
+            }
+        }
+    }
+    
+    for account in sharedState.selectedRoot {
+        exportItem(item: account, baseURL: outputURL)
+    }
+    
+    // Reset the export message and progress
+    DispatchQueue.main.async {
+        if shouldCancelExport() {
+            sharedState.exporting = false
+            sharedState.exportDone = false
+            sharedState.exportMessage = "Export has been cancelled!"
+        } else {
+            sharedState.exporting = false
+            sharedState.exportDone = true
+            sharedState.exportPercentage = 1.0
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .medium
+            dateFormatter.timeStyle = .medium
+            sharedState.exportMessage = "Export finished " + dateFormatter.string(from: Date())
+        }
+    }
+}
+
+func initialLoad(sharedState: AppleNotesExporterState) {    
     // Data root
     var localRoot: [ICItem] = []
     
@@ -118,7 +168,7 @@ func initialLoad(sharedState: AppleNotesExporterState) {
             let percentComplete = (Double(index + 1) / Double(accountNotes.count)) * 100
             let elapsedTime = -startTime.timeIntervalSinceNow
             let estimatedRemainingTime = (elapsedTime / Double(index + 1)) * Double(accountNotes.count - (index + 1))
-            let remainingTimeString = formatTime(estimatedRemainingTime)
+            let remainingTimeString = timeRemainingFormatter(estimatedRemainingTime)
             DispatchQueue.main.async {
                 sharedState.initialLoadMessage = "Querying account \"\(account.name)\" \(toFixed(percentComplete, 1))% (note \(index + 1) of \(accountNotes.count)), \(remainingTimeString) remaining"
             }

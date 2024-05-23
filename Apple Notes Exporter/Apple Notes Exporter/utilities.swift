@@ -16,20 +16,26 @@ func toFixed(_ number: Double, _ fractionDigits: Int) -> String {
     return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
 }
 
-func sanitizeFileNameString(inputFilename: String, outputFormat: String) -> String {
+func timeRemainingFormatter(_ timeInterval: TimeInterval) -> String {
+    // Time formatter (for the time remaining)
+    let formatter = DateComponentsFormatter()
+    formatter.allowedUnits = [.hour, .minute, .second]
+    formatter.unitsStyle = .abbreviated
+    return formatter.string(from: timeInterval)!
+}
+
+func sanitizeFileNameString(_ inputFilename: String) -> String {
     // Define CharacterSet of invalid characters which we will remove from the filenames
     var invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
         .union(.newlines)
         .union(.illegalCharacters)
         .union(.controlCharacters)
     // If we are exporting to markdown, then there are even more invalid characters
-    if outputFormat == "MD" {
-        invalidCharacters = invalidCharacters.union(CharacterSet(charactersIn: "[#]^"))
-    }
+    //if outputFormat == "MD" {
+    //    invalidCharacters = invalidCharacters.union(CharacterSet(charactersIn: "[#]^"))
+    //}
     // Filter out the illegal characters
-    let output = inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
-    // Filter out Emojis for more reliable unzipping
-    return output.unicodeScalars.filter { !($0.properties.isEmoji && $0.properties.isEmojiPresentation) }.map { String($0) }.joined()
+    return inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
 }
 
 func createDirectoryIfNotExists(location: URL) {
@@ -69,11 +75,29 @@ func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
 }
 
 func appleDateStringToDate(inputString: String) -> Date {
-    // DateFormatter based on Apple's format
-    //   eg. Monday, June 21, 2021 at 10:40:09 PM
-    let dateFormatter = DateFormatter()
-    dateFormatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm:ss a"
-    dateFormatter.timeZone = TimeZone.current // Current offset
-    // Return the converted output
-    return dateFormatter.date(from: inputString) ?? Date()
+    // Possible date formats used by AppleScript/Apple Notes
+    let dateFormats = [
+        "EEEE, MMMM d, yyyy 'at' h:mm:ss a",  // Monday, June 21, 2021 at 10:40:09 PM
+        "EEEE, MMM d, yyyy 'at' h:mm:ss a",   // Mon, Jun 21, 2021 at 10:40:09 PM
+        "EEEE, MMM d, yyyy, h:mm:ss a",       // Mon, Jun 21, 2021, 10:40:09 PM
+        "MMMM d, yyyy 'at' h:mm:ss a",        // June 21, 2021 at 10:40:09 PM
+        "MMM d, yyyy 'at' h:mm:ss a",         // Jun 21, 2021 at 10:40:09 PM
+        "MMMM d, yyyy, h:mm:ss a",            // June 21, 2021, 10:40:09 PM
+        "MMM d, yyyy, h:mm:ss a"              // Jun 21, 2021, 10:40:09 PM
+    ]
+
+    // Attempt to parse the date using different formats and locales
+    for format in dateFormats {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = format
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX") // POSIX locale for consistency
+        dateFormatter.timeZone = TimeZone.current
+
+        if let date = dateFormatter.date(from: inputString) {
+            return date
+        }
+    }
+
+    // Return current date if no format matched
+    return Date()
 }

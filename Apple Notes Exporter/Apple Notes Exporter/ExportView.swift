@@ -9,63 +9,77 @@ import SwiftUI
 
 struct ExportLineItem: View {
     @ObservedObject var sharedState: AppleNotesExporterState
-    var itemXID: String
+    var item: ICItem
+    @State var logPopoverVisible = false
     
-    private func getImage(level: Float) -> String {
-        if level == 1.0 {
-            return "checkmark.square"
-        } else if level == 0.0 {
-            return "square"
+    private func getImage() -> String {
+        if self.item.error {
+            return "⚠️"
+        } else if self.item.exported {
+            return "✅"
         } else {
-            return "minus.square"
+            return "⏳"
         }
     }
     
-    func toggleSelected() {
-        self.sharedState.itemByXID[itemXID]!.toggleSelected()
-        self.sharedState.update()
-    }
-    
-    init(sharedState: AppleNotesExporterState, itemXID: String) {
+    init(sharedState: AppleNotesExporterState, item: ICItem) {
         self.sharedState = sharedState
-        self.itemXID = itemXID
+        self.item = item
     }
     
     var body: some View {
         HStack {
-            Image(systemName: self.sharedState.itemByXID[itemXID]!.icon).padding([.leading], 5).frame(width: 20)
-            Text("\(self.sharedState.itemByXID[itemXID]!.description)").frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: item.icon).padding([.leading], 5).frame(width: 20)
+            Text("\(item.description)").frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1) // Limit the text to one line
                 .truncationMode(.tail)
             
-            Button {
-                toggleSelected()
-            } label: {
-                Image(systemName: getImage(level: self.sharedState.itemByXID[itemXID]!.proportionSelected)).padding([.leading], 5).frame(width: 23)
+            // If the item is exporting, show the loader
+            if self.item.pending {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .padding(0)
+                    .scaleEffect(0.5)
+                    .frame(width: 20, height: 15)
+            } else {
+                if self.item.logString == "" {
+                    Text(getImage())
+                } else {
+                    Button {
+                        self.logPopoverVisible = !self.logPopoverVisible
+                    } label: {
+                        Text(getImage())
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                    .popover(isPresented: $logPopoverVisible, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+                        ScrollView {
+                            Text(self.item.logString).frame(width: 350, height: 150, alignment: .leading)
+                                .multilineTextAlignment(.leading).padding(10)
+                                .contextMenu(ContextMenu(menuItems: {
+                                    Button("Copy", action: {
+                                        NSPasteboard.general.setString(self.item.logString, forType: .string)
+                                    })
+                                }))
+                        }
+                    }
+                }
             }
-            .buttonStyle(BorderlessButtonStyle())
-            
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 struct ExportView: View {
+    @Binding var showProgressWindow: Bool
     @ObservedObject var sharedState: AppleNotesExporterState
 
     var body: some View {
         VStack {
-            Text("Select the accounts, folders, and notes that you would like to include in the export.")
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-            
             VStack {
                 List {
-                    if sharedState.root.count > 0 {
-                        OutlineGroup(sharedState.root, children: \.children) { item in
-                            if item.proportionSelected > 0.0 {
-                                SelectorLineItem(sharedState: sharedState, itemXID: item.xid)
-                            }
+                    if sharedState.selectedRoot.count > 0 {
+                        OutlineGroup(sharedState.selectedRoot, children: \.children) { item in
+                            ExportLineItem(sharedState: sharedState, item: item)
                         }
                     } else {
                         Text("No notes were selected for export. If you are seeing this, this is a bug.")
@@ -77,17 +91,27 @@ struct ExportView: View {
             .border(Color.gray, width: 1)
             .padding([.top, .bottom], 5)
             
+            ProgressView(value: sharedState.exportPercentage)
+                .progressViewStyle(LinearProgressViewStyle())
+            
             HStack {
                 HStack {
-                    Image(systemName: "info.circle")
-                    Text("Notes that are locked with a password cannot be exported.")
+                    Text(sharedState.exportMessage)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
-                Button {
-                    
-                } label: {
-                    Text("Cancel Export")
+                if sharedState.exporting {
+                    Button {
+                        sharedState.shouldCancelExport = true
+                    } label: {
+                        Text(sharedState.shouldCancelExport ? "Cancelling" : "Cancel Export")
+                    }.disabled(sharedState.shouldCancelExport)
+                } else {
+                    Button {
+                        showProgressWindow = false
+                    } label: {
+                        Text("Done")
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)

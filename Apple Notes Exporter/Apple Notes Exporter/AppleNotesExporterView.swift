@@ -24,17 +24,10 @@ extension Binding {
     }
 }
 
-extension UTType {
-    static var tar: UTType {
-        UTType(exportedAs: "public.tar-archive", conformingTo: .data)
-    }
-}
-
 struct AppleNotesExporterView: View {
     @Environment(\.openURL) var openURL
 
-    
-    func setProgressWindow(state: Bool?) {
+    func setProgressWindow(_ state: Bool?) {
         showProgressWindow = state ?? !showProgressWindow
     }
     
@@ -53,57 +46,36 @@ struct AppleNotesExporterView: View {
             return
         }
         
-        // Show the progress window
-        setProgressWindow(state: true)
+        // Reset
+        sharedState.update()
+        
+        // Show the export progress window
+        setProgressWindow(true)
         // Do the export in the global DispatcheQueue as an async operation so that it does not block the UI
         DispatchQueue.global(qos: .userInitiated).async {
             exportNotes(
+                sharedState: sharedState,
                 outputURL: outputURL!,
-                outputFormat: outputFormat,
-                outputType: outputType
+                outputFormat: outputFormat
             )
         }
-        // Hide the progress window
-        setProgressWindow(state: false)
     }
     
     /**
-     Select the output file or folder location.
+     Select the output folder.
      */
-    func selectOutputDestination() {
-        if outputType == "Folder" {
-            let openPanel = NSOpenPanel()
-            
-            openPanel.canChooseDirectories = true
-            openPanel.canCreateDirectories = true
-            openPanel.canChooseFiles = false
-            openPanel.prompt = "Select Folder"
+    func selectOutputFolder() {
+        let openPanel = NSOpenPanel()
+        
+        openPanel.canChooseDirectories = true
+        openPanel.canCreateDirectories = true
+        openPanel.canChooseFiles = false
+        openPanel.prompt = "Select Folder"
 
-            if openPanel.runModal() == .OK, let exportURL = openPanel.url {
-                self.outputURL = exportURL
-                self.outputPath = exportURL.path as String
-            }
-        } else {
-            let savePanel = NSSavePanel()
-            
-            if self.outputType == "ZIP Archive" {
-                savePanel.allowedContentTypes = [UTType.zip]
-                savePanel.nameFieldStringValue = "applenotes.zip"
-            } else if self.outputType == "TAR Archive" {
-                savePanel.allowedContentTypes = [UTType.tar]
-                savePanel.nameFieldStringValue = "applenotes.tar"
-            }
-            
-            if savePanel.runModal() == .OK, let exportURL = savePanel.url {
-                self.outputURL = exportURL
-                self.outputPath = exportURL.path as String
-            }
+        if openPanel.runModal() == .OK, let exportURL = openPanel.url {
+            self.outputURL = exportURL
+            self.outputPath = exportURL.path as String
         }
-    }
-    
-    func resetOutputPath(newOutputType: String) {
-        self.outputURL = nil;
-        self.outputPath = "";
     }
     
     private enum ActiveAlert {
@@ -120,7 +92,6 @@ struct AppleNotesExporterView: View {
     @State private var outputFormat = "HTML"
     @State private var outputPath: String = ""
     @State private var outputURL: URL? = nil
-    @State private var outputType = "ZIP Archive"
     // Show/hide different views
     @State private var showNoteSelectorView: Bool = false
     @State private var showProgressWindow: Bool = false
@@ -161,26 +132,20 @@ struct AppleNotesExporterView: View {
                 // }.disabled(true)
             }
             
-            Text("Step 3: Set Destination").font(.title).multilineTextAlignment(.leading).lineLimit(1)
-            Picker("Output", selection: $outputType.onChange(resetOutputPath)) {
-                ForEach(OUTPUT_TYPES, id: \.self) {
-                    Text($0)
-                }
-            }
+            Text("Step 3: Set Output Folder").font(.title).multilineTextAlignment(.leading).lineLimit(1)
             .labelsHidden()
             .pickerStyle(.segmented)
             
             HStack() {
                 Image(systemName: "folder")
                 Text(
-                    outputPath != "" ? outputPath :
-                        (outputType == "Folder" ? "Select output folder" : "Select output file location")
+                    outputPath != "" ? outputPath : "Choose an output folder"
                 ).frame(maxWidth: .infinity, alignment: .leading)
                 Button {
-                    selectOutputDestination()
+                    selectOutputFolder()
                 } label: {
                     Text("Select")
-                }.padding(.top, 7.0)
+                }//.padding(.top, 7.0)
             }
             
             Text("Step 4: Export!").font(.title).multilineTextAlignment(.leading).lineLimit(1)
@@ -195,10 +160,8 @@ struct AppleNotesExporterView: View {
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
-            
-            // Views
         }
-        .frame(width: 500.0, height: 340.0)
+        .frame(width: 500.0, height: 300.0)
         .padding(10.0)
         .onAppear() {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -208,13 +171,11 @@ struct AppleNotesExporterView: View {
             }
         }
         .sheet(isPresented: $showProgressWindow) {
-            VStack {
-                ProgressView {
-                    Text("Exporting")
-                    .bold()
-                }
-            }
-            .frame(width: 160.0, height: 120.0)
+            ExportView(
+                showProgressWindow: $showProgressWindow,
+                sharedState: sharedState
+            )
+            .frame(width: 600, height: 400)
             .allowsHitTesting(true)
             .onAppear {
                 NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -237,8 +198,8 @@ struct AppleNotesExporterView: View {
                 )
             case .noOutput:
                 Alert(
-                    title: Text("No Output Location Chosen"),
-                    message: Text("Please choose the location for the archive file or folder that will contain the exported Apple Notes."),
+                    title: Text("No Output Folder Chosen"),
+                    message: Text("Please choose folder where you would like the exported notes to be saved."),
                     dismissButton: .default(Text("OK"))
                 )
             }

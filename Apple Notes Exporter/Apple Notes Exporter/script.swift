@@ -27,6 +27,10 @@ extension NSAppleEventDescriptor {
     }
 }
 
+enum AppleNotesScriptError: Error {
+    case attachmentSaveError(String)
+}
+
 /**
  NSAppleScript wrappers with coercions to desired Swift types.
  */
@@ -147,7 +151,7 @@ struct AppleNotesScriptLayer {
             tell application id "com.apple.Notes"
                 set AppleScript's text item delimiters to "\n"
                 set theAccount to account id "\(xid)"
-                return {id of note of theAccount as string, name of note of theAccount as string, container of note of theAccount}
+                return {id of note of theAccount as string, name of note of theAccount as string, password protected of note of theAccount as string, container of note of theAccount}
             end tell
             """
         );
@@ -162,10 +166,16 @@ struct AppleNotesScriptLayer {
             // The component parts of that array represent different values
             let xids = scriptOutputArray[0].stringValue!.components(separatedBy: "\n")
             let names = scriptOutputArray[1].stringValue!.components(separatedBy: "\n")
-            let containers = scriptOutputArray[2].toArray()
+            let locked = scriptOutputArray[2].stringValue!.components(separatedBy: "\n")
+            let containers = scriptOutputArray[3].toArray()
             
             // For each note in the returned notes
             for index in 0..<xids.count {
+                // Do not include password protected notes
+                if locked[index] == "true" {
+                    continue
+                }
+                
                 // Get the container object at the current note's index
                 let containerDescriptor = containers[index]
                 // Empty container XID
@@ -267,30 +277,6 @@ struct AppleNotesScriptLayer {
         return output
     }
     
-    static func getNoteLockedStatus(xid: String) -> Bool {
-        return false
-    }
-    
-    static func getNoteCreationDate(xid: String) -> Date {
-        return Date()
-    }
-    
-    static func getNoteModificationDate(xid: String) -> Date {
-        return Date()
-    }
-    
-    static func getNoteBody(xid: String) -> String {
-        return ""
-    }
-    
-    static func getNoteAttachmentsXIDs(xid: String) -> [String] {
-        return []
-    }
-    
-    static func getNotePath(xid: String) -> String {
-        return ""
-    }
-    
     static func getAttachmentName(xid: String) -> String {
         let output = AppleScript.stringOutput(
             """
@@ -301,5 +287,62 @@ struct AppleNotesScriptLayer {
         );
         
         return output
+    }
+    
+    static func saveAttachment(xid: String, path: URL) throws {
+        // Create the new NSAppleScript instance
+        if let scriptObject = NSAppleScript(source:
+            """
+            tell application id "com.apple.Notes"
+                set savePath to (POSIX file "\(path.path)")
+                set theAttachment to attachment id "\(xid)"
+                save theAttachment in file savePath
+                return "OK"
+            end tell
+            """
+        ) {
+            var errorDict: NSDictionary? = nil
+            let resultDescriptor = scriptObject.executeAndReturnError(&errorDict)
+            if errorDict == nil {
+                if let value = resultDescriptor.stringValue {
+                    if value != "OK" {
+                        throw AppleNotesScriptError.attachmentSaveError("nil... this type of attachment probably does not have the save method.")
+                    } else {
+                        return
+                    }
+                } else {
+                    throw AppleNotesScriptError.attachmentSaveError("nil... this type of attachment probably does not have the save method.")
+                }
+            } else {
+                var errorString = ""
+                for (key, value) in errorDict! {
+                    if let keyString = key as? String, let valueString = value as? String {
+                        errorString += "\(keyString): \(valueString), "
+                    }
+                }
+                throw AppleNotesScriptError.attachmentSaveError(errorString)
+            }
+        }
+    }
+    
+    static func getNote(xid: String) throws -> [String:String] {
+        let output = AppleScript.stringArrayOutput(
+            """
+            tell application id "com.apple.Notes"
+                set theNote to note id "\(xid)"
+                set AppleScript's text item delimiters to ","
+                return {id of theNote as string, name of theNote as string, creation date of theNote as string, modification date of theNote as string, body of theNote as string, id of attachments of theNote as string}
+            end tell
+            """
+        )
+        
+        return [
+            "id": output[0],
+            "name": output[1],
+            "creationDate": output[2],
+            "modificationDate": output[3],
+            "body": output[4],
+            "attachments": output[5]
+        ]
     }
 }

@@ -29,10 +29,72 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
     var creationDate: Date = Date()         // Date of creation (if applicable)
     var modificationDate: Date = Date()     // Date of last modification (if applicable)
     var content: String = ""                // Body/content of the item (if applicable)
-    var pending: Bool = false               // Flag for if the note is pending exporting
+    var exporting: Bool = false             // Flag for if the note is exporting
+    var pending: Bool {
+        // If it is a note/attachment, it is pending when it is exporting
+        if (self.type == .ICNote || self.type == .ICAttachment) && self.children == nil {
+            return exporting
+        // Otherwise, it is pending when any of its children (recursively) are pending
+        } else if self.type == .ICAccount || self.type == .ICFolder || self.children != nil {
+            // Check if the current item's children are pending
+            if let children = self.children {
+                for child in children {
+                    if child.pending {
+                        return true
+                    }
+                }
+            }
+            
+            // If not found, return nil
+            return false
+        }
+        return false
+    }
     var loaded: Bool = false                // Flag for if the note is completely loaded
-    var exported: Bool = false              // Flag for if the main note content has been exported to an output file
+    var saved: Bool = false                 // Flag for if the note has been saved to an output file
     var attachmentsExported: Bool = false   // Flag for if the note's attachments have been exported
+    var exported: Bool {
+        // If it is a note/attachment it is exported when it has been saved
+        if (self.type == .ICNote || self.type == .ICAttachment) && self.children == nil {
+            return saved
+        // Otherwise, it is pending when any of its children (recursively) are pending
+        } else if self.type == .ICAccount || self.type == .ICFolder || self.children != nil {
+            // Check if the current item's children are not exported
+            if let children = self.children {
+                for child in children {
+                    if !child.exported {
+                        return false
+                    }
+                }
+            }
+            
+            // If not found, it is exported
+            return true
+        }
+        return true
+    }
+    var failed: Bool = false                // Flag for if the note has failed exporting
+    var error: Bool {
+        // If it is a note, it is an error when it has failed
+        if (self.type == .ICNote || self.type == .ICAttachment) && self.children == nil {
+            return failed
+        // Otherwise, it is pending when any of its children (recursively) have errors
+        } else if self.type == .ICAccount || self.type == .ICFolder || self.children != nil {
+            // Check if the current item's children have an error
+            if let children = self.children {
+                for child in children {
+                    if child.error {
+                        return true
+                    }
+                }
+            }
+            
+            // If not found, return nil
+            return false
+        }
+        return false
+    }
+    var logString: String = ""              // String that contains a mini-logfile for this specific note, that will be viewable by the user
     
     init(xid: String) {
         self.id = UUID()
@@ -52,6 +114,41 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         }
     }
     
+    init(from: ICItem) {
+        self.id = UUID()
+        self.xid = from.xid
+        self.type = from.type
+        self.children = nil
+        self.selected = from.selected
+        self.proportionSelected = 0.0
+        self.container = from.container
+        self.account = from.account
+        self.name = from.name
+        self.creationDate = from.creationDate
+        self.modificationDate = from.modificationDate
+        self.content = from.content
+        self.exporting = false
+        self.loaded = false
+        self.failed = false
+        self.logString = ""
+        self.attachmentsExported = false
+        // Calculate the proportion selected
+        updateProportionSelected()
+    }
+    
+    /**
+     Log a message in the note's log.
+     */
+    func log(_ message: String) {
+        // Determine the date string to label the log with
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let dateString = dateFormatter.string(from: Date())
+        let logLine = "[\(dateString)] \(message)"
+        print(logLine)
+        self.logString += "\(logLine)\n"
+    }
+ 
     /**
      Append a new ICItem as a child to this ICItem instance.
      */
@@ -102,6 +199,10 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
             self.name = AppleNotesScriptLayer.getNoteName(xid: self.xid)
         case .ICAttachment:
             self.name = AppleNotesScriptLayer.getAttachmentName(xid: self.xid)
+            // If the attachment does not have a name, it's name is now the last part of the XID
+            if self.name == "" {
+                self.name = self.xid.components(separatedBy: "/").last!
+            }
         case .Invalid:
             self.name = self.xid
         }
@@ -122,18 +223,64 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         }
     }
     
+    func load() {
+        switch type {
+        case .ICAccount:
+            self.name = AppleNotesScriptLayer.getAccountName(xid: self.xid)
+        case .ICFolder:
+            self.name = AppleNotesScriptLayer.getFolderName(xid: self.xid)
+        case .ICNote:
+            do {
+                // Get the whole note contents
+                let noteDict = try AppleNotesScriptLayer.getNote(xid: self.xid)
+             
+                // Make sure that the name and IDs match what we already have
+                if noteDict["name"]! != self.name || noteDict["id"]! != self.xid {
+                    log("Discrepancy in note XID and note name, integrity of exported notes is not possible.\nDetails:\n --> Expected XID: \(self.xid), Actual XID: \(noteDict["id"] ?? "")\n --> Expected name: \(self.name), Actual name: \(noteDict["name"] ?? "")")
+                    self.failed = true
+                    return
+                }
+                // Update the new values
+                self.content = noteDict["body"]!
+                self.creationDate = appleDateStringToDate(inputString: noteDict["creationDate"]!)
+                self.modificationDate = appleDateStringToDate(inputString: noteDict["modificationDate"]!)
+                if noteDict["attachments"]! != "" {
+                    // Create a new attachment for each ICItem
+                    for attachmentXID in noteDict["attachments"]!.components(separatedBy: ",") {
+                        let ICAttachment = ICItem(xid: attachmentXID)
+                        ICAttachment.loadName()
+                        appendChild(child: ICAttachment)
+                    }
+                } else {
+                    self.children = nil
+                }
+            } catch {
+                self.failed = true
+                log("Failed to load: \(error)")
+            }
+        case .ICAttachment:
+            self.name = AppleNotesScriptLayer.getAttachmentName(xid: self.xid)
+        case .Invalid:
+            self.name = self.xid
+        }
+        // Identify self as being loaded
+        self.loaded = true
+    }
+    
     func updateProportionSelected() {
         switch type {
         case .ICAccount, .ICFolder:
-            // Not selectable if there are no children
-            if self.children == nil {
+            // Guard clause to check if children is nil (for things that may contain a child)
+            guard let children = self.children else {
                 self.proportionSelected = 0.0
+                return
             }
+            
             // Proportion selected (proportion of each item x in children / number of children)
             var x: Float = 0.0
-            let n: Int = self.children!.count
+            let n: Int = children.count
             // Total up x
-            for item in children! {
+            for item in children {
                 item.updateProportionSelected()
                 x += item.proportionSelected
             }
@@ -176,6 +323,203 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         
         // Update the proportion selected
         self.updateProportionSelected()
+    }
+    
+    /**
+        Convert the current note object in to an HTML document string.
+     */
+    func toHTMLString() -> String {
+        let outputHTMLString: String =
+"""
+<!Doctype HTML>
+<html>
+    <head>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <title>\(self.name)</title>
+    </head>
+    <body>
+        <style>
+            body {
+                padding: 2em;
+                font-family: sans-serif;
+            }
+        </style>
+        <div>
+        \(self.content.replacingOccurrences(of: " ", with: "&nbsp;"))
+        </div>
+    </body>
+</html>
+"""
+        return outputHTMLString
+    }
+    
+    func toAttributedString() throws -> NSAttributedString {
+        // Get the HTML content of the note
+        let htmlString = self.toHTMLString()
+        
+        // Empty NSAttributedString
+        var attributedString: NSMutableAttributedString = NSMutableAttributedString()
+        // Set the NSAttributed string to the contents of the HTML output, converted to NSAttributedString
+        try attributedString = NSMutableAttributedString(
+            data: htmlString.data(using: .utf8) ?? Data(),
+            options: [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue
+            ],
+            documentAttributes: nil
+        )
+        
+        // Return the new attributed string
+        return attributedString
+    }
+    
+    func save(toFolder: URL, format: String?, withAttachments: Bool) {
+        if self.type == .ICNote {
+            // Can't save if it isn't loaded yet!
+            if loaded == false {
+                return
+            }
+            
+            // Determine the save filename
+            var fileNumber: Int = 1
+            var fileURL: URL = toFolder
+            var attachmentsFolderURL: URL = toFolder
+            repeat {
+                fileURL = toFolder.appendingPathComponent("\(sanitizeFileNameString(self.name))\(fileNumber > 1 ? " (\(fileNumber))" : "").\(format!.lowercased())")
+                attachmentsFolderURL = toFolder.appendingPathComponent("\(sanitizeFileNameString(self.name))\(fileNumber > 1 ? " (\(fileNumber))" : "") Attachments")
+                fileNumber += 1
+            } while FileManager.default.fileExists(atPath: fileURL.path)
+            
+            // Export/save the note to the output file
+            //     Different formats require different procedures
+            if format == "PDF" {
+                return
+            } else if format == "HTML" {
+                do {
+                    let outputData = self.toHTMLString().data(using: .utf8)!
+                    try outputData.write(to: fileURL)
+                } catch {
+                    self.log("Failed to save note content as HTML: \(error)")
+                    self.failed = true
+                }
+            } else if format == "TEX" {
+                return
+            } else if format == "MD" {
+                // Get the HTML string of the content (less common tags)
+                let htmlStringLines = self.content
+                    .replacingOccurrences(of: "<div>", with: "")
+                    .replacingOccurrences(of: "</div>", with: "")
+                    .replacingOccurrences(of: "<br>", with: "")
+                    .replacingOccurrences(of: "<object>", with: "")
+                    .replacingOccurrences(of: "</object>", with: "")
+                    .split(separator: "\n")
+                
+                // Create an output string
+                var outputString = ""
+       
+                // Mode
+                let MD_CONVERSION_MODE_NORMAL = 0
+                let MD_CONVERSION_MODE_ORDEREDLIST = 1
+                let MD_CONVERSION_MODE_UNORDEREDLIST = 2
+                let MD_CONVERSION_MODE_TABLE = 3
+                var mode = MD_CONVERSION_MODE_NORMAL
+                
+                // For each HTML line
+                for htmlLine in htmlStringLines {
+                    // Markdown line
+                    var markdownLine = String(htmlLine)
+                    
+                    // ** Conversion
+                    // Headings
+                    markdownLine = markdownLine.replacingOccurrences(of: "<h1>", with: "\n# ").replacingOccurrences(of: "</h1>", with: "")
+                    markdownLine = markdownLine.replacingOccurrences(of: "<h2>", with: "\n## ").replacingOccurrences(of: "</h2>", with: "")
+                    markdownLine = markdownLine.replacingOccurrences(of: "<h3>", with: "\n### ").replacingOccurrences(of: "</h3>", with: "")
+                    markdownLine = markdownLine.replacingOccurrences(of: "<h4>", with: "\n#### ").replacingOccurrences(of: "</h4>", with: "")
+                    markdownLine = markdownLine.replacingOccurrences(of: "<h5>", with: "\n##### ").replacingOccurrences(of: "</h5>", with: "")
+                    markdownLine = markdownLine.replacingOccurrences(of: "<h6>", with: "\n###### ").replacingOccurrences(of: "</h6>", with: "")
+                    // Styles
+                    markdownLine = markdownLine.replacingOccurrences(of: "<b>", with: "**").replacingOccurrences(of: "</b>", with: "**")
+                    markdownLine = markdownLine.replacingOccurrences(of: "<i>", with: "*").replacingOccurrences(of: "</i>", with: "*")
+                    // MD doesnt have underline because the creator is opinionated!  markdownLine = markdownLine.replacingOccurrences(of: "<i>", with: "*").replacingOccurrences(of: "</i>", with: "*")
+                    markdownLine = markdownLine.replacingOccurrences(of: "<tt>", with: "`").replacingOccurrences(of: "</tt>", with: "`")
+                    
+                    // Add the markdown line to the output string
+                    outputString = outputString + "\n" + markdownLine
+                }
+                
+                // Write out
+                do {
+                    let outputData = outputString.data(using: .utf8)!
+                    try outputData.write(to: fileURL)
+                } catch {
+                    self.log("Failed to save note content as MD: \(error)")
+                    self.failed = true
+                }
+            } else if format == "RTF" {
+                do {
+                    let attributedString = try self.toAttributedString()
+                    let rtfAttributedString = attributedString.rtf(
+                        from: NSRange(location: 0, length: attributedString.length),
+                        documentAttributes: [:]
+                    )!
+                    try rtfAttributedString.write(to: fileURL)
+                } catch {
+                    self.log("Failed to save note content as RTF: \(error)")
+                    self.failed = true
+                }
+            } else {
+                do {
+                    let attributedString = try self.toAttributedString()
+                    let outputData = attributedString.string.data(using: .utf8)!
+                    try outputData.write(to: fileURL)
+                } catch {
+                    self.log("Failed to save note content as TXT: \(error)")
+                    self.failed = true
+                }
+            }
+            
+            // Update the saved status
+            self.saved = true
+            
+            if withAttachments {
+                // Export/save the attachments to the folder path that was determined
+                guard let attachments = self.children else {
+                    return
+                }
+                
+                // Create the attachments folder
+                createDirectoryIfNotExists(location: attachmentsFolderURL)
+                
+                // For each attachment
+                for attachment in attachments {
+                    attachment.exporting = true
+                    attachment.save(toFolder: attachmentsFolderURL, format: "", withAttachments: false)
+                    attachment.exporting = false
+                }
+            }
+        } else if self.type == .ICAttachment {
+            // Determine the save filename
+            var fileNumber: Int = 1
+            var fileURL: URL = toFolder
+            repeat {
+                let sanitizedNameString = sanitizeFileNameString(self.name)
+                var fileNameParts = sanitizedNameString.components(separatedBy: ".")
+                if fileNameParts.count > 1 && fileNumber > 1 {
+                    fileNameParts[fileNameParts.count - 2] = "\(fileNameParts[fileNameParts.count - 2]) (\(fileNumber))"
+                }
+                fileURL = toFolder.appendingPathComponent(fileNameParts.joined(separator: "."))
+                fileNumber += 1
+            } while FileManager.default.fileExists(atPath: fileURL.path)
+            
+            // Save the attachment
+            do {
+                try AppleNotesScriptLayer.saveAttachment(xid: self.xid, path: fileURL)
+                self.saved = true
+            } catch {
+                self.log("Failed to save attachment \(self.xid): \(error)")
+                self.failed = true
+            }
+        }
     }
     
     /**
