@@ -53,7 +53,7 @@ struct ExportLineItem: View {
                     .buttonStyle(BorderlessButtonStyle())
                     .popover(isPresented: $logPopoverVisible, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
                         ScrollView {
-                            Text(self.item.logString).frame(width: 350, height: 150, alignment: .leading)
+                            Text(self.item.logString).frame(width: 350, alignment: .leading)
                                 .multilineTextAlignment(.leading).padding(10)
                                 .contextMenu(ContextMenu(menuItems: {
                                     Button("Copy", action: {

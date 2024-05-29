@@ -6,6 +6,92 @@
 //
 
 import Foundation
+import WebKit
+
+class HTMLtoPDF: NSObject, WKNavigationDelegate {
+    var webView: WKWebView!
+    var htmlString: String
+    var completion: ((Result<Data, Error>) -> Void)?
+    var loadingTimeout: TimeInterval = 60 // Set a reasonable timeout interval
+    var timeoutTimer: Timer?
+
+    init(htmlString: String) {
+        self.htmlString = htmlString
+        self.webView = WKWebView()
+    }
+
+    func convert(completion: @escaping (Result<Data, Error>) -> Void) {
+        self.webView.navigationDelegate = self
+        self.completion = completion
+        self.webView.loadHTMLString(htmlString, baseURL: nil)
+        print("Load HTML string")
+
+        // Set a timeout to handle cases where loading takes too long
+        timeoutTimer = Timer.scheduledTimer(timeInterval: loadingTimeout, target: self, selector: #selector(handleTimeout), userInfo: nil, repeats: false)
+    }
+
+    @objc func handleTimeout() {
+        print("Loading timeout")
+        completion?(.failure(NSError(domain: "HTMLtoPDF", code: -1, userInfo: [NSLocalizedDescriptionKey: "Loading timed out"])))
+        timeoutTimer?.invalidate()
+        timeoutTimer = nil
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        print("webView() -> self.createPDF()")
+        timeoutTimer?.invalidate()
+        timeoutTimer = nil
+        createPDF()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        print("Failed loading with error: \(error)")
+        timeoutTimer?.invalidate()
+        timeoutTimer = nil
+        completion?(.failure(error))
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        print("Failed provisional navigation with error: \(error)")
+        timeoutTimer?.invalidate()
+        timeoutTimer = nil
+        completion?(.failure(error))
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        print("Web content process terminated")
+        completion?(.failure(NSError(domain: "HTMLtoPDF", code: -2, userInfo: [NSLocalizedDescriptionKey: "Web content process terminated"])))
+    }
+
+    func createPDF() {
+        let pdfConfiguration = WKPDFConfiguration()
+        let pageSize = CGSize(width: PAGE_US_LETTER.width, height: PAGE_US_LETTER.height)
+        pdfConfiguration.rect = CGRect(origin: .zero, size: pageSize)
+        
+        // Auto paginate by setting the size of the contentRect
+        webView.evaluateJavaScript("document.body.scrollHeight") { (result, error) in
+            if let scrollHeight = result as? CGFloat {
+                let contentHeight = scrollHeight
+                let pageCount = ceil(contentHeight / pageSize.height)
+                
+                // Adjust the configuration rect to cover the entire content
+                pdfConfiguration.rect = CGRect(x: 0, y: 0, width: pageSize.width, height: contentHeight)
+                
+                // Create the PDF
+                self.webView.createPDF(configuration: pdfConfiguration) { result in
+                    switch result {
+                    case .success(let data):
+                        self.completion?(.success(data))
+                    case .failure(let error):
+                        self.completion?(.failure(error))
+                    }
+                }
+            } else {
+                self.completion?(.failure(error ?? NSError(domain: "HTMLtoPDF", code: -3, userInfo: [NSLocalizedDescriptionKey: "Unable to determine content height"])))
+            }
+        }
+    }
+}
 
 func toFixed(_ number: Double, _ fractionDigits: Int) -> String {
     let formatter = NumberFormatter()
@@ -26,7 +112,7 @@ func timeRemainingFormatter(_ timeInterval: TimeInterval) -> String {
 
 func sanitizeFileNameString(_ inputFilename: String) -> String {
     // Define CharacterSet of invalid characters which we will remove from the filenames
-    var invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
+    let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
         .union(.newlines)
         .union(.illegalCharacters)
         .union(.controlCharacters)

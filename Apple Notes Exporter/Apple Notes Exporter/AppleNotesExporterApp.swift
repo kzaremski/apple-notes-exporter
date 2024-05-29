@@ -7,9 +7,11 @@
 
 import SwiftUI
 
+// ** Declare Constants
+// App version and capability
 let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 let OUTPUT_FORMATS: [String] = [
-    //"PDF",
+    "PDF",
     "HTML",
     //"TEX",
     "MD",
@@ -21,6 +23,11 @@ let OUTPUT_TYPES: [String] = [
     "TAR Archive",
     "ZIP Archive",
 ]
+// Page types
+let PAGE_US_LETTER: (width: Int, height: Int) = (612, 792)
+let PAGE_US_LEGAL: (width: Int, height: Int) = (612, 1008)
+let PAGE_US_TABLOID: (width: Int, height: Int) = (792, 1224)
+let PAGE_A4: (width: Int, height: Int) = (595, 842)
 
 extension Scene {
     func windowResizabilityContentSize() -> some Scene {

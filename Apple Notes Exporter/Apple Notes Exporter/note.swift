@@ -6,6 +6,11 @@
 //
 
 import Foundation
+import WebKit
+
+enum ICItemError: Error {
+    case pdfCreationError(description: String)
+}
 
 // ICItem Types based on what comes out of the Apple Events
 enum ICItemType {
@@ -28,7 +33,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
     var name: String = ""                   // Name of the ICItem (eg. title of note, folder name, account name)
     var creationDate: Date = Date()         // Date of creation (if applicable)
     var modificationDate: Date = Date()     // Date of last modification (if applicable)
-    var content: String = ""                // Body/content of the item (if applicable)
+    var body: String = ""                   // Body of the note (if applicable)
     var exporting: Bool = false             // Flag for if the note is exporting
     var pending: Bool {
         // If it is a note/attachment, it is pending when it is exporting
@@ -78,7 +83,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         // If it is a note, it is an error when it has failed
         if (self.type == .ICNote || self.type == .ICAttachment) && self.children == nil {
             return failed
-        // Otherwise, it is pending when any of its children (recursively) have errors
+        // Otherwise, has an error when any of its children (recursively) have errors
         } else if self.type == .ICAccount || self.type == .ICFolder || self.children != nil {
             // Check if the current item's children have an error
             if let children = self.children {
@@ -87,6 +92,11 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
                         return true
                     }
                 }
+            }
+            
+            // If it is a note and it has an error, then it has an error
+            if self.type == .ICNote {
+                return failed
             }
             
             // If not found, return nil
@@ -126,7 +136,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         self.name = from.name
         self.creationDate = from.creationDate
         self.modificationDate = from.modificationDate
-        self.content = from.content
+        self.body = from.body
         self.exporting = false
         self.loaded = false
         self.failed = false
@@ -241,7 +251,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
                     return
                 }
                 // Update the new values
-                self.content = noteDict["body"]!
+                self.body = noteDict["body"]!
                 self.creationDate = appleDateStringToDate(inputString: noteDict["creationDate"]!)
                 self.modificationDate = appleDateStringToDate(inputString: noteDict["modificationDate"]!)
                 if noteDict["attachments"]! != "" {
@@ -342,15 +352,128 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
             body {
                 padding: 2em;
                 font-family: sans-serif;
+                white-space: pre;
             }
         </style>
         <div>
-        \(self.content.replacingOccurrences(of: " ", with: "&nbsp;"))
+        \(self.body)
         </div>
     </body>
 </html>
 """
         return outputHTMLString
+    }
+    
+    func toPDF() throws -> Data {
+        // DispatchGroup
+        let group = DispatchGroup()
+        group.enter()
+        
+        // Empty data
+        var outputData: Data = Data()
+                
+        // HTML string
+        let htmlString = self.toHTMLString()
+        
+        // Error String
+        var errorString: String?
+        
+        // Run on the main thread
+        DispatchQueue.main.async {
+            let htmlToPDFConverter = HTMLtoPDF(htmlString: htmlString)
+            // Run the conversion
+            htmlToPDFConverter.convert { result in
+                switch result {
+                case .success(let data):
+                    outputData = data
+                case .failure(let error):
+                    errorString = "\(error)"
+                }
+                // Leave the group after processing the result
+                group.leave()
+            }
+        }
+        
+        // When the DispatchGroup is done
+        group.wait()
+        
+        // Throw error if the error string has contents
+        if errorString != nil {
+            throw ICItemError.pdfCreationError(description: errorString ?? "No error description available.")
+        }
+        // Otherwise return the data
+        return outputData
+    }
+    
+    func toLaTeXString() -> String {
+        return ""
+    }
+    
+    func toMarkdownString() -> String {
+        // Get the HTML string of the content (less common tags)
+        let htmlStringLines = self.body
+            .replacingOccurrences(of: "<div>", with: "")
+            .replacingOccurrences(of: "</div>", with: "")
+            .replacingOccurrences(of: "<br>", with: "")
+            .replacingOccurrences(of: "<object>", with: "")
+            .replacingOccurrences(of: "</object>", with: "")
+            .split(separator: "\n")
+        
+        // Create an output string
+        var outputString = ""
+
+        // Mode
+        //let MD_CONVERSION_MODE_NORMAL = 0
+        //let MD_CONVERSION_MODE_ORDEREDLIST = 1
+        //let MD_CONVERSION_MODE_UNORDEREDLIST = 2
+        //let MD_CONVERSION_MODE_TABLE = 3
+        //var mode = MD_CONVERSION_MODE_NORMAL
+        
+        // For each HTML line
+        for htmlLine in htmlStringLines {
+            // Markdown line
+            var markdownLine = String(htmlLine)
+            
+            // ** Conversion
+            // Headings
+            markdownLine = markdownLine.replacingOccurrences(of: "<h1>", with: "\n# ").replacingOccurrences(of: "</h1>", with: "")
+            markdownLine = markdownLine.replacingOccurrences(of: "<h2>", with: "\n## ").replacingOccurrences(of: "</h2>", with: "")
+            markdownLine = markdownLine.replacingOccurrences(of: "<h3>", with: "\n### ").replacingOccurrences(of: "</h3>", with: "")
+            markdownLine = markdownLine.replacingOccurrences(of: "<h4>", with: "\n#### ").replacingOccurrences(of: "</h4>", with: "")
+            markdownLine = markdownLine.replacingOccurrences(of: "<h5>", with: "\n##### ").replacingOccurrences(of: "</h5>", with: "")
+            markdownLine = markdownLine.replacingOccurrences(of: "<h6>", with: "\n###### ").replacingOccurrences(of: "</h6>", with: "")
+            // Styles
+            markdownLine = markdownLine.replacingOccurrences(of: "<b>", with: "**").replacingOccurrences(of: "</b>", with: "**")
+            markdownLine = markdownLine.replacingOccurrences(of: "<i>", with: "*").replacingOccurrences(of: "</i>", with: "*")
+            // MD doesnt have underline because the creator is opinionated!  markdownLine = markdownLine.replacingOccurrences(of: "<i>", with: "*").replacingOccurrences(of: "</i>", with: "*")
+            markdownLine = markdownLine.replacingOccurrences(of: "<tt>", with: "`").replacingOccurrences(of: "</tt>", with: "`")
+            
+            // Add the markdown line to the output string
+            outputString = outputString + "\n" + markdownLine
+        }
+        
+        // Return the parsed markdown
+        return outputString
+    }
+    
+    func toAttributedStringWithImages() throws -> NSAttributedString {
+        // Get the HTML content of the note
+        let htmlString = self.toHTMLString()
+        
+        // Empty NSAttributedString
+        var attributedString: NSMutableAttributedString = NSMutableAttributedString()
+        // Set the NSAttributed string to the contents of the HTML output, converted to NSAttributedString
+        try attributedString = NSMutableAttributedString(
+            data: htmlString.data(using: .utf8) ?? Data(),
+            options: [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue
+            ],
+            documentAttributes: nil
+        )
+        
+        // Return the new attributed string
+        return attributedString
     }
     
     func toAttributedString() throws -> NSAttributedString {
@@ -393,7 +516,13 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
             // Export/save the note to the output file
             //     Different formats require different procedures
             if format == "PDF" {
-                return
+                do {
+                    let outputData = try self.toPDF()
+                    try outputData.write(to: fileURL)
+                } catch {
+                    self.log("Failed to save note content as PDF: \(error)")
+                    self.failed = true
+                }
             } else if format == "HTML" {
                 do {
                     let outputData = self.toHTMLString().data(using: .utf8)!
@@ -405,51 +534,8 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
             } else if format == "TEX" {
                 return
             } else if format == "MD" {
-                // Get the HTML string of the content (less common tags)
-                let htmlStringLines = self.content
-                    .replacingOccurrences(of: "<div>", with: "")
-                    .replacingOccurrences(of: "</div>", with: "")
-                    .replacingOccurrences(of: "<br>", with: "")
-                    .replacingOccurrences(of: "<object>", with: "")
-                    .replacingOccurrences(of: "</object>", with: "")
-                    .split(separator: "\n")
-                
-                // Create an output string
-                var outputString = ""
-       
-                // Mode
-                let MD_CONVERSION_MODE_NORMAL = 0
-                let MD_CONVERSION_MODE_ORDEREDLIST = 1
-                let MD_CONVERSION_MODE_UNORDEREDLIST = 2
-                let MD_CONVERSION_MODE_TABLE = 3
-                var mode = MD_CONVERSION_MODE_NORMAL
-                
-                // For each HTML line
-                for htmlLine in htmlStringLines {
-                    // Markdown line
-                    var markdownLine = String(htmlLine)
-                    
-                    // ** Conversion
-                    // Headings
-                    markdownLine = markdownLine.replacingOccurrences(of: "<h1>", with: "\n# ").replacingOccurrences(of: "</h1>", with: "")
-                    markdownLine = markdownLine.replacingOccurrences(of: "<h2>", with: "\n## ").replacingOccurrences(of: "</h2>", with: "")
-                    markdownLine = markdownLine.replacingOccurrences(of: "<h3>", with: "\n### ").replacingOccurrences(of: "</h3>", with: "")
-                    markdownLine = markdownLine.replacingOccurrences(of: "<h4>", with: "\n#### ").replacingOccurrences(of: "</h4>", with: "")
-                    markdownLine = markdownLine.replacingOccurrences(of: "<h5>", with: "\n##### ").replacingOccurrences(of: "</h5>", with: "")
-                    markdownLine = markdownLine.replacingOccurrences(of: "<h6>", with: "\n###### ").replacingOccurrences(of: "</h6>", with: "")
-                    // Styles
-                    markdownLine = markdownLine.replacingOccurrences(of: "<b>", with: "**").replacingOccurrences(of: "</b>", with: "**")
-                    markdownLine = markdownLine.replacingOccurrences(of: "<i>", with: "*").replacingOccurrences(of: "</i>", with: "*")
-                    // MD doesnt have underline because the creator is opinionated!  markdownLine = markdownLine.replacingOccurrences(of: "<i>", with: "*").replacingOccurrences(of: "</i>", with: "*")
-                    markdownLine = markdownLine.replacingOccurrences(of: "<tt>", with: "`").replacingOccurrences(of: "</tt>", with: "`")
-                    
-                    // Add the markdown line to the output string
-                    outputString = outputString + "\n" + markdownLine
-                }
-                
-                // Write out
                 do {
-                    let outputData = outputString.data(using: .utf8)!
+                    let outputData = self.toMarkdownString().data(using: .utf8)!
                     try outputData.write(to: fileURL)
                 } catch {
                     self.log("Failed to save note content as MD: \(error)")
