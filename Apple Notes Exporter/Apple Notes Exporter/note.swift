@@ -318,6 +318,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
             // Not selectable if there are no children
             if self.children == nil {
                 self.selected = false
+                break
             }
             // Toggle all sub-items
             for item in self.children! {

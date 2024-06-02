@@ -169,10 +169,8 @@ struct AppleNotesScriptLayer {
             let locked = scriptOutputArray[2].stringValue!.components(separatedBy: "\n")
             let containers = scriptOutputArray[3].toArray()
             
-            // If the length of each of the component arrays are not equal, then there is a problem from the output and the account may be empty.
-            if names.count != xids.count || locked.count != xids.count || containers.count != xids.count {
-                
-            } else {
+            // If there are no containers, then there are no notes and this account can be considered empty.
+            if containers.count > 0 {
                 // For each note in the returned notes
                 for index in 0..<xids.count {
                     // Do not include password protected notes
@@ -181,7 +179,7 @@ struct AppleNotesScriptLayer {
                     }
                     
                     // Get the container object at the current note's index
-                    let containerDescriptor = containers[index]
+                    let containerDescriptor: NSAppleEventDescriptor = containers[index]
                     // Empty container XID
                     var containerXID: String = ""
                     // Extract the XID of the container from the AppleScript container class
