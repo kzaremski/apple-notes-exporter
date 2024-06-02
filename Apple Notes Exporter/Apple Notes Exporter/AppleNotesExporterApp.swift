@@ -11,9 +11,9 @@ import SwiftUI
 // App version and capability
 let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 let OUTPUT_FORMATS: [String] = [
-    "PDF",
+    //"PDF",
     "HTML",
-    //"TEX",
+    "TEX",
     "MD",
     "RTF",
     "TXT",

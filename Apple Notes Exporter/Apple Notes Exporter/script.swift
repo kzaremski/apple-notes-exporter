@@ -169,29 +169,34 @@ struct AppleNotesScriptLayer {
             let locked = scriptOutputArray[2].stringValue!.components(separatedBy: "\n")
             let containers = scriptOutputArray[3].toArray()
             
-            // For each note in the returned notes
-            for index in 0..<xids.count {
-                // Do not include password protected notes
-                if locked[index] == "true" {
-                    continue
-                }
+            // If the length of each of the component arrays are not equal, then there is a problem from the output and the account may be empty.
+            if names.count != xids.count || locked.count != xids.count || containers.count != xids.count {
                 
-                // Get the container object at the current note's index
-                let containerDescriptor = containers[index]
-                // Empty container XID
-                var containerXID: String = ""
-                // Extract the XID of the container from the AppleScript container class
-                if let keyData = containerDescriptor.forKeyword(AEKeyword(keyAEKeyData)) {
-                    containerXID = keyData.stringValue!
+            } else {
+                // For each note in the returned notes
+                for index in 0..<xids.count {
+                    // Do not include password protected notes
+                    if locked[index] == "true" {
+                        continue
+                    }
+                    
+                    // Get the container object at the current note's index
+                    let containerDescriptor = containers[index]
+                    // Empty container XID
+                    var containerXID: String = ""
+                    // Extract the XID of the container from the AppleScript container class
+                    if let keyData = containerDescriptor.forKeyword(AEKeyword(keyAEKeyData)) {
+                        containerXID = keyData.stringValue!
+                    }
+                    // Create the string dictionary that will represent the note
+                    let note: [String:String] = [
+                        "xid": xids[index],
+                        "name": names[index],
+                        "container": containerXID
+                    ]
+                    // Append the dictionary to the output array
+                    output.append(note)
                 }
-                // Create the string dictionary that will represent the note
-                let note: [String:String] = [
-                    "xid": xids[index],
-                    "name": names[index],
-                    "container": containerXID
-                ]
-                // Append the dictionary to the output array
-                output.append(note)
             }
         }
         

@@ -355,7 +355,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
                 white-space: pre;
             }
         </style>
-        <div>
+        <div width="500">
         \(self.body)
         </div>
     </body>
@@ -406,7 +406,58 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
     }
     
     func toLaTeXString() -> String {
-        return ""
+        // Get the HTML string of the content (less common tags)
+        let htmlStringLines = self.body
+            .replacingOccurrences(of: "<div>", with: "")
+            .replacingOccurrences(of: "</div>", with: "")
+            .replacingOccurrences(of: "<br>", with: "")
+            .replacingOccurrences(of: "<object>", with: "")
+            .replacingOccurrences(of: "</object>", with: "")
+            .replacingOccurrences(of: "\\", with: "\textbackslash")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .components(separatedBy: "\n")
+        
+        // Create an output string
+        var outputString =
+"""
+\\documentclass[12pt, letterpaper]{article}
+\\title{\(self.name)}
+\\date{\(self.creationDate)}
+\\begin{document}
+\\maketitle
+"""
+        
+        // For each HTML line
+        for htmlLine in htmlStringLines {
+            // Markdown line
+            var latexLine = htmlLine
+            
+            // ** Conversion
+            // Headings
+            latexLine = latexLine.replacingOccurrences(of: "<h1>", with: "\n\\section*{").replacingOccurrences(of: "</h1>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h2>", with: "\n\\section*{").replacingOccurrences(of: "</h2>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h3>", with: "\n\\section*{").replacingOccurrences(of: "</h3>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h4>", with: "\n\\section*{").replacingOccurrences(of: "</h4>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h5>", with: "\n\\section*{").replacingOccurrences(of: "</h5>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h6>", with: "\n\\section*{").replacingOccurrences(of: "</h6>", with: "}")
+            // Lists
+            latexLine = latexLine.replacingOccurrences(of: "<ul>", with: "\n\\begin{itemize}").replacingOccurrences(of: "</ul>", with: "\\end{itemize}")
+            latexLine = latexLine.replacingOccurrences(of: "<ol>", with: "\n\\begin{enumerate}").replacingOccurrences(of: "</ul>", with: "\\end{enumerate}")
+            latexLine = latexLine.replacingOccurrences(of: "li", with: "\n\\item ").replacingOccurrences(of: "</ul>", with: " \n")
+            // Styles
+            latexLine = latexLine.replacingOccurrences(of: "<b>", with: "\\textbf{").replacingOccurrences(of: "</b>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<i>", with: "\\textit{").replacingOccurrences(of: "</i>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<tt>", with: "\\texttt{").replacingOccurrences(of: "</tt>", with: "}")
+            
+            // Add the markdown line to the output string
+            outputString = outputString + "\n" + latexLine
+        }
+        
+        outputString = outputString + "\n\\end{document}\n"
+        
+        // Return the parsed markdown
+        return outputString
     }
     
     func toMarkdownString() -> String {
@@ -532,7 +583,13 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
                     self.failed = true
                 }
             } else if format == "TEX" {
-                return
+                do {
+                    let outputData = self.toLaTeXString().data(using: .utf8)!
+                    try outputData.write(to: fileURL)
+                } catch {
+                    self.log("Failed to save note content as TEX: \(error)")
+                    self.failed = true
+                }
             } else if format == "MD" {
                 do {
                     let outputData = self.toMarkdownString().data(using: .utf8)!

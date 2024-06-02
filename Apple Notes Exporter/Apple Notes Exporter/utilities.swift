@@ -24,7 +24,6 @@ class HTMLtoPDF: NSObject, WKNavigationDelegate {
         self.webView.navigationDelegate = self
         self.completion = completion
         self.webView.loadHTMLString(htmlString, baseURL: nil)
-        print("Load HTML string")
 
         // Set a timeout to handle cases where loading takes too long
         timeoutTimer = Timer.scheduledTimer(timeInterval: loadingTimeout, target: self, selector: #selector(handleTimeout), userInfo: nil, repeats: false)
@@ -38,7 +37,6 @@ class HTMLtoPDF: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        print("webView() -> self.createPDF()")
         timeoutTimer?.invalidate()
         timeoutTimer = nil
         createPDF()
@@ -75,7 +73,7 @@ class HTMLtoPDF: NSObject, WKNavigationDelegate {
                 let pageCount = ceil(contentHeight / pageSize.height)
                 
                 // Adjust the configuration rect to cover the entire content
-                pdfConfiguration.rect = CGRect(x: 0, y: 0, width: pageSize.width, height: contentHeight)
+                pdfConfiguration.rect = CGRect(x: 0, y: 100, width: pageSize.width, height: contentHeight)
                 
                 // Create the PDF
                 self.webView.createPDF(configuration: pdfConfiguration) { result in

@@ -85,7 +85,7 @@ struct AppleNotesExporterView: View {
     // Data
     @ObservedObject private var sharedState = AppleNotesExporterState()
     // Preferences
-    @State private var outputFormat = "PDF"
+    @State private var outputFormat = "HTML"
     @State private var outputPath: String = ""
     @State private var outputURL: URL? = nil
     // Show/hide different views
