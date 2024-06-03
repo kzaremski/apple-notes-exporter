@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 func exportNotes(sharedState: AppleNotesExporterState, outputURL: URL, outputFormat: String) {
     // Reset the export message and progress
@@ -99,6 +100,7 @@ func exportNotes(sharedState: AppleNotesExporterState, outputURL: URL, outputFor
             sharedState.exporting = false
             sharedState.exportDone = false
             sharedState.exportMessage = "Export has been cancelled!"
+            Logger.noteExport.info("Finished exporting, reason: cancelled.")
         } else {
             sharedState.exporting = false
             sharedState.exportDone = true
@@ -108,11 +110,14 @@ func exportNotes(sharedState: AppleNotesExporterState, outputURL: URL, outputFor
             dateFormatter.dateStyle = .medium
             dateFormatter.timeStyle = .medium
             sharedState.exportMessage = "Export finished " + dateFormatter.string(from: Date())
+            Logger.noteExport.info("Finished exporting, reason: finished.")
         }
     }
 }
 
-func initialLoad(sharedState: AppleNotesExporterState) {    
+func initialLoad(sharedState: AppleNotesExporterState) {
+    Logger.noteQuery.info("Started initial note and account query.")
+    
     // Data root
     var localRoot: [ICItem] = []
     
@@ -216,5 +221,8 @@ func initialLoad(sharedState: AppleNotesExporterState) {
         sharedState.root = localRoot
         sharedState.itemByXID = itemByXID
         sharedState.allNotes = localAllNotes
+        
+        // Log
+        Logger.noteQuery.info("Finished initial note and account query.")
     }
 }

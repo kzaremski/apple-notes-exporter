@@ -6,12 +6,15 @@
 //
 
 import SwiftUI
+import OSLog
 
+// ** Declare Constants
+// App version and capability
 let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 let OUTPUT_FORMATS: [String] = [
     //"PDF",
     "HTML",
-    //"TEX",
+    "TEX",
     "MD",
     "RTF",
     "TXT",
@@ -21,6 +24,19 @@ let OUTPUT_TYPES: [String] = [
     "TAR Archive",
     "ZIP Archive",
 ]
+// Page types
+let PAGE_US_LETTER: (width: Int, height: Int) = (612, 792)
+let PAGE_US_LEGAL: (width: Int, height: Int) = (612, 1008)
+let PAGE_US_TABLOID: (width: Int, height: Int) = (792, 1224)
+let PAGE_A4: (width: Int, height: Int) = (595, 842)
+// Logger
+extension Logger {
+    /// Using your bundle identifier is a great way to ensure a unique identifier.
+    private static var subsystem = Bundle.main.bundleIdentifier!
+
+    static let noteQuery = Logger(subsystem: subsystem, category: "notequery")
+    static let noteExport = Logger(subsystem: subsystem, category: "noteexport")
+}
 
 extension Scene {
     func windowResizabilityContentSize() -> some Scene {

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct ExportLineItem: View {
     @ObservedObject var sharedState: AppleNotesExporterState
@@ -53,7 +54,7 @@ struct ExportLineItem: View {
                     .buttonStyle(BorderlessButtonStyle())
                     .popover(isPresented: $logPopoverVisible, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
                         ScrollView {
-                            Text(self.item.logString).frame(width: 350, height: 150, alignment: .leading)
+                            Text(self.item.logString).frame(width: 350, alignment: .leading)
                                 .multilineTextAlignment(.leading).padding(10)
                                 .contextMenu(ContextMenu(menuItems: {
                                     Button("Copy", action: {
@@ -102,6 +103,7 @@ struct ExportView: View {
                 
                 if sharedState.exporting {
                     Button {
+                        Logger.noteExport.info("User triggered export cancellation")
                         sharedState.shouldCancelExport = true
                     } label: {
                         Text(sharedState.shouldCancelExport ? "Cancelling" : "Cancel Export")

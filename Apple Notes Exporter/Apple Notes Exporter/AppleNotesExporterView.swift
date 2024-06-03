@@ -6,11 +6,7 @@
 //
 
 import SwiftUI
-import WebKit
 import Foundation
-import UniformTypeIdentifiers
-import AppKit
-import Cocoa
 
 extension Binding {
     func onChange(_ handler: @escaping (Value) -> Void) -> Binding<Value> {

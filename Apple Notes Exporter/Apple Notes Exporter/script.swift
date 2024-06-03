@@ -169,29 +169,32 @@ struct AppleNotesScriptLayer {
             let locked = scriptOutputArray[2].stringValue!.components(separatedBy: "\n")
             let containers = scriptOutputArray[3].toArray()
             
-            // For each note in the returned notes
-            for index in 0..<xids.count {
-                // Do not include password protected notes
-                if locked[index] == "true" {
-                    continue
+            // If there are no containers, then there are no notes and this account can be considered empty.
+            if containers.count > 0 {
+                // For each note in the returned notes
+                for index in 0..<xids.count {
+                    // Do not include password protected notes
+                    if locked[index] == "true" {
+                        continue
+                    }
+                    
+                    // Get the container object at the current note's index
+                    let containerDescriptor: NSAppleEventDescriptor = containers[index]
+                    // Empty container XID
+                    var containerXID: String = ""
+                    // Extract the XID of the container from the AppleScript container class
+                    if let keyData = containerDescriptor.forKeyword(AEKeyword(keyAEKeyData)) {
+                        containerXID = keyData.stringValue!
+                    }
+                    // Create the string dictionary that will represent the note
+                    let note: [String:String] = [
+                        "xid": xids[index],
+                        "name": names[index],
+                        "container": containerXID
+                    ]
+                    // Append the dictionary to the output array
+                    output.append(note)
                 }
-                
-                // Get the container object at the current note's index
-                let containerDescriptor = containers[index]
-                // Empty container XID
-                var containerXID: String = ""
-                // Extract the XID of the container from the AppleScript container class
-                if let keyData = containerDescriptor.forKeyword(AEKeyword(keyAEKeyData)) {
-                    containerXID = keyData.stringValue!
-                }
-                // Create the string dictionary that will represent the note
-                let note: [String:String] = [
-                    "xid": xids[index],
-                    "name": names[index],
-                    "container": containerXID
-                ]
-                // Append the dictionary to the output array
-                output.append(note)
             }
         }
         

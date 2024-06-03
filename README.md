@@ -1,7 +1,11 @@
 # apple-notes-exporter
-MacOS app written in Swift that exports Apple Notes (including iCloud Notes) to a multitude of formats preserving note folder structure.
+MacOS app written in Swift that bulk exports Apple Notes (including iCloud Notes) to a multitude of formats preserving note folder structure.
 
 ![Screenshot of version 0.3 of the Apple Notes Exporter](screenshots/v0.3.png)
+
+## Purpose & Rationale
+
+Many choose to do all of their note taking and planning through Apple Notes because of the simplicity and convenience that it offers.
 
 ## Export Formats
 * HTML
@@ -9,6 +13,10 @@ MacOS app written in Swift that exports Apple Notes (including iCloud Notes) to 
     * HTML format can be used to publish to the web or store locally.
     * Images are included inline using the HTML base64 embed syntax.
     * Portable between browsers and formats well when printed.
+* TEX
+    * LaTeX format.
+    * Can be compiled using the LaTeX typesetting software.
+        * Notes can be compiled individually or many can be included within a single document.
 * MD
     * Markdown format.
     * Useful if moving to other Markdown-based note taking apps.
@@ -25,15 +33,18 @@ Attachments are always saved in a folder corresponding to the name/title of the 
 
 #### What about PDF?
 Apple's APIs for programmatically generating PDFs within Swift on MacOS are difficult to work with and poorly documented.
+
 All research in this domain has lead me to a variety of answers and solutions but there has never been the perfect solution that solves all of my problems.
 For instance, some people say to use the CoreText features, but there is no straightforward way to include images.
 Other solutions say to render the HTML to a WebKit object and then to create a print operation and "print" to a PDF, but this does not work well with concurrent threads as it wants to run on the UI thread.
 I also tried my own solution: embed a binary for WKHTMLtoPDF in the app, but Apple's code signing requirements for MacOS apps and all included binaries proved to make this difficult.
 
+There is a pre-release available in the resources page that has my best implementation of the PDF export functionality. It produced PDFs that are not sized correctly, with text clipping off of the edges of the page.
+
 I was not going to let PDF be the functionality that made me lose my resolve to finish at least a first version of this project. (meaning: I have given up, for now)
 
-> **Update 2024-05-23:**
-> PDF export is my top priority and my understanding has changed since last year, I may finally be able to tackle this problem correctly.
+-----
+***If you are a Swift developer that knows how to implement this and wants to help, I greatly welcome your contributions. Please open a pull request.***
 
 ## Compatibility & System Requirements
 * MacOS Big Sur 11.0 or higher
@@ -43,7 +54,7 @@ I was not going to let PDF be the functionality that made me lose my resolve to 
 * 8GB RAM recommended
     * As the app moves through each note and exports them, it retains their content in memory after the export is completed.
     * For every 500 notes the app will use approximately 1GB of RAM
-    * RAM usage will be optimized and addressed in the next update (v0.4)
+    * RAM usage will be optimized in the future.
 * Disk Space
     * 3MB to accommodate the app itself
     * Additional space for your exported notes and their attachments
@@ -55,6 +66,10 @@ Export progress view indicating total progress and error details on a note-by-no
 ![Export Progress](screenshots/v0.3_export_progress.png)
 
 ## Installation
+#### The app is not officially notarized by Apple since I am not able to pay for a developer account annually at this time, thus you may encounter some difficulties when trying to run the app for the first time.
+
+-----
+
 Make sure that you have "App Store and Identified Developers" set as your app install sources in the "Privacy & Security" section of System Settings in MacOS.
 
 When opening the app as downloaded from the releases page you may be met with a message:
