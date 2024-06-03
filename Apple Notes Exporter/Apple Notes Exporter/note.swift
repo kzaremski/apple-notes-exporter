@@ -7,6 +7,7 @@
 
 import Foundation
 import WebKit
+import OSLog
 
 enum ICItemError: Error {
     case pdfCreationError(description: String)
@@ -155,8 +156,8 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let dateString = dateFormatter.string(from: Date())
         let logLine = "[\(dateString)] \(message)"
-        print(logLine)
         self.logString += "\(logLine)\n"
+        Logger.noteExport.error("\(message)")
     }
  
     /**
@@ -414,9 +415,19 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
             .replacingOccurrences(of: "<br>", with: "")
             .replacingOccurrences(of: "<object>", with: "")
             .replacingOccurrences(of: "</object>", with: "")
-            .replacingOccurrences(of: "\\", with: "\textbackslash")
-            .replacingOccurrences(of: "$", with: "\\$")
-            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "<img[^>]*>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<span[^>]*>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "</span>", with: "")
+            .replacingOccurrences(of: "<font[^>]*>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "</font>", with: "")
+            .replacingOccurrences(of: "\\", with: "\textbackslash ")
+            .replacingOccurrences(of: "&gt", with: ">")
+            .replacingOccurrences(of: "&lt", with: "<")
+            .replacingOccurrences(of: "&", with: "\\& ")
+            .replacingOccurrences(of: "$", with: "\\$ ")
+            .replacingOccurrences(of: "%", with: "\\% ")
+            .replacingOccurrences(of: "{", with: "\\{ ")
+            .replacingOccurrences(of: "}", with: "\\} ")
             .components(separatedBy: "\n")
         
         // Create an output string
@@ -437,19 +448,25 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
             // ** Conversion
             // Headings
             latexLine = latexLine.replacingOccurrences(of: "<h1>", with: "\n\\section*{").replacingOccurrences(of: "</h1>", with: "}")
-            latexLine = latexLine.replacingOccurrences(of: "<h2>", with: "\n\\section*{").replacingOccurrences(of: "</h2>", with: "}")
-            latexLine = latexLine.replacingOccurrences(of: "<h3>", with: "\n\\section*{").replacingOccurrences(of: "</h3>", with: "}")
-            latexLine = latexLine.replacingOccurrences(of: "<h4>", with: "\n\\section*{").replacingOccurrences(of: "</h4>", with: "}")
-            latexLine = latexLine.replacingOccurrences(of: "<h5>", with: "\n\\section*{").replacingOccurrences(of: "</h5>", with: "}")
-            latexLine = latexLine.replacingOccurrences(of: "<h6>", with: "\n\\section*{").replacingOccurrences(of: "</h6>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h2>", with: "\n\\subsection*{").replacingOccurrences(of: "</h2>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h3>", with: "\n\\subsubsection*{").replacingOccurrences(of: "</h3>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h4>", with: "\n\\subsubsection*{").replacingOccurrences(of: "</h4>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h5>", with: "\n\\subsubsection*{").replacingOccurrences(of: "</h5>", with: "}")
+            latexLine = latexLine.replacingOccurrences(of: "<h6>", with: "\n\\subsubsection*{").replacingOccurrences(of: "</h6>", with: "}")
             // Lists
             latexLine = latexLine.replacingOccurrences(of: "<ul>", with: "\n\\begin{itemize}").replacingOccurrences(of: "</ul>", with: "\\end{itemize}")
-            latexLine = latexLine.replacingOccurrences(of: "<ol>", with: "\n\\begin{enumerate}").replacingOccurrences(of: "</ul>", with: "\\end{enumerate}")
-            latexLine = latexLine.replacingOccurrences(of: "li", with: "\n\\item ").replacingOccurrences(of: "</ul>", with: " \n")
+            latexLine = latexLine.replacingOccurrences(of: "<ol>", with: "\n\\begin{enumerate}").replacingOccurrences(of: "</ol>", with: "\\end{enumerate}")
+            latexLine = latexLine.replacingOccurrences(of: "<li>", with: "\n\\item ").replacingOccurrences(of: "</li>", with: " \n")
             // Styles
             latexLine = latexLine.replacingOccurrences(of: "<b>", with: "\\textbf{").replacingOccurrences(of: "</b>", with: "}")
             latexLine = latexLine.replacingOccurrences(of: "<i>", with: "\\textit{").replacingOccurrences(of: "</i>", with: "}")
             latexLine = latexLine.replacingOccurrences(of: "<tt>", with: "\\texttt{").replacingOccurrences(of: "</tt>", with: "}")
+            
+            // Remove error causing artifacts
+            latexLine = latexLine.replacingOccurrences(of: "\\section*{}", with: "")
+            latexLine = latexLine.replacingOccurrences(of: "\\texttt{}", with: "")
+            latexLine = latexLine.replacingOccurrences(of: "\\textit{}", with: "")
+            latexLine = latexLine.replacingOccurrences(of: "\\textbf{}", with: "")
             
             // Add the markdown line to the output string
             outputString = outputString + "\n" + latexLine

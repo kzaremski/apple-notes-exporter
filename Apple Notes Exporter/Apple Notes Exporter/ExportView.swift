@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct ExportLineItem: View {
     @ObservedObject var sharedState: AppleNotesExporterState
@@ -102,6 +103,7 @@ struct ExportView: View {
                 
                 if sharedState.exporting {
                     Button {
+                        Logger.noteExport.info("User triggered export cancellation")
                         sharedState.shouldCancelExport = true
                     } label: {
                         Text(sharedState.shouldCancelExport ? "Cancelling" : "Cancel Export")
