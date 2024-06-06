@@ -16,8 +16,10 @@ struct ExportLineItem: View {
     private func getImage() -> String {
         if self.item.error {
             return "⚠️"
-        } else if self.item.exported {
+        } else if self.item.exported && self.item.logString == "" {
             return "✅"
+        } else if self.item.exported && self.item.logString != "" {
+            return "⚠️✅"
         } else {
             return "⏳"
         }
@@ -43,9 +45,7 @@ struct ExportLineItem: View {
                     .scaleEffect(0.5)
                     .frame(width: 20, height: 15)
             } else {
-                if self.item.logString == "" {
-                    Text(getImage())
-                } else {
+                if self.item.error || self.item.logString != "" {
                     Button {
                         self.logPopoverVisible = !self.logPopoverVisible
                     } label: {
@@ -54,7 +54,10 @@ struct ExportLineItem: View {
                     .buttonStyle(BorderlessButtonStyle())
                     .popover(isPresented: $logPopoverVisible, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
                         ScrollView {
-                            Text(self.item.logString).frame(width: 350, alignment: .leading)
+                            Text(
+                                self.item.logString != "" ?
+                                self.item.logString : (self.item.children != nil ? "An error occured while exporting this item's children." : "An error occurred while exporting this item.")
+                            ).frame(width: 350, alignment: .leading)
                                 .multilineTextAlignment(.leading).padding(10)
                                 .contextMenu(ContextMenu(menuItems: {
                                     Button("Copy", action: {
@@ -63,6 +66,8 @@ struct ExportLineItem: View {
                                 }))
                         }
                     }
+                } else {
+                    Text(getImage())
                 }
             }
         }
@@ -71,7 +76,6 @@ struct ExportLineItem: View {
 }
 
 struct ExportView: View {
-    @Binding var showProgressWindow: Bool
     @ObservedObject var sharedState: AppleNotesExporterState
 
     var body: some View {
@@ -110,7 +114,7 @@ struct ExportView: View {
                     }.disabled(sharedState.shouldCancelExport)
                 } else {
                     Button {
-                        showProgressWindow = false
+                        sharedState.showProgressWindow = false
                     } label: {
                         Text("Done")
                     }
