@@ -247,9 +247,8 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
              
                 // Make sure that the name and IDs match what we already have
                 if noteDict["name"]! != self.name || noteDict["id"]! != self.xid {
-                    log("Discrepancy in note XID and note name, integrity of exported notes is not possible.\nDetails:\n --> Expected XID: \(self.xid), Actual XID: \(noteDict["id"] ?? "")\n --> Expected name: \(self.name), Actual name: \(noteDict["name"] ?? "")")
-                    self.failed = true
-                    return
+                    log("Discrepancy in note XID and note name, integrity of exported note is not guaranteed. Details:\n --> XID: \(self.xid)\n --> Expected name: \"\(self.name)\"\n --> Actual name: \" \(noteDict["name"] ?? "")\"")
+                    log("This could be due to you renaming or modifying the note after opening Apple Notes Exporter, or some other change in the database caused by a sync or other issue. Please check the exported note.")
                 }
                 // Update the new values
                 self.body = noteDict["body"]!

@@ -55,6 +55,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 class AppleNotesExporterState: ObservableObject {
+    @Published var initialLoadComplete: Bool = false
+    @Published var showProgressWindow: Bool = false
+    
     @Published var root: [ICItem] = []
     @Published var itemByXID: [String:ICItem] = [:]
     @Published var allNotes: [ICItem] = []
@@ -188,21 +191,59 @@ class AppleNotesExporterState: ObservableObject {
         // Return nil if nothing found
         return nil
     }
+    
+    func reload() {
+        // Cannot reload while exporting
+        if self.exporting {
+            return
+        }
+        
+        self.initialLoadComplete = false
+        self.showProgressWindow = false
+        self.initialLoadMessage = "Loading..."
+        self.refresh()
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.root = []
+            self.itemByXID = [:]
+            self.allNotes = []
+            self.selectedRoot = []
+            self.selectedNotes = []
+            
+            self.update()
+            
+            DispatchQueue.global(qos: .userInitiated).async {
+                initialLoad(sharedState: self)
+                DispatchQueue.main.async {
+                    self.initialLoadComplete = true
+                }
+            }
+        }
+    }
 }
 
 @main
 struct Apple_Notes_ExporterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
+    @ObservedObject var sharedState: AppleNotesExporterState = AppleNotesExporterState()
+    
     var body: some Scene {
         WindowGroup(id: "main") {
-            AppleNotesExporterView().onAppear {
+            AppleNotesExporterView(sharedState: sharedState).onAppear {
                 NSWindow.allowsAutomaticWindowTabbing = false
             }
-            
         }
         .commands {
-            CommandGroup(replacing: .newItem, addition: { })
+            CommandGroup(replacing: .newItem) {
+                Button(action: {
+                    sharedState.reload()
+                }) {
+                    Text("Reload Notes Accounts")
+                }
+                .keyboardShortcut("R", modifiers: [.command])
+                .disabled(sharedState.exporting)
+            }
         }
         .windowResizabilityContentSize()
     }

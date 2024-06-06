@@ -67,7 +67,6 @@ struct SelectorLineItem: View {
 struct NoteSelectorView: View {
     @ObservedObject var sharedState: AppleNotesExporterState
     @Binding var showNoteSelectorView: Bool
-    @Binding var initialLoadComplete: Bool
     
     var body: some View {
         VStack {
@@ -77,7 +76,7 @@ struct NoteSelectorView: View {
             
             VStack {
                 List {
-                    if (initialLoadComplete) {
+                    if (sharedState.initialLoadComplete) {
                         if sharedState.root.count > 0 {
                             OutlineGroup(sharedState.root, children: \.children) { item in
                                 SelectorLineItem(sharedState: sharedState, itemXID: item.xid)

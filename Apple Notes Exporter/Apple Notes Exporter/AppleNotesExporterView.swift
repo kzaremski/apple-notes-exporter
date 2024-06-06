@@ -24,7 +24,7 @@ struct AppleNotesExporterView: View {
     @Environment(\.openURL) var openURL
 
     func setProgressWindow(_ state: Bool?) {
-        showProgressWindow = state ?? !showProgressWindow
+        self.sharedState.showProgressWindow = state ?? !self.sharedState.showProgressWindow
     }
     
     func triggerExportNotes() {
@@ -79,11 +79,13 @@ struct AppleNotesExporterView: View {
         case noOutput
     }
     
+    init(sharedState: AppleNotesExporterState) {
+        self.sharedState = sharedState
+    }
+    
     // ** State
-    // If the initial load is complete
-    @State private var initialLoadComplete: Bool = false
     // Data
-    @ObservedObject private var sharedState = AppleNotesExporterState()
+    @ObservedObject private var sharedState: AppleNotesExporterState
     // Preferences
     @State private var outputFormat = "HTML"
     @State private var outputPath: String = ""
@@ -160,15 +162,10 @@ struct AppleNotesExporterView: View {
         .frame(width: 500.0, height: 300.0)
         .padding(10.0)
         .onAppear() {
-            DispatchQueue.global(qos: .userInitiated).async {
-                self.initialLoadComplete = false
-                initialLoad(sharedState: sharedState)
-                self.initialLoadComplete = true
-            }
+            self.sharedState.reload()
         }
-        .sheet(isPresented: $showProgressWindow) {
+        .sheet(isPresented: $sharedState.showProgressWindow) {
             ExportView(
-                showProgressWindow: $showProgressWindow,
                 sharedState: sharedState
             )
             .frame(width: 600, height: 400)
@@ -204,8 +201,7 @@ struct AppleNotesExporterView: View {
         .sheet(isPresented: $showNoteSelectorView) {
             NoteSelectorView(
                 sharedState: sharedState,
-                showNoteSelectorView: $showNoteSelectorView,
-                initialLoadComplete: $initialLoadComplete
+                showNoteSelectorView: $showNoteSelectorView
             ).frame(width: 600, height: 400)
         }
     }
@@ -219,11 +215,5 @@ struct BorderedProminentButtonStyle: ButtonStyle {
             .background(configuration.isPressed ? Color.blue.opacity(0.8) : Color.blue)
             .cornerRadius(6)
             
-    }
-}
-
-struct AppleNotesExporterView_Previews: PreviewProvider {
-    static var previews: some View {
-        AppleNotesExporterView()
     }
 }
