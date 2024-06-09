@@ -111,13 +111,13 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         self.id = UUID()
         self.xid = xid
         // Infer type based on XID
-        if xid.contains("ICNote") {
+        if xid.contains("ICNote") || xid.contains("IMAPNote") {
             self.type = .ICNote
-        } else if xid.contains("ICAccount") {
+        } else if xid.contains("ICAccount") || xid.contains("IMAPAccount") {
             self.type = .ICAccount
-        } else if xid.contains("ICAttachment") {
+        } else if xid.contains("ICAttachment") || xid.contains("Attachment") {
             self.type = .ICAttachment
-        } else if xid.contains("ICFolder") {
+        } else if xid.contains("ICFolder") || xid.contains("IMAPFolder") {
             self.type = .ICFolder
         } else {
             self.type = .Invalid
