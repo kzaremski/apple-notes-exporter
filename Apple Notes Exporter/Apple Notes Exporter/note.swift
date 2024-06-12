@@ -348,17 +348,14 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
         <title>\(self.name)</title>
     </head>
-    <body>
-        <style>
-            body {
-                padding: 2em;
-                font-family: sans-serif;
-                white-space: pre;
-            }
-        </style>
-        <div width="500">
-        \(self.body)
-        </div>
+    <body style="margin: 0; padding: 2em; font-family: sans-serif;">
+    <style>
+        tt {
+            white-space: pre;
+            font-family: monospace;
+        }
+    </style>
+\(self.body)
     </body>
 </html>
 """
