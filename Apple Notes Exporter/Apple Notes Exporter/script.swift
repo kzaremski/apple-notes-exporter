@@ -28,7 +28,8 @@ extension NSAppleEventDescriptor {
 }
 
 enum AppleNotesScriptError: Error {
-    case attachmentSaveError(String)
+    case attachmentSave(String)
+    case emptyNote
 }
 
 /**
@@ -309,12 +310,12 @@ struct AppleNotesScriptLayer {
             if errorDict == nil {
                 if let value = resultDescriptor.stringValue {
                     if value != "OK" {
-                        throw AppleNotesScriptError.attachmentSaveError("nil... this type of attachment probably does not have the save method.")
+                        throw AppleNotesScriptError.attachmentSave("nil... this type of attachment probably does not have the save method.")
                     } else {
                         return
                     }
                 } else {
-                    throw AppleNotesScriptError.attachmentSaveError("nil... this type of attachment probably does not have the save method.")
+                    throw AppleNotesScriptError.attachmentSave("nil... this type of attachment probably does not have the save method.")
                 }
             } else {
                 var errorString = ""
@@ -323,7 +324,7 @@ struct AppleNotesScriptLayer {
                         errorString += "\(keyString): \(valueString), "
                     }
                 }
-                throw AppleNotesScriptError.attachmentSaveError(errorString)
+                throw AppleNotesScriptError.attachmentSave(errorString)
             }
         }
     }
@@ -338,7 +339,11 @@ struct AppleNotesScriptLayer {
             end tell
             """
         )
-        
+
+        guard output.count == 6 else {
+            throw AppleNotesScriptError.emptyNote
+        }
+
         return [
             "id": output[0],
             "name": output[1],
