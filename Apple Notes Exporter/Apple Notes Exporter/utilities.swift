@@ -70,7 +70,7 @@ class HTMLtoPDF: NSObject, WKNavigationDelegate {
         webView.evaluateJavaScript("document.body.scrollHeight") { (result, error) in
             if let scrollHeight = result as? CGFloat {
                 let contentHeight = scrollHeight
-                let pageCount = ceil(contentHeight / pageSize.height)
+                // let pageCount = ceil(contentHeight / pageSize.height);
                 
                 // Adjust the configuration rect to cover the entire content
                 pdfConfiguration.rect = CGRect(x: 0, y: 100, width: pageSize.width, height: contentHeight)

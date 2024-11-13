@@ -1,0 +1,2 @@
+Contributors:
+- Sergey Nikolsky (GitHub: @nikolsky2) — Fixed a crash when the AppleScript returns empty notes.

@@ -66,21 +66,9 @@ Export progress view indicating total progress and error details on a note-by-no
 ![Export Progress](screenshots/v0.3_export_progress.png)
 
 ## Installation
-#### The app is not officially notarized by Apple since I am not able to pay for a developer account annually at this time, thus you may encounter some difficulties when trying to run the app for the first time.
-
------
-
 Make sure that you have "App Store and Identified Developers" set as your app install sources in the "Privacy & Security" section of System Settings in MacOS.
 
-When opening the app as downloaded from the releases page you may be met with a message:
-
-```
-"Apple Notes Exporter" can't be opened because Apple cannot check it for malicious software.
-This software needs to be updated.
-Contact the developer for more information.
-``````
-
-Go to the "Privacy & Security" pane of System Settings and click "Open Anyway" under the "Security" section towards the bottom of the pane. See Apple's article https://support.apple.com/en-us/HT202491 if you need more help or a better explanation on how to make an exception for the app to run.
+**As of Version 0.4 Build 5, we are distributing a notarized executable.** *For older versions, go to the "Privacy & Security" pane of System Settings and click "Open Anyway" under the "Security" section towards the bottom of the pane. See Apple's article https://support.apple.com/en-us/HT202491 if you need more help or a better explanation on how to make an exception for the app to run.*
 
 ---
 
