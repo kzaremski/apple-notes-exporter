@@ -155,7 +155,7 @@ struct AppleNotesExporterView: View {
             }
             .buttonStyle(BorderedProminentButtonStyle())
             
-            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2024 [Konstantin Zaremski](https://www.zaremski.com) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
+            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2025 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
