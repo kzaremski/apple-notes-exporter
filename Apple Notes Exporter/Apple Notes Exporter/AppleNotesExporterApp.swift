@@ -12,8 +12,8 @@ import OSLog
 // App version and capability
 let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 let OUTPUT_FORMATS: [String] = [
-    //"PDF",
     "HTML",
+    "PDF",
     "TEX",
     "MD",
     "RTF",

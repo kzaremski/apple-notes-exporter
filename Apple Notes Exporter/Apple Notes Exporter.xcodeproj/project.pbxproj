@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2519EE842E3AEA7200CC5D3C /* LicensePermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */; };
+		2519EE892E3BD57E00CC5D3C /* FullDiskAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE882E3BD57E00CC5D3C /* FullDiskAccess */; };
+		2519EE8B2E3BDE5E00CC5D3C /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE8A2E3BDE5E00CC5D3C /* HtmlToPdf */; };
 		257242442BF1878B00BD9A67 /* note.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242432BF1878B00BD9A67 /* note.swift */; };
 		257242462BF18F7700BD9A67 /* utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242452BF18F7700BD9A67 /* utilities.swift */; };
 		2573ECD22A5D843D008591E7 /* script.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2573ECD12A5D843D008591E7 /* script.swift */; };
@@ -54,6 +57,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensePermissionsView.swift; sourceTree = "<group>"; };
 		257242432BF1878B00BD9A67 /* note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = note.swift; sourceTree = "<group>"; };
 		257242452BF18F7700BD9A67 /* utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = utilities.swift; sourceTree = "<group>"; };
 		2573ECD12A5D843D008591E7 /* script.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = script.swift; sourceTree = "<group>"; };
@@ -80,6 +84,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2519EE892E3BD57E00CC5D3C /* FullDiskAccess in Frameworks */,
+				2519EE8B2E3BDE5E00CC5D3C /* HtmlToPdf in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -136,6 +142,7 @@
 				257E911C2BF26F030052606E /* export.swift */,
 				257E911E2BF26FC10052606E /* ExportView.swift */,
 				257E91202BF26FD30052606E /* NoteSelectorView.swift */,
+				2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */,
 			);
 			path = "Apple Notes Exporter";
 			sourceTree = "<group>";
@@ -191,6 +198,8 @@
 			);
 			name = "Apple Notes Exporter";
 			packageProductDependencies = (
+				2519EE882E3BD57E00CC5D3C /* FullDiskAccess */,
+				2519EE8A2E3BDE5E00CC5D3C /* HtmlToPdf */,
 			);
 			productName = "Apple Notes Exporter";
 			productReference = 258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */;
@@ -240,7 +249,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1420;
-				LastUpgradeCheck = 1430;
+				LastUpgradeCheck = 1640;
 				TargetAttributes = {
 					258D3A8E29A7CC2E00858CE1 = {
 						CreatedOnToolsVersion = 14.2;
@@ -265,6 +274,8 @@
 			);
 			mainGroup = 258D3A8629A7CC2E00858CE1;
 			packageReferences = (
+				25479E582E1C5D08003E49E6 /* XCRemoteSwiftPackageReference "swift-html-to-pdf" */,
+				2519EE872E3BD57E00CC5D3C /* XCRemoteSwiftPackageReference "FullDiskAccess" */,
 			);
 			productRefGroup = 258D3A9029A7CC2E00858CE1 /* Products */;
 			projectDirPath = "";
@@ -315,6 +326,7 @@
 				258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */,
 				2573ECD22A5D843D008591E7 /* script.swift in Sources */,
 				257E911F2BF26FC10052606E /* ExportView.swift in Sources */,
+				2519EE842E3AEA7200CC5D3C /* LicensePermissionsView.swift in Sources */,
 				257E911D2BF26F030052606E /* export.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -389,6 +401,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -450,6 +463,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -478,7 +492,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = Q7TB7B38LW;
@@ -496,7 +510,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
-				MARKETING_VERSION = 0.4;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -518,7 +532,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = Q7TB7B38LW;
@@ -536,7 +550,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
-				MARKETING_VERSION = 0.4;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -550,7 +564,6 @@
 		258D3AB829A7CC2F00858CE1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -569,7 +582,6 @@
 		258D3AB929A7CC2F00858CE1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -588,7 +600,6 @@
 		258D3ABB29A7CC2F00858CE1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
@@ -605,7 +616,6 @@
 		258D3ABC29A7CC2F00858CE1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
@@ -659,6 +669,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2519EE872E3BD57E00CC5D3C /* XCRemoteSwiftPackageReference "FullDiskAccess" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/inket/FullDiskAccess";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+		25479E582E1C5D08003E49E6 /* XCRemoteSwiftPackageReference "swift-html-to-pdf" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/coenttb/swift-html-to-pdf/";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.4.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2519EE882E3BD57E00CC5D3C /* FullDiskAccess */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2519EE872E3BD57E00CC5D3C /* XCRemoteSwiftPackageReference "FullDiskAccess" */;
+			productName = FullDiskAccess;
+		};
+		2519EE8A2E3BDE5E00CC5D3C /* HtmlToPdf */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 25479E582E1C5D08003E49E6 /* XCRemoteSwiftPackageReference "swift-html-to-pdf" */;
+			productName = HtmlToPdf;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 258D3A8729A7CC2E00858CE1 /* Project object */;
 }

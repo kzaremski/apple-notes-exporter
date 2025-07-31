@@ -91,6 +91,7 @@ struct AppleNotesExporterView: View {
     @State private var outputPath: String = ""
     @State private var outputURL: URL? = nil
     // Show/hide different views
+    @State private var showLicensePermissionsView: Bool = true
     @State private var showNoteSelectorView: Bool = false
     @State private var showProgressWindow: Bool = false
     @State private var showErrorExportingAlert: Bool = false
@@ -161,9 +162,6 @@ struct AppleNotesExporterView: View {
         }
         .frame(width: 500.0, height: 300.0)
         .padding(10.0)
-        .onAppear() {
-            self.sharedState.reload()
-        }
         .sheet(isPresented: $sharedState.showProgressWindow) {
             ExportView(
                 sharedState: sharedState
@@ -172,9 +170,9 @@ struct AppleNotesExporterView: View {
             .allowsHitTesting(true)
             .onAppear {
                 NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                    // Check if the pressed key is the Escape key
+                    // Detect Escape Key Press
                     if event.keyCode == 53 {
-                        // Prevent the event from propagating, hence preventing dismissal
+                        // Prevent Propagation
                         return nil
                     }
                     return event
@@ -203,6 +201,22 @@ struct AppleNotesExporterView: View {
                 sharedState: sharedState,
                 showNoteSelectorView: $showNoteSelectorView
             ).frame(width: 600, height: 400)
+        }
+        .sheet(isPresented: $showLicensePermissionsView) {
+            LicensePermissionsView(
+                sharedState: sharedState,
+                showLicensePermissionsView: $showLicensePermissionsView
+            ).frame(width: 600, height: 400)
+            .onAppear {
+                NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    // Detect Escape Key Press
+                    if event.keyCode == 53 {
+                        // Prevent Propagation
+                        return nil
+                    }
+                    return event
+                }
+            }
         }
     }
 }

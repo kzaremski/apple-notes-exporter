@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FullDiskAccess
 import OSLog
 
 func exportNotes(sharedState: AppleNotesExporterState, outputURL: URL, outputFormat: String) {
@@ -116,8 +117,6 @@ func exportNotes(sharedState: AppleNotesExporterState, outputURL: URL, outputFor
 }
 
 func initialLoad(sharedState: AppleNotesExporterState) {
-    Logger.noteQuery.info("Started initial note and account query.")
-    
     // Data root
     var localRoot: [ICItem] = []
     
@@ -148,6 +147,8 @@ func initialLoad(sharedState: AppleNotesExporterState) {
     DispatchQueue.main.async {
         sharedState.initialLoadMessage = "Querying accounts..."
     }
+    
+    Logger.noteQuery.info("Started initial note and account query.")
     
     // Load all accounts
     let accounts = AppleNotesScriptLayer.getAllAccounts()
