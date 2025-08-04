@@ -376,7 +376,7 @@ class ICItem: Identifiable, Hashable, CustomStringConvertible {
         // Error String
         var errorString: String?
         
-        // Run on the main thread
+        // Run on the main  thread
         DispatchQueue.main.async {
             let htmlToPDFConverter = HTMLtoPDF(htmlString: htmlString)
             // Run the conversion

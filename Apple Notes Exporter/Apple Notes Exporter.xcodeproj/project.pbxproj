@@ -10,6 +10,7 @@
 		2519EE842E3AEA7200CC5D3C /* LicensePermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */; };
 		2519EE892E3BD57E00CC5D3C /* FullDiskAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE882E3BD57E00CC5D3C /* FullDiskAccess */; };
 		2519EE8B2E3BDE5E00CC5D3C /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE8A2E3BDE5E00CC5D3C /* HtmlToPdf */; };
+		2519EE8D2E3BF47400CC5D3C /* NoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2519EE8C2E3BF47000CC5D3C /* NoteStore.swift */; };
 		257242442BF1878B00BD9A67 /* note.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242432BF1878B00BD9A67 /* note.swift */; };
 		257242462BF18F7700BD9A67 /* utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242452BF18F7700BD9A67 /* utilities.swift */; };
 		2573ECD22A5D843D008591E7 /* script.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2573ECD12A5D843D008591E7 /* script.swift */; };
@@ -58,6 +59,7 @@
 
 /* Begin PBXFileReference section */
 		2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensePermissionsView.swift; sourceTree = "<group>"; };
+		2519EE8C2E3BF47000CC5D3C /* NoteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteStore.swift; sourceTree = "<group>"; };
 		257242432BF1878B00BD9A67 /* note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = note.swift; sourceTree = "<group>"; };
 		257242452BF18F7700BD9A67 /* utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = utilities.swift; sourceTree = "<group>"; };
 		2573ECD12A5D843D008591E7 /* script.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = script.swift; sourceTree = "<group>"; };
@@ -130,6 +132,7 @@
 		258D3A9129A7CC2E00858CE1 /* Apple Notes Exporter */ = {
 			isa = PBXGroup;
 			children = (
+				2519EE8C2E3BF47000CC5D3C /* NoteStore.swift */,
 				2596C4D52A1F1DEE00EFF4F3 /* Apple-Notes-Exporter-Info.plist */,
 				258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */,
 				258D3A9429A7CC2E00858CE1 /* AppleNotesExporterView.swift */,
@@ -321,6 +324,7 @@
 			files = (
 				257242462BF18F7700BD9A67 /* utilities.swift in Sources */,
 				257242442BF1878B00BD9A67 /* note.swift in Sources */,
+				2519EE8D2E3BF47400CC5D3C /* NoteStore.swift in Sources */,
 				258D3A9529A7CC2E00858CE1 /* AppleNotesExporterView.swift in Sources */,
 				257E91212BF26FD30052606E /* NoteSelectorView.swift in Sources */,
 				258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */,

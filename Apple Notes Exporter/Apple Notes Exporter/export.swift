@@ -8,6 +8,7 @@
 import Foundation
 import FullDiskAccess
 import OSLog
+import SQLite3
 
 func exportNotes(sharedState: AppleNotesExporterState, outputURL: URL, outputFormat: String) {
     // Reset the export message and progress
@@ -149,6 +150,10 @@ func initialLoad(sharedState: AppleNotesExporterState) {
     }
     
     Logger.noteQuery.info("Started initial note and account query.")
+    
+    for note in NoteStore.shared.notes {
+        print(note.title)
+    }
     
     // Load all accounts
     let accounts = AppleNotesScriptLayer.getAllAccounts()

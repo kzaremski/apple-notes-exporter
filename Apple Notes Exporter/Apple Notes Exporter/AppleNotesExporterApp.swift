@@ -228,6 +228,10 @@ struct Apple_Notes_ExporterApp: App {
     
     @ObservedObject var sharedState: AppleNotesExporterState = AppleNotesExporterState()
     
+    init() {
+        _ = NoteStore.shared
+    }
+    
     var body: some Scene {
         WindowGroup(id: "main") {
             AppleNotesExporterView(sharedState: sharedState).onAppear {
