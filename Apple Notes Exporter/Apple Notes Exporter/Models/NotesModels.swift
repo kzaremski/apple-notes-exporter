@@ -271,23 +271,6 @@ struct NotesHierarchy {
             return note1.creationDate > note2.creationDate
         }
     }
-
-    private static func buildFolderNode(
-        folder: NotesFolder,
-        allFolders: [NotesFolder],
-        notes: [NotesNote]
-    ) -> FolderNode {
-        let subfolders = allFolders
-            .filter { $0.parentId == folder.id }
-            .map { buildFolderNode(folder: $0, allFolders: allFolders, notes: notes) }
-
-        // Sort notes by modification date, most recent first
-        let folderNotes = notes
-            .filter { $0.folderId == folder.id }
-            .sorted { $0.modificationDate > $1.modificationDate }
-
-        return FolderNode(folder: folder, subfolders: subfolders, notes: folderNotes)
-    }
 }
 
 // MARK: - Selection State

@@ -81,6 +81,7 @@ class ExportViewModel: ObservableObject {
     @Published var exportState: ExportState = .idle
     @Published var shouldCancel: Bool = false
     @Published var exportLog: [String] = []
+    @Published var configurations: ExportConfigurations
 
     // MARK: - Statistics Tracking
 
@@ -100,6 +101,13 @@ class ExportViewModel: ObservableObject {
 
     init(repository: NotesRepository = DatabaseNotesRepository()) {
         self.repository = repository
+        self.configurations = ExportConfigurations.load()
+    }
+
+    // MARK: - Configuration Management
+
+    func saveConfigurations() {
+        configurations.save()
     }
 
     // MARK: - Export Operations
@@ -275,8 +283,27 @@ class ExportViewModel: ObservableObject {
             _ = await tracker.noteCompleted()
         } catch {
             await tracker.noteFailed()
-            log("✗ Failed to export note '\(note.title)': \(error.localizedDescription)")
-            Logger.noteExport.error("Failed to export note '\(note.title)': \(error.localizedDescription)")
+
+            // Build detailed error message for user logs
+            var errorDetails = [
+                "Note: '\(note.title)'",
+                "ID: \(note.id)",
+                "Format: \(format.rawValue)",
+                "Error: \(error.localizedDescription)"
+            ]
+
+            if let nsError = error as NSError? {
+                errorDetails.append("Domain: \(nsError.domain)")
+                errorDetails.append("Code: \(nsError.code)")
+
+                if let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+                    errorDetails.append("Underlying: \(underlyingError.localizedDescription)")
+                }
+            }
+
+            let detailedMessage = "✗ Failed to export note - " + errorDetails.joined(separator: ", ")
+            log(detailedMessage)
+            Logger.noteExport.error("Failed to export note: \(errorDetails.joined(separator: ", "))")
         }
     }
 
@@ -288,15 +315,35 @@ class ExportViewModel: ObservableObject {
         includeAttachments: Bool,
         tracker: ExportProgressTracker
     ) async throws {
-        // Sanitize filename
-        let filename = "\(note.sanitizedFileName).\(format.fileExtension)"
+        // Check for cancellation before starting export
+        try Task.checkCancellation()
+
+        // Generate unique filename (handles duplicates)
+        let baseFilename = note.sanitizedFileName
+        let filename = generateUniqueFilename(
+            baseName: baseFilename,
+            extension: format.fileExtension,
+            inDirectory: directory
+        )
         let fileURL = directory.appendingPathComponent(filename)
 
         // Handle PDF export separately (binary format, requires WebKit)
         if format == .pdf {
-            let html = generateHTML(for: note)
-            // HtmlToPdf requires main actor for WebKit rendering
-            try await html.print(to: fileURL)
+            // Check for cancellation before expensive PDF generation
+            try Task.checkCancellation()
+
+            // Use PDF configuration
+            let pdfConfig = configurations.pdf
+            let html = generateHTML(for: note, config: pdfConfig.htmlConfiguration, forPDF: true)
+
+            // Apply page size and margin configuration
+            let pageSize = pdfConfig.pageSize.dimensions
+            let margins = pdfConfig.htmlConfiguration.toPDFEdgeInsets()
+            let pdfConfiguration = HtmlToPdf.PDFConfiguration(
+                margins: margins,
+                paperSize: CGSize(width: pageSize.width, height: pageSize.height)
+            )
+            try await html.print(to: fileURL, configuration: pdfConfiguration)
             log("✓ Exported PDF: \(note.title)")
         } else {
             // Generate content based on format
@@ -309,9 +356,15 @@ class ExportViewModel: ObservableObject {
 
         // Export attachments if requested
         if includeAttachments && note.hasAttachments {
+            // Check for cancellation before processing attachments
+            try Task.checkCancellation()
+
+            // Use the unique filename base (without extension) for attachment folder
+            let uniqueBaseName = filename.replacingOccurrences(of: ".\(format.fileExtension)", with: "")
             try await exportAttachmentsSafely(
                 note.attachments,
                 toDirectory: directory,
+                noteBaseName: uniqueBaseName,
                 noteTitle: note.title,
                 tracker: tracker
             )
@@ -322,20 +375,24 @@ class ExportViewModel: ObservableObject {
     private func exportAttachmentsSafely(
         _ attachments: [NotesAttachment],
         toDirectory directory: URL,
+        noteBaseName: String,
         noteTitle: String,
         tracker: ExportProgressTracker
     ) async throws {
-        // Filter out non-file attachments (tables, URLs, etc. that are embedded in note content)
-        let nonFileAttachmentTypes = [
-            "com.apple.notes.table",
-            "public.url",
-            "com.apple.notes.inlinetextattachment",
-            "com.apple.notes.inlinehashtagattachment",
-            "com.apple.notes.inlinementionattachment"
+        // Filter out non-file attachments (inline content embedded in note)
+        let nonFileAttachmentPrefixes = [
+            "com.apple.notes.table",                    // Tables
+            "com.apple.notes.inlinetextattachment",     // Hashtags, calculations, etc.
+            "com.apple.notes.inlinehashtagattachment",  // Hashtags (legacy)
+            "com.apple.notes.inlinementionattachment",  // Mentions
+            "com.apple.paper",                          // Apple Paper documents
+            "public.url"                                // URLs
         ]
 
         let fileAttachments = attachments.filter { attachment in
-            !nonFileAttachmentTypes.contains(attachment.typeUTI)
+            !nonFileAttachmentPrefixes.contains { prefix in
+                attachment.typeUTI.hasPrefix(prefix)
+            }
         }
 
         // Skip if no file attachments to export
@@ -343,13 +400,15 @@ class ExportViewModel: ObservableObject {
             return
         }
 
-        // Create attachments subfolder with note title
-        let sanitizedTitle = sanitizeFilename(noteTitle)
-        let attachmentsURL = directory.appendingPathComponent("\(sanitizedTitle) (Attachments)")
+        // Create attachments subfolder using the unique note base name
+        let attachmentsURL = directory.appendingPathComponent("\(noteBaseName) (Attachments)")
         try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
 
         // Export each attachment
         for attachment in fileAttachments {
+            // Check for cancellation before processing each attachment
+            try Task.checkCancellation()
+
             do {
                 // Fetch attachment data from repository
                 let data = try await repository.fetchAttachment(id: attachment.id)
@@ -364,9 +423,33 @@ class ExportViewModel: ObservableObject {
 
             } catch {
                 await tracker.attachmentFailed()
-                let typeInfo = attachment.typeUTI
-                log("✗ Failed to export attachment \(attachment.id) (type: \(typeInfo)) for note '\(noteTitle)': \(error.localizedDescription)")
-                Logger.noteExport.warning("Failed to export attachment \(attachment.id) (type: \(typeInfo)): \(error.localizedDescription)")
+
+                // Build detailed error message for user logs
+                var errorDetails = [
+                    "Attachment ID: \(attachment.id)",
+                    "Type: \(attachment.typeUTI)",
+                    "Note: '\(noteTitle)'"
+                ]
+
+                if let filename = attachment.filename {
+                    errorDetails.append("Filename: \(filename)")
+                }
+
+                // Include detailed error information
+                errorDetails.append("Error: \(error.localizedDescription)")
+
+                if let nsError = error as NSError? {
+                    errorDetails.append("Domain: \(nsError.domain)")
+                    errorDetails.append("Code: \(nsError.code)")
+
+                    if let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+                        errorDetails.append("Underlying: \(underlyingError.localizedDescription)")
+                    }
+                }
+
+                let detailedMessage = "✗ Failed to export attachment - " + errorDetails.joined(separator: ", ")
+                log(detailedMessage)
+                Logger.noteExport.warning("Failed to export attachment: \(errorDetails.joined(separator: ", "))")
                 // Continue with other attachments even if one fails
             }
         }
@@ -391,74 +474,9 @@ class ExportViewModel: ObservableObject {
         exportLog.append("[\(timestamp)] \(message)")
     }
 
-    // MARK: - Private Export Methods
-
-    /// Export a single note to disk
-    private func exportNote(
-        _ note: NotesNote,
-        toDirectory directory: URL,
-        format: ExportFormat,
-        includeAttachments: Bool,
-        currentNoteIndex: Int,
-        totalNotes: Int,
-        mainMessage: String
-    ) async throws {
-        log("exportNote called for: \(note.title), format: \(format.rawValue)")
-
-        // Sanitize filename
-        let filename = "\(note.sanitizedFileName).\(format.fileExtension)"
-        let fileURL = directory.appendingPathComponent(filename)
-
-        log("Target file: \(fileURL.path)")
-
-        // Handle PDF export separately (binary format)
-        if format == .pdf {
-            log("Entering PDF export path")
-            let html = generateHTML(for: note)
-            log("Generating PDF for: \(note.title)")
-            log("HTML length: \(html.count) characters")
-
-            // HtmlToPdf requires main actor for WebKit rendering
-            // The @MainActor function will automatically switch to main thread
-            do {
-                try await html.print(to: fileURL)
-
-                // Verify PDF was created
-                let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-                let fileSize = attributes[.size] as? UInt64 ?? 0
-                log("✓ Exported PDF: \(note.title) (size: \(fileSize) bytes)")
-
-                if fileSize < 1000 {
-                    log("⚠️ Warning: PDF file is very small (\(fileSize) bytes), may not have rendered correctly")
-                }
-            } catch {
-                log("❌ Error exporting PDF: \(error.localizedDescription)")
-                throw error
-            }
-        } else {
-            // Generate content based on format
-            let content = try generateContent(for: note, format: format)
-
-            // Write to file
-            try content.write(to: fileURL, atomically: true, encoding: .utf8)
-            log("✓ Exported note: \(note.title)")
-        }
-
-        // Export attachments if requested
-        if includeAttachments && note.hasAttachments {
-            try await exportAttachments(
-                note.attachments,
-                toDirectory: directory,
-                noteTitle: note.title,
-                currentNoteIndex: currentNoteIndex,
-                totalNotes: totalNotes,
-                mainMessage: mainMessage
-            )
-        }
-    }
+    // MARK: - Content Generation
 
     /// Generate content for a note in the specified format
-    /// Note: PDF returns HTML which is then converted to PDF in exportNote()
     private func generateContent(for note: NotesNote, format: ExportFormat) throws -> String {
         switch format {
         case .html:
@@ -468,69 +486,36 @@ class ExportViewModel: ObservableObject {
         case .txt:
             return note.toPlainText()
         case .rtf:
-            return note.toRTF()
+            // Use RTF font configuration
+            return note.toRTF(
+                fontFamily: configurations.rtf.fontFamily.rtfFontName,
+                fontSize: configurations.rtf.fontSizePoints
+            )
         case .tex:
-            return note.toLatex()
+            // Use LaTeX template from configuration
+            return note.toLatex(template: configurations.latex.template)
         case .pdf:
-            // PDF: Generate HTML which will be converted to PDF in exportNote()
             return generateHTML(for: note)
-        }
-    }
-
-    /// Export attachments for a note
-    private func exportAttachments(_ attachments: [NotesAttachment], toDirectory directory: URL, noteTitle: String, currentNoteIndex: Int, totalNotes: Int, mainMessage: String) async throws {
-        // Filter out non-file attachments (tables, URLs, etc. that are embedded in note content)
-        let nonFileAttachmentTypes = [
-            "com.apple.notes.table",
-            "public.url",
-            "com.apple.notes.inlinetextattachment",
-            "com.apple.notes.inlinehashtagattachment",
-            "com.apple.notes.inlinementionattachment"
-        ]
-
-        let fileAttachments = attachments.filter { attachment in
-            !nonFileAttachmentTypes.contains(attachment.typeUTI)
-        }
-
-        // Skip if no file attachments to export
-        guard !fileAttachments.isEmpty else {
-            return
-        }
-
-        // Create attachments subfolder with note title
-        let sanitizedTitle = sanitizeFilename(noteTitle)
-        let attachmentsURL = directory.appendingPathComponent("\(sanitizedTitle) (Attachments)")
-        try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
-
-        for attachment in fileAttachments {
-            do {
-                // Fetch attachment data from repository
-                let data = try await repository.fetchAttachment(id: attachment.id)
-
-                // Determine filename
-                let filename = attachment.filename ?? "\(attachment.id).\(attachment.fileExtension ?? "bin")"
-                let fileURL = attachmentsURL.appendingPathComponent(filename)
-
-                // Write attachment to disk
-                try data.write(to: fileURL)
-                log("✓ Exported attachment: \(filename) for note '\(noteTitle)'")
-
-            } catch {
-                failedAttachmentsCount += 1
-                let typeInfo = attachment.typeUTI
-                log("✗ Failed to export attachment \(attachment.id) (type: \(typeInfo)) for note '\(noteTitle)': \(error.localizedDescription)")
-                Logger.noteExport.warning("Failed to export attachment \(attachment.id) (type: \(typeInfo)): \(error.localizedDescription)")
-                // Continue with other attachments even if one fails
-            }
         }
     }
 
     // MARK: - Content Generation
 
-    private func generateHTML(for note: NotesNote) -> String {
+    private func generateHTML(for note: NotesNote, config: HTMLConfiguration? = nil, forPDF: Bool = false) -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
+
+        // Use provided config or default from configurations
+        let htmlConfig = config ?? configurations.html
+
+        // Build CSS for font and margin
+        let fontFamily = htmlConfig.fontFamily.cssFontStack
+        let fontSize = "\(htmlConfig.fontSizePoints)pt"
+
+        // For PDF, margins are handled by PDFConfiguration, so set body margin to 0
+        // For HTML export, use the configured margin
+        let marginValue = forPDF ? "0" : "\(htmlConfig.marginSize)\(htmlConfig.marginUnit.displayName)"
 
         return """
         <!DOCTYPE html>
@@ -543,9 +528,10 @@ class ExportViewModel: ObservableObject {
             <title>\(note.title.htmlEscaped)</title>
             <style>
                 body {
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    font-family: \(fontFamily);
+                    font-size: \(fontSize);
                     max-width: 800px;
-                    margin: 40px auto;
+                    margin: \(marginValue) auto;
                     padding: 0 20px;
                     line-height: 1.0;
                 }
@@ -660,6 +646,36 @@ class ExportViewModel: ObservableObject {
             let hours = Int(seconds / 3600)
             let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
             return "\(hours)h \(minutes)m"
+        }
+    }
+
+    /// Generate unique filename by checking for collisions and appending counter if needed
+    private func generateUniqueFilename(baseName: String, extension: String, inDirectory directory: URL) -> String {
+        let initialFilename = "\(baseName).\(`extension`)"
+        let initialURL = directory.appendingPathComponent(initialFilename)
+
+        // If no collision, use the original name
+        if !FileManager.default.fileExists(atPath: initialURL.path) {
+            return initialFilename
+        }
+
+        // File exists, find unique name by appending counter (starting from 2)
+        var counter = 2
+        while true {
+            let uniqueFilename = "\(baseName) (\(counter)).\(`extension`)"
+            let uniqueURL = directory.appendingPathComponent(uniqueFilename)
+
+            if !FileManager.default.fileExists(atPath: uniqueURL.path) {
+                return uniqueFilename
+            }
+
+            counter += 1
+
+            // Safety limit to prevent infinite loop
+            if counter > 10000 {
+                // Fall back to using UUID if we somehow have 10000 files with same name
+                return "\(baseName)_\(UUID().uuidString).\(`extension`)"
+            }
         }
     }
 }

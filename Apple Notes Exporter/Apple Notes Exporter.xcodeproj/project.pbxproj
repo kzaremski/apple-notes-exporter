@@ -31,7 +31,9 @@
 		8D4C76EB0567C11E57ADAA1B /* TableParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A703BDEDC79C3484E6F80575 /* TableParser.swift */; };
 		981EF032D162367F78219491 /* NotesNote+Export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */; };
 		A4F0225E1D3DAA18CE0DE934 /* NotesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */; };
+		A763A884FDDA01ABEE1BEE17 /* ExportConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83A62FC148D1934031FD191 /* ExportConfiguration.swift */; };
 		A8F32496C70C760F63A553A8 /* ExportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF86799EAEEA063229FD0106 /* ExportViewModel.swift */; };
+		CD247032451BCF2264B446AC /* FormatOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F873000AF0346FE18B1971CF /* FormatOptionsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -93,7 +95,9 @@
 		4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "NotesNote+Export.swift"; path = "Models/NotesNote+Export.swift"; sourceTree = "<group>"; };
 		A703BDEDC79C3484E6F80575 /* TableParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TableParser.swift; sourceTree = "<group>"; };
 		B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesViewModel.swift; path = ViewModels/NotesViewModel.swift; sourceTree = "<group>"; };
+		C83A62FC148D1934031FD191 /* ExportConfiguration.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExportConfiguration.swift; path = Models/ExportConfiguration.swift; sourceTree = "<group>"; };
 		DF86799EAEEA063229FD0106 /* ExportViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExportViewModel.swift; path = ViewModels/ExportViewModel.swift; sourceTree = "<group>"; };
+		F873000AF0346FE18B1971CF /* FormatOptionsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FormatOptionsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -176,6 +180,7 @@
 				9E354112F2D9F31877DBB428 /* Models */,
 				17B94ED64713116D6A12BAFA /* ExportLogView.swift */,
 				A703BDEDC79C3484E6F80575 /* TableParser.swift */,
+				F873000AF0346FE18B1971CF /* FormatOptionsView.swift */,
 			);
 			path = "Apple Notes Exporter";
 			sourceTree = "<group>";
@@ -227,6 +232,7 @@
 			children = (
 				213C2B20532A819D34D10996 /* NotesModels.swift */,
 				4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */,
+				C83A62FC148D1934031FD191 /* ExportConfiguration.swift */,
 			);
 			name = Models;
 			sourceTree = "<group>";
@@ -388,6 +394,8 @@
 				1C4D45247207F83682A109C7 /* ExportLogView.swift in Sources */,
 				8D4C76EB0567C11E57ADAA1B /* TableParser.swift in Sources */,
 				981EF032D162367F78219491 /* NotesNote+Export.swift in Sources */,
+				A763A884FDDA01ABEE1BEE17 /* ExportConfiguration.swift in Sources */,
+				CD247032451BCF2264B446AC /* FormatOptionsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

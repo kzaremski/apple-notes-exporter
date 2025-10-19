@@ -119,10 +119,35 @@ struct LicensePermissionsView: View {
                         Divider()
                         Text("Third-Party Licenses").font(.title2).multilineTextAlignment(.leading).lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        Text("FullDiskAccess (https://github.com/inket/FullDiskAccess/LICENSE)").font(.title3).multilineTextAlignment(.leading).lineLimit(1)
+                            .padding(.bottom, 5)
+
+                        Text("This software uses the following open-source libraries:")
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("HtmlToPdf (https://github.com/coenttb/swift-html-to-pdf/LICENCE)").font(.title3).multilineTextAlignment(.leading).lineLimit(1)
+                            .padding(.bottom, 5)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Link("FullDiskAccess - MIT License", destination: URL(string: "https://github.com/inket/FullDiskAccess/blob/main/LICENSE")!)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Link("swift-html-to-pdf - Apache 2.0 License", destination: URL(string: "https://github.com/coenttb/swift-html-to-pdf/blob/main/LICENCE")!)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Link("SwiftProtobuf - Apache 2.0 License", destination: URL(string: "https://github.com/apple/swift-protobuf/blob/main/LICENSE.txt")!)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        Divider()
+                            .padding(.top, 10)
+
+                        Text("Acknowledgements").font(.title2).multilineTextAlignment(.leading).lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.bottom, 5)
+
+                        Text("This project benefited from the groundwork and research done by threeplanetssoftware on Apple Notes protobuf formats and database parsing.")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.bottom, 5)
+
+                        Link("apple_cloud_notes_parser by threeplanetssoftware", destination: URL(string: "https://github.com/threeplanetssoftware/apple_cloud_notes_parser")!)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(10)

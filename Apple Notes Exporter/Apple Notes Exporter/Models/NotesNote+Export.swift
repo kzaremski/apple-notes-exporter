@@ -29,14 +29,50 @@ extension NotesNote {
 
     /// Convert note to RTF format
     /// Preserves formatting with RTF control codes
-    func toRTF() -> String {
-        return HTMLToRTFConverter.convert(htmlBody)
+    func toRTF(fontFamily: String = "Helvetica", fontSize: Double = 12) -> String {
+        return HTMLToRTFConverter.convert(htmlBody, fontFamily: fontFamily, fontSize: fontSize)
     }
 
-    /// Convert note to LaTeX format
-    /// Preserves formatting with LaTeX commands
-    func toLatex() -> String {
-        return HTMLToLatexConverter.convert(htmlBody)
+    /// Convert note to LaTeX format with template
+    /// Preserves formatting with LaTeX commands and replaces placeholders
+    func toLatex(template: String = LaTeXConfiguration.defaultTemplate) -> String {
+        let content = HTMLToLatexConverter.convert(htmlBody)
+
+        // Date formatters
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .long
+        dateFormatter.timeStyle = .short
+
+        // Get user's full name from system
+        let userName = NSFullUserName()
+
+        // Replace all placeholders
+        var output = template
+        output = output.replacingOccurrences(of: "APPLE_NOTES_EXPORTER_NOTE_CONTENT", with: content)
+        output = output.replacingOccurrences(of: "APPLE_NOTES_EXPORTER_NOTE_TITLE", with: title.latexEscaped)
+        output = output.replacingOccurrences(of: "APPLE_NOTES_EXPORTER_NOTE_CREATION_DATE", with: dateFormatter.string(from: creationDate))
+        output = output.replacingOccurrences(of: "APPLE_NOTES_EXPORTER_NOTE_MODIFICATION_DATE", with: dateFormatter.string(from: modificationDate))
+        output = output.replacingOccurrences(of: "APPLE_NOTES_EXPORTER_USER_FULL_NAME", with: userName.latexEscaped)
+
+        return output
+    }
+}
+
+// MARK: - LaTeX String Extension
+
+private extension String {
+    var latexEscaped: String {
+        self
+            .replacingOccurrences(of: "\\", with: "\\textbackslash{}")
+            .replacingOccurrences(of: "&", with: "\\&")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "#", with: "\\#")
+            .replacingOccurrences(of: "_", with: "\\_")
+            .replacingOccurrences(of: "{", with: "\\{")
+            .replacingOccurrences(of: "}", with: "\\}")
+            .replacingOccurrences(of: "~", with: "\\textasciitilde{}")
+            .replacingOccurrences(of: "^", with: "\\textasciicircum{}")
     }
 }
 
@@ -226,8 +262,13 @@ private struct HTMLToMarkdownConverter {
 // MARK: - RTF Converter
 
 private struct HTMLToRTFConverter {
-    static func convert(_ html: String) -> String {
-        let rtfHeader = "{\\rtf1\\ansi\\deff0\n"
+    static func convert(_ html: String, fontFamily: String = "Helvetica", fontSize: Double = 12) -> String {
+        // Build RTF header with font table
+        let rtfHeader = """
+        {\\rtf1\\ansi\\deff0
+        {\\fonttbl{\\f0\\fnil \(fontFamily);}}
+
+        """
         let rtfFooter = "\n}"
 
         guard let bodyContent = extractBodyContent(html) else {
@@ -236,12 +277,18 @@ private struct HTMLToRTFConverter {
 
         var result = bodyContent
 
+        // RTF uses half-points for font size (fs = fontSize * 2)
+        let baseFontSize = Int(fontSize * 2)
+        let h1FontSize = Int(fontSize * 2.67)  // ~32pt for 12pt base
+        let h2FontSize = Int(fontSize * 2.33)  // ~28pt for 12pt base
+        let h3FontSize = Int(fontSize * 2.0)   // ~24pt for 12pt base
+
         // Convert headings (larger font size)
-        result = result.replacingOccurrences(of: "<h1>", with: "{\\b\\fs32 ")
+        result = result.replacingOccurrences(of: "<h1>", with: "{\\b\\fs\(h1FontSize) ")
         result = result.replacingOccurrences(of: "</h1>", with: "}\\par\n")
-        result = result.replacingOccurrences(of: "<h2>", with: "{\\b\\fs28 ")
+        result = result.replacingOccurrences(of: "<h2>", with: "{\\b\\fs\(h2FontSize) ")
         result = result.replacingOccurrences(of: "</h2>", with: "}\\par\n")
-        result = result.replacingOccurrences(of: "<h3>", with: "{\\b\\fs24 ")
+        result = result.replacingOccurrences(of: "<h3>", with: "{\\b\\fs\(h3FontSize) ")
         result = result.replacingOccurrences(of: "</h3>", with: "}\\par\n")
 
         // Convert formatting
@@ -275,7 +322,8 @@ private struct HTMLToRTFConverter {
         // Escape RTF special characters
         result = escapeRTF(result)
 
-        return rtfHeader + result + rtfFooter
+        // Apply default font and font size (RTF uses half-points)
+        return rtfHeader + "\\f0\\fs\(baseFontSize) " + result + rtfFooter
     }
 
     private static func extractBodyContent(_ html: String) -> String? {

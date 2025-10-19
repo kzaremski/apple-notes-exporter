@@ -5,75 +5,95 @@ MacOS app written in Swift that bulk exports Apple Notes (including iCloud Notes
 
 ## Purpose & Rationale
 
-Many choose to do all of their note taking and planning through Apple Notes because of the simplicity and convenience that it offers.
+Many choose to do all of their note taking and planning through Apple Notes because of the simplicity and convenience that it offers. Unfortunately, there is no good workflow or mechanism built into Apple Notes that allows you to export all your notes or a group of your notes at once.  This app provides a fast, efficient way to export your entire notes library while maintaining the folder hierarchy and preserving formatting.
 
 ## Export Formats
-* HTML
-    * Native format returned by the Apple Notes API.
+* **HTML**
+    * Native format returned by the Apple Notes database.
     * HTML format can be used to publish to the web or store locally.
     * Images are included inline using the HTML base64 embed syntax.
     * Portable between browsers and formats well when printed.
-* TEX
-    * LaTeX format.
+    * **Configurable:** Font family, font size, and margins
+* **PDF**
+    * Portable document format generated from HTML.
+    * Preserves all formatting and images.
+    * Perfect for sharing and archiving.
+    * **Configurable:** Font family, font size, margins, and page size (Letter, A4, A5, Legal, Tabloid)
+* **TEX**
+    * LaTeX format for typesetting.
     * Can be compiled using the LaTeX typesetting software.
-        * Notes can be compiled individually or many can be included within a single document.
-* MD
+    * Notes can be compiled individually or many can be included within a single document.
+    * **Configurable:** Custom template with placeholders for title, dates, author, and content
+* **MD**
     * Markdown format.
-    * Useful if moving to other Markdown-based note taking apps.
+    * Useful if moving to other Markdown-based note taking apps like Obsidian.
     * Images are included inline using the HTML base64 embed syntax.
-* RTF
+* **RTF**
     * Rich text format.
     * Can be opened with WordPad on Windows or TextEdit on MacOS.
     * Preserves formatting however there are no inline attachments or images.
-* TXT
+    * **Configurable:** Font family and font size
+* **TXT**
     * Plain text format.
     * No images or formatting.
 
 Attachments are always saved in a folder corresponding to the name/title of the note that they are associated with.
-
-#### What about PDF?
-Apple's APIs for programmatically generating PDFs within Swift on MacOS are difficult to work with and poorly documented.
-
-All research in this domain has lead me to a variety of answers and solutions but there has never been the perfect solution that solves all of my problems.
-For instance, some people say to use the CoreText features, but there is no straightforward way to include images.
-Other solutions say to render the HTML to a WebKit object and then to create a print operation and "print" to a PDF, but this does not work well with concurrent threads as it wants to run on the UI thread.
-I also tried my own solution: embed a binary for WKHTMLtoPDF in the app, but Apple's code signing requirements for MacOS apps and all included binaries proved to make this difficult.
-
-There is a pre-release available in the resources page that has my best implementation of the PDF export functionality. It produced PDFs that are not sized correctly, with text clipping off of the edges of the page.
-
-I was not going to let PDF be the functionality that made me lose my resolve to finish at least a first version of this project. (meaning: I have given up, for now)
-
------
-***If you are a Swift developer that knows how to implement this and wants to help, I greatly welcome your contributions. Please open a pull request.***
 
 ## Compatibility & System Requirements
 * MacOS Big Sur 11.0 or higher
     * Some of the features that I am using are not available in earlier MacOS versions.
     * I was able to backport from Ventura back to Big Sur, but any further would have required rewrites of the UI because of the changes made to the MacOS UI at that time.
 * Intel or Apple Silicon Mac
-* 8GB RAM recommended
-    * As the app moves through each note and exports them, it retains their content in memory after the export is completed.
-    * For every 500 notes the app will use approximately 1GB of RAM
-    * RAM usage will be optimized in the future.
+* 4GB RAM minimum
+    * Optimized database-driven approach uses approximately 200MB of RAM regardless of library size
+    * Concurrent export processing for maximum performance
 * Disk Space
-    * 3MB to accommodate the app itself
+    * 20MB to accommodate the app itself
     * Additional space for your exported notes and their attachments
 
+## Limitations
+As of version 1.0, Apple Notes Exporter no longer supports exporting from accounts other than iCloud accounts and the On My Mac account. This includes notes stored in Gmail, Yahoo, Outlook, and other email-based accounts.
+
+### Workaround for Email Account Notes
+If you have notes in Gmail, Yahoo, Outlook, or other email accounts that you want to export:
+
+1. Open the Apple Notes app
+2. Select the notes you want to export from your email account
+3. Drag and drop them into a folder under "On My Mac" or one of your iCloud accounts
+4. Once moved, these notes will be accessible to Apple Notes Exporter and can be included in your export
+
+This limitation is due to the database-driven approach used in version 1.0, which queries the local Notes database directly. Email-based note accounts store their data differently and are not included in the same database structure that iCloud and On My Mac accounts use.
+
 ## Additional Screenshots
-Account, folder, and note selection view.
-![Note Selection](screenshots/v0.3_selection.png)
-Export progress view indicating total progress and error details on a note-by-note basis.
-![Export Progress](screenshots/v0.3_export_progress.png)
+
+**Note Selection**
+![Note Selection](screenshots/v1.0_selection.png)
+
+**Export Progress**
+![Export Progress](screenshots/v1.0_export_progress.png)
+
+**Export Complete**
+![Export Complete](screenshots/v1.0_export_done.png)
+
+**Detailed Export Log**
+![Export Log](screenshots/v1.0_export_log.png)
+
+**PDF Export Options**
+![PDF Options](screenshots/v1.0_pdf_options.png)
+
+**LaTeX Template Editor**
+![LaTeX Options](screenshots/v1.0_tex_options.png)
 
 ## Installation
+The latest download is available from the Github "Releases" tab.
+
 Make sure that you have "App Store and Identified Developers" set as your app install sources in the "Privacy & Security" section of System Settings in MacOS.
 
 **As of Version 0.4 Build 5, we are distributing a notarized executable.** *For older versions, go to the "Privacy & Security" pane of System Settings and click "Open Anyway" under the "Security" section towards the bottom of the pane. See Apple's article https://support.apple.com/en-us/HT202491 if you need more help or a better explanation on how to make an exception for the app to run.*
 
----
+## Acknowledgements
 
-#### Tip For Faster Exporting
-While exporting, keep the Apple Notes app as the main app in the foreground. The Apple Events work faster when they are being sent to an application that is focused by the user and has a higher priority.
+This project benefited from the groundwork and research done by [threeplanetssoftware](https://github.com/threeplanetssoftware) on Apple Notes protobuf formats and database parsing in their [apple_cloud_notes_parser](https://github.com/threeplanetssoftware/apple_cloud_notes_parser) project. Their work was instrumental in understanding the Apple Notes database structure, enabling the transition from AppleScript-based export to the more efficient database-driven approach used in version 1.0.
 
 ## License
 ```

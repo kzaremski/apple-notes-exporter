@@ -291,6 +291,7 @@ struct NoteSelectorView: View {
                     sharedState.update() // Update counts before closing
                     showNoteSelectorView = false
                 } label: {
+                    Image(systemName: "checkmark")
                     Text("Done")
                 }
             }

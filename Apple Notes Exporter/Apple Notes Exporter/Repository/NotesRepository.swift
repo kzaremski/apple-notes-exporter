@@ -53,7 +53,7 @@ enum RepositoryError: Error, LocalizedError {
 // MARK: - Database Implementation
 
 /// Concrete implementation using AppleNotesDatabaseParser
-class DatabaseNotesRepository: NotesRepository {
+class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
     private let databasePath: String
 
     /// Initialize with custom database path (useful for testing)

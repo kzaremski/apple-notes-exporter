@@ -254,19 +254,6 @@ class AppleNotesDatabaseParser {
                 let name = sqlite3_column_text(statement, 1).flatMap { String(cString: $0) } ?? "Unknown"
                 let identifier = sqlite3_column_text(statement, 2).flatMap { String(cString: $0) } ?? ""
 
-                var accountTypeName = "Unknown"
-                if hasAccountType {
-                    let accountType = Int(sqlite3_column_int64(statement, 3))
-                    accountTypeName = switch accountType {
-                        case 0: "Local"
-                        case 1: "Exchange"
-                        case 2: "IMAP"
-                        case 3: "iCloud"
-                        case 4: "Google"
-                        default: "Unknown(\(accountType))"
-                    }
-                }
-
                 accounts.append(NoteAccount(id: id, name: name, identifier: identifier))
             }
             sqlite3_finalize(statement)

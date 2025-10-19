@@ -64,7 +64,7 @@ struct SelectableLogView: NSViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.backgroundColor = NSColor.textBackgroundColor
-        textView.textColor = NSColor.white
+        textView.textColor = NSColor.labelColor
         textView.font = NSFont.monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
         textView.autoresizingMask = [.width]
         textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: .greatestFiniteMagnitude)
@@ -86,13 +86,15 @@ struct SelectableLogView: NSViewRepresentable {
         let attributedString = NSMutableAttributedString()
 
         for entry in logEntries {
-            var color: NSColor = .white
+            var color: NSColor = .labelColor
 
-            // Determine color based on entry content
+            // Determine color based on entry content (use adaptive colors for light/dark mode)
             if entry.contains("✓") {
-                color = .green
+                // Success: darker green for light mode, brighter green for dark mode
+                color = NSColor.systemGreen
             } else if entry.contains("✗") {
-                color = .red
+                // Error: darker red for light mode, brighter red for dark mode
+                color = NSColor.systemRed
             }
 
             let attributes: [NSAttributedString.Key: Any] = [

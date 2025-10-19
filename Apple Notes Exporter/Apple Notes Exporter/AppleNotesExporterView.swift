@@ -25,6 +25,26 @@ struct AppleNotesExporterView: View {
     @EnvironmentObject var notesViewModel: NotesViewModel
     @EnvironmentObject var exportViewModel: ExportViewModel
 
+    /// Get description for each export format
+    private func formatDescription(for format: String) -> String {
+        switch format {
+        case "HTML":
+            return "Standard web format with full styling and images."
+        case "PDF":
+            return "Portable document format for sharing and printing."
+        case "MD":
+            return "Markdown format for documentation, wikis, and Obsidian, etc."
+        case "TXT":
+            return "Plain text format compatible with any editor."
+        case "RTF":
+            return "Rich text format for word processors."
+        case "TEX":
+            return "For typesetting within LaTeX software."
+        default:
+            return ""
+        }
+    }
+
     func setProgressWindow(_ state: Bool?) {
         self.sharedState.showProgressWindow = state ?? !self.sharedState.showProgressWindow
     }
@@ -105,10 +125,12 @@ struct AppleNotesExporterView: View {
     // Show/hide different views
     @State private var showLicensePermissionsView: Bool = true
     @State private var showNoteSelectorView: Bool = false
+    @State private var showFormatOptionsView: Bool = false
     @State private var showProgressWindow: Bool = false
     @State private var showErrorExportingAlert: Bool = false
     @State private var showAlert: Bool = false
     @State private var activeAlert: ActiveAlert = .noneSelected
+    @State private var showConfigurePopover: Bool = false
     
     // Body of the ContentView
     var body: some View {
@@ -133,6 +155,7 @@ struct AppleNotesExporterView: View {
                 Button {
                     showNoteSelectorView = true
                 } label: {
+                    Image(systemName: "pointer.arrow.rays")
                     Text("Select")
                 }
             }
@@ -167,7 +190,38 @@ struct AppleNotesExporterView: View {
             .cornerRadius(6)
             .frame(maxWidth: .infinity)
 
-            Text("Step 3: Set Output Folder")
+            HStack {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.secondary)
+                Text(formatDescription(for: outputFormat))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    let configurableFormats = ["HTML", "PDF", "TEX", "RTF"]
+                    if configurableFormats.contains(outputFormat) {
+                        showFormatOptionsView = true
+                    } else {
+                        showConfigurePopover = true
+                    }
+                } label: {
+                    let isConfigurable = ["HTML", "PDF", "TEX", "RTF"].contains(outputFormat)
+                    Image(systemName: "gear")
+                        .foregroundColor(isConfigurable ? .primary : .secondary)
+                        .opacity(isConfigurable ? 1.0 : 0.8)
+                    Text("Options")
+                        .foregroundColor(isConfigurable ? .primary : .secondary)
+                        .opacity(isConfigurable ? 1.0 : 0.8)
+                }
+                .popover(isPresented: $showConfigurePopover, arrowEdge: .trailing) {
+                    VStack {
+                        Text("There are no configuration options available for this format.")
+                    }
+                    .frame(width: 240, height: 60)
+                }
+            }
+
+            Text("Step 3: Choose Output Folder")
                 .font(.title)
                 .multilineTextAlignment(.leading)
                 .lineLimit(1)
@@ -181,7 +235,8 @@ struct AppleNotesExporterView: View {
                 Button {
                     selectOutputFolder()
                 } label: {
-                    Text("Select")
+                    Image(systemName: "folder.badge.plus")
+                    Text("Choose")
                 }
             }
             
@@ -202,7 +257,7 @@ struct AppleNotesExporterView: View {
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
         }
-        .frame(width: 500.0, height: 300.0)
+        .frame(width: 500.0, height: 320.0)
         .padding(10.0)
         .sheet(isPresented: $sharedState.showProgressWindow) {
             ExportView(
@@ -244,6 +299,14 @@ struct AppleNotesExporterView: View {
                 sharedState: sharedState,
                 showNoteSelectorView: $showNoteSelectorView
             ).frame(width: 600, height: 400)
+        }
+        .sheet(isPresented: $showFormatOptionsView) {
+            if let format = ExportFormat(rawValue: outputFormat) {
+                FormatOptionsView(
+                    showOptionsView: $showFormatOptionsView,
+                    format: format
+                )
+            }
         }
         .sheet(isPresented: $showLicensePermissionsView) {
             LicensePermissionsView(
