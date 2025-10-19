@@ -29,6 +29,7 @@
 		51456FAA94D28F3F9DA7ADEC /* NotesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 213C2B20532A819D34D10996 /* NotesModels.swift */; };
 		8A94616573DA263AAD9AA0FB /* NotesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112D188009F1E92C1561588B /* NotesRepository.swift */; };
 		8D4C76EB0567C11E57ADAA1B /* TableParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A703BDEDC79C3484E6F80575 /* TableParser.swift */; };
+		981EF032D162367F78219491 /* NotesNote+Export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */; };
 		A4F0225E1D3DAA18CE0DE934 /* NotesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */; };
 		A8F32496C70C760F63A553A8 /* ExportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF86799EAEEA063229FD0106 /* ExportViewModel.swift */; };
 /* End PBXBuildFile section */
@@ -89,6 +90,7 @@
 		25A01F0A2E8F3EEF00C7D9FA /* notestore.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = notestore.pb.swift; sourceTree = "<group>"; };
 		25A01F112E8F3FBE00C7D9FA /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		25EB771F2BFA9E2600A35E62 /* ScriptingBridge.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ScriptingBridge.framework; path = System/Library/Frameworks/ScriptingBridge.framework; sourceTree = SDKROOT; };
+		4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "NotesNote+Export.swift"; path = "Models/NotesNote+Export.swift"; sourceTree = "<group>"; };
 		A703BDEDC79C3484E6F80575 /* TableParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TableParser.swift; sourceTree = "<group>"; };
 		B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesViewModel.swift; path = ViewModels/NotesViewModel.swift; sourceTree = "<group>"; };
 		DF86799EAEEA063229FD0106 /* ExportViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExportViewModel.swift; path = ViewModels/ExportViewModel.swift; sourceTree = "<group>"; };
@@ -224,6 +226,7 @@
 			isa = PBXGroup;
 			children = (
 				213C2B20532A819D34D10996 /* NotesModels.swift */,
+				4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */,
 			);
 			name = Models;
 			sourceTree = "<group>";
@@ -384,6 +387,7 @@
 				51456FAA94D28F3F9DA7ADEC /* NotesModels.swift in Sources */,
 				1C4D45247207F83682A109C7 /* ExportLogView.swift in Sources */,
 				8D4C76EB0567C11E57ADAA1B /* TableParser.swift in Sources */,
+				981EF032D162367F78219491 /* NotesNote+Export.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

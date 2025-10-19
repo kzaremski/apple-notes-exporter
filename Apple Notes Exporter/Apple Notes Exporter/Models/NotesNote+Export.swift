@@ -1,0 +1,389 @@
+//
+//  NotesNote+Export.swift
+//  Apple Notes Exporter
+//
+//  Export format converters for NotesNote
+//  Converts HTML body to various export formats
+//
+
+import Foundation
+
+// MARK: - Export Format Converters
+
+extension NotesNote {
+
+    // MARK: - Public Export Methods
+
+    /// Convert note to plain text format
+    /// Preserves list markers (*, -) and attachment references
+    /// No markdown syntax or special formatting
+    func toPlainText() -> String {
+        return HTMLToPlainTextConverter.convert(htmlBody)
+    }
+
+    /// Convert note to Markdown format
+    /// Preserves headings, lists, bold, italic, links, etc.
+    func toMarkdown() -> String {
+        return HTMLToMarkdownConverter.convert(htmlBody)
+    }
+
+    /// Convert note to RTF format
+    /// Preserves formatting with RTF control codes
+    func toRTF() -> String {
+        return HTMLToRTFConverter.convert(htmlBody)
+    }
+
+    /// Convert note to LaTeX format
+    /// Preserves formatting with LaTeX commands
+    func toLatex() -> String {
+        return HTMLToLatexConverter.convert(htmlBody)
+    }
+}
+
+// MARK: - Plain Text Converter
+
+private struct HTMLToPlainTextConverter {
+    static func convert(_ html: String) -> String {
+        var listDepth = 0
+
+        // Extract content between <body> tags
+        guard let bodyContent = extractBodyContent(html) else {
+            return html
+        }
+
+        // Simple HTML parsing - process tag by tag
+        var currentText = bodyContent
+
+        // Handle headings - just extract text, add newline after
+        currentText = processHeadings(currentText)
+
+        // Handle lists - preserve * and - markers
+        currentText = processLists(currentText, listDepth: &listDepth)
+
+        // Handle line breaks
+        currentText = currentText.replacingOccurrences(of: "<br>", with: "\n")
+        currentText = currentText.replacingOccurrences(of: "<br/>", with: "\n")
+        currentText = currentText.replacingOccurrences(of: "<br />", with: "\n")
+
+        // Strip remaining HTML tags but keep content
+        currentText = stripHTMLTags(currentText)
+
+        // Clean up multiple consecutive newlines
+        currentText = currentText.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
+
+        return currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func extractBodyContent(_ html: String) -> String? {
+        // Extract content between <body> and </body>
+        guard let bodyStart = html.range(of: "<body>"),
+              let bodyEnd = html.range(of: "</body>") else {
+            return html
+        }
+        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
+    }
+
+    private static func processHeadings(_ html: String) -> String {
+        var result = html
+
+        // Replace heading tags with just their content and newlines
+        for i in 1...6 {
+            let openTag = "<h\(i)>"
+            let closeTag = "</h\(i)>"
+            result = result.replacingOccurrences(of: openTag, with: "")
+            result = result.replacingOccurrences(of: closeTag, with: "\n")
+        }
+
+        return result
+    }
+
+    private static func processLists(_ html: String, listDepth: inout Int) -> String {
+        var result = html
+
+        // Process unordered lists
+        result = result.replacingOccurrences(of: "<ul>", with: "")
+        result = result.replacingOccurrences(of: "</ul>", with: "\n")
+        result = result.replacingOccurrences(of: "<ul style='list-style-type: square;'>", with: "")
+        result = result.replacingOccurrences(of: "<ul style='list-style-type: none;'>", with: "")
+
+        // Process ordered lists
+        result = result.replacingOccurrences(of: "<ol>", with: "")
+        result = result.replacingOccurrences(of: "</ol>", with: "\n")
+
+        // Process list items - add bullet marker
+        // For now, simple approach: use * for all bullets
+        result = result.replacingOccurrences(of: "<li>", with: "* ")
+        result = result.replacingOccurrences(of: "</li>", with: "\n")
+
+        return result
+    }
+
+    private static func stripHTMLTags(_ html: String) -> String {
+        var result = html
+
+        // Remove common formatting tags but keep content
+        let tagsToStrip = ["b", "i", "u", "s", "a", "strong", "em", "span", "div"]
+        for tag in tagsToStrip {
+            result = result.replacingOccurrences(of: "<\(tag)>", with: "", options: .caseInsensitive)
+            result = result.replacingOccurrences(of: "</\(tag)>", with: "", options: .caseInsensitive)
+            // Handle tags with attributes
+            result = result.replacingOccurrences(of: "<\(tag) [^>]*>", with: "", options: .regularExpression)
+        }
+
+        // Handle anchor tags specially to preserve URLs
+        result = result.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+                                            with: "$2 ($1)",
+                                            options: .regularExpression)
+
+        return result
+    }
+}
+
+// MARK: - Markdown Converter
+
+private struct HTMLToMarkdownConverter {
+    static func convert(_ html: String) -> String {
+        guard let bodyContent = extractBodyContent(html) else {
+            return html
+        }
+
+        var result = bodyContent
+
+        // Convert headings
+        result = result.replacingOccurrences(of: "<h1>", with: "# ")
+        result = result.replacingOccurrences(of: "</h1>", with: "\n")
+        result = result.replacingOccurrences(of: "<h2>", with: "## ")
+        result = result.replacingOccurrences(of: "</h2>", with: "\n")
+        result = result.replacingOccurrences(of: "<h3>", with: "### ")
+        result = result.replacingOccurrences(of: "</h3>", with: "\n")
+
+        // Convert bold
+        result = result.replacingOccurrences(of: "<b>", with: "**")
+        result = result.replacingOccurrences(of: "</b>", with: "**")
+        result = result.replacingOccurrences(of: "<strong>", with: "**")
+        result = result.replacingOccurrences(of: "</strong>", with: "**")
+
+        // Convert italic
+        result = result.replacingOccurrences(of: "<i>", with: "*")
+        result = result.replacingOccurrences(of: "</i>", with: "*")
+        result = result.replacingOccurrences(of: "<em>", with: "*")
+        result = result.replacingOccurrences(of: "</em>", with: "*")
+
+        // Convert underline (approximate with italic)
+        result = result.replacingOccurrences(of: "<u>", with: "_")
+        result = result.replacingOccurrences(of: "</u>", with: "_")
+
+        // Convert strikethrough
+        result = result.replacingOccurrences(of: "<s>", with: "~~")
+        result = result.replacingOccurrences(of: "</s>", with: "~~")
+
+        // Convert links
+        result = result.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+                                            with: "[$2]($1)",
+                                            options: .regularExpression)
+
+        // Convert lists
+        result = result.replacingOccurrences(of: "<ul>", with: "")
+        result = result.replacingOccurrences(of: "</ul>", with: "\n")
+        result = result.replacingOccurrences(of: "<ul style='list-style-type: square;'>", with: "")
+        result = result.replacingOccurrences(of: "<ul style='list-style-type: none;'>", with: "")
+        result = result.replacingOccurrences(of: "<ol>", with: "")
+        result = result.replacingOccurrences(of: "</ol>", with: "\n")
+
+        // List items
+        result = result.replacingOccurrences(of: "<li>", with: "- ")
+        result = result.replacingOccurrences(of: "</li>", with: "\n")
+
+        // Line breaks
+        result = result.replacingOccurrences(of: "<br>", with: "\n")
+        result = result.replacingOccurrences(of: "<br/>", with: "\n")
+        result = result.replacingOccurrences(of: "<br />", with: "\n")
+
+        // Clean up remaining tags
+        result = stripRemainingTags(result)
+
+        // Clean up multiple newlines
+        result = result.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func extractBodyContent(_ html: String) -> String? {
+        guard let bodyStart = html.range(of: "<body>"),
+              let bodyEnd = html.range(of: "</body>") else {
+            return html
+        }
+        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
+    }
+
+    private static func stripRemainingTags(_ html: String) -> String {
+        var result = html
+        result = result.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        return result
+    }
+}
+
+// MARK: - RTF Converter
+
+private struct HTMLToRTFConverter {
+    static func convert(_ html: String) -> String {
+        let rtfHeader = "{\\rtf1\\ansi\\deff0\n"
+        let rtfFooter = "\n}"
+
+        guard let bodyContent = extractBodyContent(html) else {
+            return rtfHeader + escapeRTF(html) + rtfFooter
+        }
+
+        var result = bodyContent
+
+        // Convert headings (larger font size)
+        result = result.replacingOccurrences(of: "<h1>", with: "{\\b\\fs32 ")
+        result = result.replacingOccurrences(of: "</h1>", with: "}\\par\n")
+        result = result.replacingOccurrences(of: "<h2>", with: "{\\b\\fs28 ")
+        result = result.replacingOccurrences(of: "</h2>", with: "}\\par\n")
+        result = result.replacingOccurrences(of: "<h3>", with: "{\\b\\fs24 ")
+        result = result.replacingOccurrences(of: "</h3>", with: "}\\par\n")
+
+        // Convert formatting
+        result = result.replacingOccurrences(of: "<b>", with: "{\\b ")
+        result = result.replacingOccurrences(of: "</b>", with: "}")
+        result = result.replacingOccurrences(of: "<i>", with: "{\\i ")
+        result = result.replacingOccurrences(of: "</i>", with: "}")
+        result = result.replacingOccurrences(of: "<u>", with: "{\\ul ")
+        result = result.replacingOccurrences(of: "</u>", with: "}")
+        result = result.replacingOccurrences(of: "<s>", with: "{\\strike ")
+        result = result.replacingOccurrences(of: "</s>", with: "}")
+
+        // Convert lists
+        result = result.replacingOccurrences(of: "<ul>", with: "")
+        result = result.replacingOccurrences(of: "</ul>", with: "\\par\n")
+        result = result.replacingOccurrences(of: "<ul style='list-style-type: square;'>", with: "")
+        result = result.replacingOccurrences(of: "<ul style='list-style-type: none;'>", with: "")
+        result = result.replacingOccurrences(of: "<ol>", with: "")
+        result = result.replacingOccurrences(of: "</ol>", with: "\\par\n")
+        result = result.replacingOccurrences(of: "<li>", with: "{\\pard\\li720 \\'95 ")
+        result = result.replacingOccurrences(of: "</li>", with: "\\par}\n")
+
+        // Line breaks
+        result = result.replacingOccurrences(of: "<br>", with: "\\par\n")
+        result = result.replacingOccurrences(of: "<br/>", with: "\\par\n")
+        result = result.replacingOccurrences(of: "<br />", with: "\\par\n")
+
+        // Strip remaining HTML tags
+        result = result.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+
+        // Escape RTF special characters
+        result = escapeRTF(result)
+
+        return rtfHeader + result + rtfFooter
+    }
+
+    private static func extractBodyContent(_ html: String) -> String? {
+        guard let bodyStart = html.range(of: "<body>"),
+              let bodyEnd = html.range(of: "</body>") else {
+            return html
+        }
+        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
+    }
+
+    private static func escapeRTF(_ text: String) -> String {
+        var result = text
+        result = result.replacingOccurrences(of: "\\", with: "\\\\")
+        result = result.replacingOccurrences(of: "{", with: "\\{")
+        result = result.replacingOccurrences(of: "}", with: "\\}")
+        return result
+    }
+}
+
+// MARK: - LaTeX Converter
+
+private struct HTMLToLatexConverter {
+    static func convert(_ html: String) -> String {
+        let latexHeader = """
+        \\documentclass{article}
+        \\usepackage[utf8]{inputenc}
+        \\usepackage{ulem}
+        \\usepackage{hyperref}
+
+        \\begin{document}
+
+        """
+        let latexFooter = "\n\\end{document}\n"
+
+        guard let bodyContent = extractBodyContent(html) else {
+            return latexHeader + escapeLatex(html) + latexFooter
+        }
+
+        var result = bodyContent
+
+        // Convert headings
+        result = result.replacingOccurrences(of: "<h1>", with: "\\section{")
+        result = result.replacingOccurrences(of: "</h1>", with: "}\n")
+        result = result.replacingOccurrences(of: "<h2>", with: "\\subsection{")
+        result = result.replacingOccurrences(of: "</h2>", with: "}\n")
+        result = result.replacingOccurrences(of: "<h3>", with: "\\subsubsection{")
+        result = result.replacingOccurrences(of: "</h3>", with: "}\n")
+
+        // Convert formatting
+        result = result.replacingOccurrences(of: "<b>", with: "\\textbf{")
+        result = result.replacingOccurrences(of: "</b>", with: "}")
+        result = result.replacingOccurrences(of: "<i>", with: "\\textit{")
+        result = result.replacingOccurrences(of: "</i>", with: "}")
+        result = result.replacingOccurrences(of: "<u>", with: "\\underline{")
+        result = result.replacingOccurrences(of: "</u>", with: "}")
+        result = result.replacingOccurrences(of: "<s>", with: "\\sout{")
+        result = result.replacingOccurrences(of: "</s>", with: "}")
+
+        // Convert links
+        result = result.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+                                            with: "\\href{$1}{$2}",
+                                            options: .regularExpression)
+
+        // Convert lists
+        result = result.replacingOccurrences(of: "<ul>", with: "\\begin{itemize}\n")
+        result = result.replacingOccurrences(of: "</ul>", with: "\\end{itemize}\n")
+        result = result.replacingOccurrences(of: "<ul style='list-style-type: square;'>", with: "\\begin{itemize}\n")
+        result = result.replacingOccurrences(of: "<ul style='list-style-type: none;'>", with: "\\begin{itemize}\n")
+        result = result.replacingOccurrences(of: "<ol>", with: "\\begin{enumerate}\n")
+        result = result.replacingOccurrences(of: "</ol>", with: "\\end{enumerate}\n")
+        result = result.replacingOccurrences(of: "<li>", with: "\\item ")
+        result = result.replacingOccurrences(of: "</li>", with: "\n")
+
+        // Line breaks
+        result = result.replacingOccurrences(of: "<br>", with: "\\\\\n")
+        result = result.replacingOccurrences(of: "<br/>", with: "\\\\\n")
+        result = result.replacingOccurrences(of: "<br />", with: "\\\\\n")
+
+        // Strip remaining HTML tags
+        result = result.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+
+        // Escape LaTeX special characters
+        result = escapeLatex(result)
+
+        return latexHeader + result + latexFooter
+    }
+
+    private static func extractBodyContent(_ html: String) -> String? {
+        guard let bodyStart = html.range(of: "<body>"),
+              let bodyEnd = html.range(of: "</body>") else {
+            return html
+        }
+        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
+    }
+
+    private static func escapeLatex(_ text: String) -> String {
+        var result = text
+        // Must escape backslash first
+        result = result.replacingOccurrences(of: "\\", with: "\\textbackslash{}")
+        result = result.replacingOccurrences(of: "&", with: "\\&")
+        result = result.replacingOccurrences(of: "%", with: "\\%")
+        result = result.replacingOccurrences(of: "$", with: "\\$")
+        result = result.replacingOccurrences(of: "#", with: "\\#")
+        result = result.replacingOccurrences(of: "_", with: "\\_")
+        result = result.replacingOccurrences(of: "{", with: "\\{")
+        result = result.replacingOccurrences(of: "}", with: "\\}")
+        result = result.replacingOccurrences(of: "~", with: "\\textasciitilde{}")
+        result = result.replacingOccurrences(of: "^", with: "\\textasciicircum{}")
+        return result
+    }
+}

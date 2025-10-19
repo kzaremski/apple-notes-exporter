@@ -28,6 +28,7 @@ struct LoaderLine: View {
 struct AccountRow: View {
     @EnvironmentObject var viewModel: NotesViewModel
     let accountNode: NotesHierarchy.AccountNode
+    @Binding var isExpanded: Bool
 
     private func getImage() -> String {
         // Check if all notes in this account are selected
@@ -100,6 +101,11 @@ struct AccountRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            // Double-click to expand/collapse
+            isExpanded.toggle()
+        }
     }
 }
 
@@ -108,6 +114,7 @@ struct AccountRow: View {
 struct FolderRow: View {
     @EnvironmentObject var viewModel: NotesViewModel
     let folderNode: NotesHierarchy.FolderNode
+    @Binding var isExpanded: Bool
 
     private func getImage() -> String {
         // Check selection state of all notes in this folder (including subfolders)
@@ -179,6 +186,11 @@ struct FolderRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            // Double-click to expand/collapse
+            isExpanded.toggle()
+        }
     }
 }
 
@@ -215,6 +227,24 @@ struct NoteRow: View {
     }
 }
 
+// MARK: - Account Disclosure Group
+
+struct AccountDisclosureGroup: View {
+    @EnvironmentObject var viewModel: NotesViewModel
+    let accountNode: NotesHierarchy.AccountNode
+    @State private var isExpanded: Bool = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            ForEach(accountNode.folders) { folderNode in
+                FolderDisclosureGroup(folderNode: folderNode)
+            }
+        } label: {
+            AccountRow(accountNode: accountNode, isExpanded: $isExpanded)
+        }
+    }
+}
+
 // MARK: - Note Selector View
 
 struct NoteSelectorView: View {
@@ -240,13 +270,7 @@ struct NoteSelectorView: View {
                 } else {
                     SwiftUI.List {
                         ForEach(viewModel.hierarchy.accounts) { accountNode in
-                            DisclosureGroup {
-                                ForEach(accountNode.folders) { folderNode in
-                                    FolderDisclosureGroup(folderNode: folderNode)
-                                }
-                            } label: {
-                                AccountRow(accountNode: accountNode)
-                            }
+                            AccountDisclosureGroup(accountNode: accountNode)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -286,6 +310,7 @@ struct NoteSelectorView: View {
 struct FolderDisclosureGroup: View {
     @EnvironmentObject var viewModel: NotesViewModel
     let folderNode: NotesHierarchy.FolderNode
+    @State private var isExpanded: Bool = false
 
     // Helper to check if folder is completely empty (no notes in this folder or any subfolders)
     private var isFolderCompletelyEmpty: Bool {
@@ -304,19 +329,20 @@ struct FolderDisclosureGroup: View {
     var body: some View {
         if isFolderCompletelyEmpty {
             // Empty folder - don't make it expandable, just show the row
-            FolderRow(folderNode: folderNode)
+            // Use constant binding since empty folders can't be expanded
+            FolderRow(folderNode: folderNode, isExpanded: .constant(false))
         } else if folderNode.subfolders.isEmpty {
             // Folder with no subfolders - just show the folder and its notes
-            DisclosureGroup {
+            DisclosureGroup(isExpanded: $isExpanded) {
                 ForEach(folderNode.notes) { note in
                     NoteRow(note: note)
                 }
             } label: {
-                FolderRow(folderNode: folderNode)
+                FolderRow(folderNode: folderNode, isExpanded: $isExpanded)
             }
         } else {
             // Folder with subfolders - show recursive structure
-            DisclosureGroup {
+            DisclosureGroup(isExpanded: $isExpanded) {
                 if viewModel.foldersOnTop {
                     // Show subfolders first (folders before notes)
                     ForEach(folderNode.subfolders) { subfolderNode in
@@ -338,7 +364,7 @@ struct FolderDisclosureGroup: View {
                     }
                 }
             } label: {
-                FolderRow(folderNode: folderNode)
+                FolderRow(folderNode: folderNode, isExpanded: $isExpanded)
             }
         }
     }

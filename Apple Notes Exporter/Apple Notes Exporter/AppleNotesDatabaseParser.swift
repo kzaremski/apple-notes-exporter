@@ -480,24 +480,96 @@ class AppleNotesDatabaseParser {
 
     // MARK: - HTML Generation
 
+    /// Check if two attribute runs have the same style (based on Ruby's same_style? method)
+    private func isSameStyle(_ run1: AttributeRun, _ run2: AttributeRun) -> Bool {
+        // Don't combine if either has attachment info
+        if run1.hasAttachmentInfo || run2.hasAttachmentInfo {
+            return false
+        }
+
+        // Compare all style attributes
+        let sameParagraph = (run1.hasParagraphStyle == run2.hasParagraphStyle) &&
+                           (!run1.hasParagraphStyle || (
+                               run1.paragraphStyle.styleType == run2.paragraphStyle.styleType &&
+                               run1.paragraphStyle.alignment == run2.paragraphStyle.alignment &&
+                               run1.paragraphStyle.indentAmount == run2.paragraphStyle.indentAmount &&
+                               run1.paragraphStyle.blockQuote == run2.paragraphStyle.blockQuote
+                           ))
+
+        let sameFont = (run1.hasFont == run2.hasFont) &&
+                      (!run1.hasFont || (
+                          run1.font.fontName == run2.font.fontName &&
+                          run1.font.pointSize == run2.font.pointSize
+                      ))
+
+        let sameFontWeight = run1.fontWeight == run2.fontWeight
+        let sameUnderlined = run1.underlined == run2.underlined
+        let sameStrikethrough = run1.strikethrough == run2.strikethrough
+        let sameSuperscript = run1.superscript == run2.superscript
+        let sameLink = run1.link == run2.link
+        let sameEmphasis = run1.emphasisStyle == run2.emphasisStyle
+
+        return sameParagraph && sameFont && sameFontWeight && sameUnderlined &&
+               sameStrikethrough && sameSuperscript && sameLink && sameEmphasis
+    }
+
     /// Generates HTML from a protobuf Note (from notestore.pb.swift)
     private func generateHTML(from note: Note) -> String {
         var html = "<html><body>"
 
         let text = note.noteText
-        var currentPos = 0
+        var currentPos = 0 // Position in UTF-16 code units
 
-        for run in note.attributeRun {
-            let length = Int(run.length)
-            let endPos = min(currentPos + length, text.count)
+        // Condense consecutive attribute runs with the same style (like Ruby does in lines 618-639)
+        var condensedRuns: [AttributeRun] = []
+        var i = 0
+        while i < note.attributeRun.count {
+            let currentRun = note.attributeRun[i]
+            var combinedLength = currentRun.length
 
-            let startIndex = text.index(text.startIndex, offsetBy: currentPos)
-            let endIndex = text.index(text.startIndex, offsetBy: endPos)
-            var segment = String(text[startIndex..<endIndex])
+            // Greedily combine runs with the same style
+            while i + 1 < note.attributeRun.count && isSameStyle(currentRun, note.attributeRun[i + 1]) {
+                i += 1
+                combinedLength += note.attributeRun[i].length
+            }
+
+            // Create a new run with combined length if we merged anything
+            if combinedLength != currentRun.length {
+                var mergedRun = currentRun
+                mergedRun.clearLength()
+                mergedRun.length = combinedLength
+                condensedRuns.append(mergedRun)
+            } else {
+                condensedRuns.append(currentRun)
+            }
+
+            i += 1
+        }
+
+        // Track list state
+        var currentListType: Int32? = nil  // Track current list type (100, 101, 102, 103)
+        var inList = false
+
+        for (_, run) in condensedRuns.enumerated() {
+            let length = Int(run.length) // Length in UTF-16 code units
+            let utf16View = text.utf16
+            let endPos = min(currentPos + length, utf16View.count)
+
+            // Use UTF-16 indices for proper slicing
+            guard let startIndex = utf16View.index(utf16View.startIndex, offsetBy: currentPos, limitedBy: utf16View.endIndex),
+                  let endIndex = utf16View.index(utf16View.startIndex, offsetBy: endPos, limitedBy: utf16View.endIndex) else {
+                // Skip this run if indices are invalid
+                currentPos = endPos
+                continue
+            }
+
+            let utf16Slice = utf16View[startIndex..<endIndex]
+            var segment = String(utf16Slice) ?? ""
 
             // Determine if this is a list item
             var isListItem = false
             var listStyleType = ""
+            var listTagName = ""
             var checkboxPrefix = ""
 
             if run.hasParagraphStyle {
@@ -507,20 +579,52 @@ class AppleNotesDatabaseParser {
                 case 100: // Dotted list
                     isListItem = true
                     listStyleType = "disc"
+                    listTagName = "ul"
                 case 101: // Dashed list
                     isListItem = true
                     listStyleType = "square"
+                    listTagName = "ul"
                 case 102: // Numbered list
                     isListItem = true
                     listStyleType = "decimal"
+                    listTagName = "ol"
                 case 103: // Checkbox
                     isListItem = true
                     listStyleType = "none"
+                    listTagName = "ul"
                     let checked = style.hasChecklist && style.checklist.done != 0
                     checkboxPrefix = checked ? "☑ " : "☐ "
                 default:
                     break
                 }
+            }
+
+            // Check if we need to close the current list
+            if inList && (!isListItem || currentListType != run.paragraphStyle.styleType) {
+                // Close the current list
+                if let prevType = currentListType {
+                    html += (prevType == 102) ? "</ol>" : "</ul>"
+                }
+                inList = false
+                currentListType = nil
+            }
+
+            // Check if we need to open a new list
+            if isListItem && !inList {
+                if listTagName == "ol" {
+                    html += "<ol>"
+                } else {
+                    // Add list-style-type for different bullet types
+                    if listStyleType == "square" {
+                        html += "<ul style='list-style-type: square;'>"
+                    } else if listStyleType == "none" {
+                        html += "<ul style='list-style-type: none;'>"
+                    } else {
+                        html += "<ul>"  // Default is disc
+                    }
+                }
+                inList = true
+                currentListType = run.paragraphStyle.styleType
             }
 
             // Handle list items specially - newlines separate list items
@@ -575,7 +679,8 @@ class AppleNotesDatabaseParser {
                         styledText = "[Attachment: \(run.attachmentInfo.typeUti)]"
                     }
 
-                    html += "<li style='list-style-type: \(listStyleType);'>"
+                    // List item - no inline style needed, parent ul/ol defines the type
+                    html += "<li>"
                     html += checkboxPrefix + openTags.joined() + styledText + closeTags.joined()
                     html += "</li>"
                 }
@@ -642,6 +747,13 @@ class AppleNotesDatabaseParser {
             }
 
             currentPos = endPos
+        }
+
+        // Close any open list at the end
+        if inList {
+            if let prevType = currentListType {
+                html += (prevType == 102) ? "</ol>" : "</ul>"
+            }
         }
 
         html += "</body></html>"

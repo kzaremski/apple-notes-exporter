@@ -9,6 +9,7 @@
 import Foundation
 import SwiftUI
 import OSLog
+import HtmlToPdf
 
 // MARK: - Export Progress
 
@@ -291,12 +292,20 @@ class ExportViewModel: ObservableObject {
         let filename = "\(note.sanitizedFileName).\(format.fileExtension)"
         let fileURL = directory.appendingPathComponent(filename)
 
-        // Generate content based on format
-        let content = try generateContent(for: note, format: format)
+        // Handle PDF export separately (binary format, requires WebKit)
+        if format == .pdf {
+            let html = generateHTML(for: note)
+            // HtmlToPdf requires main actor for WebKit rendering
+            try await html.print(to: fileURL)
+            log("✓ Exported PDF: \(note.title)")
+        } else {
+            // Generate content based on format
+            let content = try generateContent(for: note, format: format)
 
-        // Write to file
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        log("✓ Exported note: \(note.title)")
+            // Write to file
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            log("✓ Exported note: \(note.title)")
+        }
 
         // Export attachments if requested
         if includeAttachments && note.hasAttachments {
@@ -394,16 +403,46 @@ class ExportViewModel: ObservableObject {
         totalNotes: Int,
         mainMessage: String
     ) async throws {
+        log("exportNote called for: \(note.title), format: \(format.rawValue)")
+
         // Sanitize filename
         let filename = "\(note.sanitizedFileName).\(format.fileExtension)"
         let fileURL = directory.appendingPathComponent(filename)
 
-        // Generate content based on format
-        let content = try generateContent(for: note, format: format)
+        log("Target file: \(fileURL.path)")
 
-        // Write to file
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        log("✓ Exported note: \(note.title)")
+        // Handle PDF export separately (binary format)
+        if format == .pdf {
+            log("Entering PDF export path")
+            let html = generateHTML(for: note)
+            log("Generating PDF for: \(note.title)")
+            log("HTML length: \(html.count) characters")
+
+            // HtmlToPdf requires main actor for WebKit rendering
+            // The @MainActor function will automatically switch to main thread
+            do {
+                try await html.print(to: fileURL)
+
+                // Verify PDF was created
+                let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+                let fileSize = attributes[.size] as? UInt64 ?? 0
+                log("✓ Exported PDF: \(note.title) (size: \(fileSize) bytes)")
+
+                if fileSize < 1000 {
+                    log("⚠️ Warning: PDF file is very small (\(fileSize) bytes), may not have rendered correctly")
+                }
+            } catch {
+                log("❌ Error exporting PDF: \(error.localizedDescription)")
+                throw error
+            }
+        } else {
+            // Generate content based on format
+            let content = try generateContent(for: note, format: format)
+
+            // Write to file
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            log("✓ Exported note: \(note.title)")
+        }
 
         // Export attachments if requested
         if includeAttachments && note.hasAttachments {
@@ -419,21 +458,21 @@ class ExportViewModel: ObservableObject {
     }
 
     /// Generate content for a note in the specified format
+    /// Note: PDF returns HTML which is then converted to PDF in exportNote()
     private func generateContent(for note: NotesNote, format: ExportFormat) throws -> String {
         switch format {
         case .html:
             return generateHTML(for: note)
         case .markdown:
-            return generateMarkdown(for: note)
+            return note.toMarkdown()
         case .txt:
-            return note.plaintext
+            return note.toPlainText()
         case .rtf:
-            return generateRTF(for: note)
+            return note.toRTF()
         case .tex:
-            return generateTeX(for: note)
+            return note.toLatex()
         case .pdf:
-            // PDF requires different handling (not text-based)
-            // For now, export as HTML and note that PDF conversion requires external tool
+            // PDF: Generate HTML which will be converted to PDF in exportNote()
             return generateHTML(for: note)
         }
     }
@@ -499,6 +538,8 @@ class ExportViewModel: ObservableObject {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="created" content="\(dateFormatter.string(from: note.creationDate))">
+            <meta name="modified" content="\(dateFormatter.string(from: note.modificationDate))">
             <title>\(note.title.htmlEscaped)</title>
             <style>
                 body {
@@ -506,78 +547,34 @@ class ExportViewModel: ObservableObject {
                     max-width: 800px;
                     margin: 40px auto;
                     padding: 0 20px;
-                    line-height: 1.6;
+                    line-height: 1.0;
                 }
-                .metadata {
-                    color: #666;
-                    font-size: 0.9em;
-                    margin-bottom: 20px;
-                    padding-bottom: 10px;
-                    border-bottom: 1px solid #ddd;
+                /* Remove all spacing around headings and paragraphs */
+                h1, h2, h3, h4, h5, h6, p {
+                    margin: 0;
+                    padding: 0;
+                    line-height: 1.0;
                 }
-                h1 {
-                    margin-bottom: 10px;
+                /* Remove spacing around lists but keep indentation */
+                ul, ol {
+                    margin: 0;
+                    margin-left: 1.5em;
+                    padding: 0;
+                    padding-left: 0.5em;
+                }
+                li {
+                    margin: 0;
+                    padding: 0;
+                    line-height: 1.0;
                 }
             </style>
         </head>
         <body>
-            <h1>\(note.title.htmlEscaped)</h1>
-            <div class="metadata">
-                <p>Created: \(dateFormatter.string(from: note.creationDate))</p>
-                <p>Modified: \(dateFormatter.string(from: note.modificationDate))</p>
-            </div>
             <div class="content">
                 \(note.htmlBody)
             </div>
         </body>
         </html>
-        """
-    }
-
-    private func generateMarkdown(for note: NotesNote) -> String {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .short
-
-        return """
-        # \(note.title)
-
-        **Created:** \(dateFormatter.string(from: note.creationDate))
-        **Modified:** \(dateFormatter.string(from: note.modificationDate))
-
-        ---
-
-        \(note.plaintext)
-        """
-    }
-
-    private func generateRTF(for note: NotesNote) -> String {
-        // Basic RTF format
-        let rtfHeader = "{\\rtf1\\ansi\\deff0"
-        let title = "{\\b \\fs32 \(note.title.rtfEscaped)}\n\\par\n"
-        let content = note.plaintext.rtfEscaped
-        let rtfFooter = "}"
-
-        return "\(rtfHeader)\(title)\(content)\(rtfFooter)"
-    }
-
-    private func generateTeX(for note: NotesNote) -> String {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-
-        return """
-        \\documentclass{article}
-        \\usepackage[utf8]{inputenc}
-        \\title{\(note.title.texEscaped)}
-        \\date{\(dateFormatter.string(from: note.modificationDate))}
-
-        \\begin{document}
-
-        \\maketitle
-
-        \(note.plaintext.texEscaped)
-
-        \\end{document}
         """
     }
 
