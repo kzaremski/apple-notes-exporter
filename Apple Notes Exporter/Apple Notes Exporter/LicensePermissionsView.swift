@@ -8,6 +8,7 @@
 import SwiftUI
 import FullDiskAccess
 import AppKit
+import OSLog
 
 struct LicensePermissionsView: View {
     @ObservedObject var sharedState: AppleNotesExporterState
@@ -39,7 +40,7 @@ struct LicensePermissionsView: View {
     }
     
     func checkPermission() {
-        print("Checking for Full Disk Access permission...")
+        Logger.noteQuery.debug("Checking for Full Disk Access permission...")
         checkingFullDiskPermission = true
         let startTime = Date()
         
@@ -129,7 +130,7 @@ struct LicensePermissionsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
             .frame(maxHeight: .infinity, alignment: .leading)
-            .border(Color.gray, width: 1)
+            .border(SwiftUI.Color.gray, width: 1)
             .padding([.top, .bottom], 5)
             
             Toggle("By using Apple Notes Exporter I hereby agree to the above license terms.", isOn: $agreedToLicense)
@@ -175,6 +176,10 @@ struct LicensePermissionsView: View {
                 }.frame(maxWidth: .infinity, alignment: .trailing)
                 
                 Button {
+                    // Mark license as accepted
+                    sharedState.licenseAccepted = true
+                    // Start loading immediately before dismissing
+                    sharedState.reload()
                     showLicensePermissionsView = false
                 } label: {
                     Text("Continue")
@@ -190,8 +195,6 @@ struct LicensePermissionsView: View {
         }
         .onDisappear {
             permissionCheckTimer?.invalidate()
-            // Start the load of the Apple Notes Database
-            sharedState.reload()
         }
     }
 }

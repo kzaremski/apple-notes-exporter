@@ -7,6 +7,7 @@
 
 import Foundation
 import WebKit
+import OSLog
 
 class HTMLtoPDF: NSObject, WKNavigationDelegate {
     var webView: WKWebView!
@@ -30,7 +31,7 @@ class HTMLtoPDF: NSObject, WKNavigationDelegate {
     }
 
     @objc func handleTimeout() {
-        print("Loading timeout")
+        Logger.noteExport.error("HTML to PDF loading timeout")
         completion?(.failure(NSError(domain: "HTMLtoPDF", code: -1, userInfo: [NSLocalizedDescriptionKey: "Loading timed out"])))
         timeoutTimer?.invalidate()
         timeoutTimer = nil
@@ -43,21 +44,21 @@ class HTMLtoPDF: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        print("Failed loading with error: \(error)")
+        Logger.noteExport.error("Failed loading HTML with error: \(error.localizedDescription)")
         timeoutTimer?.invalidate()
         timeoutTimer = nil
         completion?(.failure(error))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        print("Failed provisional navigation with error: \(error)")
+        Logger.noteExport.error("Failed provisional navigation with error: \(error.localizedDescription)")
         timeoutTimer?.invalidate()
         timeoutTimer = nil
         completion?(.failure(error))
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        print("Web content process terminated")
+        Logger.noteExport.error("Web content process terminated")
         completion?(.failure(NSError(domain: "HTMLtoPDF", code: -2, userInfo: [NSLocalizedDescriptionKey: "Web content process terminated"])))
     }
 
@@ -128,9 +129,9 @@ func createDirectoryIfNotExists(location: URL) {
         do {
             try fileManager.createDirectory(at: location, withIntermediateDirectories: false)
         } catch {
-            print("Error creating directory at \(location.absoluteString)")
+            Logger.noteExport.error("Error creating directory at \(location.absoluteString): \(error.localizedDescription)")
         }
-        
+
     }
 }
 
@@ -141,7 +142,7 @@ func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
     // ZIP the input directory
     coordinator.coordinate(with: [zipIntent], queue: .main) { errorQ in
         if let error = errorQ {
-            print("Error: \(error)")
+            Logger.noteExport.error("Zip coordination error: \(error.localizedDescription)")
             return
         }
         // Get the location of the ZIP file to be copied
@@ -153,7 +154,7 @@ func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
             }
             try FileManager.default.copyItem(at: coordinatorOutputFile, to: outputZipFile)
         } catch (let error) {
-            print("Failed to copy \(coordinatorOutputFile) to \(outputZipFile): \(error)")
+            Logger.noteExport.error("Failed to copy \(coordinatorOutputFile) to \(outputZipFile): \(error.localizedDescription)")
         }
     }
 }

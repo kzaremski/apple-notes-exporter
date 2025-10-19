@@ -7,11 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1C4D45247207F83682A109C7 /* ExportLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B94ED64713116D6A12BAFA /* ExportLogView.swift */; };
 		2519EE842E3AEA7200CC5D3C /* LicensePermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */; };
 		2519EE892E3BD57E00CC5D3C /* FullDiskAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE882E3BD57E00CC5D3C /* FullDiskAccess */; };
 		2519EE8B2E3BDE5E00CC5D3C /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE8A2E3BDE5E00CC5D3C /* HtmlToPdf */; };
+		2519EE8D2E3BF47400CC5D3C /* NoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2519EE8C2E3BF47000CC5D3C /* NoteStore.swift */; };
+		257242442BF1878B00BD9A67 /* note.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242432BF1878B00BD9A67 /* note.swift */; };
 		257242462BF18F7700BD9A67 /* utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242452BF18F7700BD9A67 /* utilities.swift */; };
+		2573ECD22A5D843D008591E7 /* script.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2573ECD12A5D843D008591E7 /* script.swift */; };
+		257E911D2BF26F030052606E /* export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257E911C2BF26F030052606E /* export.swift */; };
 		257E911F2BF26FC10052606E /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257E911E2BF26FC10052606E /* ExportView.swift */; };
 		257E91212BF26FD30052606E /* NoteSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257E91202BF26FD30052606E /* NoteSelectorView.swift */; };
 		258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */; };
@@ -26,11 +29,10 @@
 		25A01F0D2E8F3EEF00C7D9FA /* AppleNotesDatabaseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A01F082E8F3EEF00C7D9FA /* AppleNotesDatabaseParser.swift */; };
 		25A01F102E8F3F6600C7D9FA /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = 25A01F0F2E8F3F6600C7D9FA /* SwiftProtobuf */; };
 		25A01F122E8F3FBE00C7D9FA /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 25A01F112E8F3FBE00C7D9FA /* libz.tbd */; };
-		51456FAA94D28F3F9DA7ADEC /* NotesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 213C2B20532A819D34D10996 /* NotesModels.swift */; };
-		8A94616573DA263AAD9AA0FB /* NotesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112D188009F1E92C1561588B /* NotesRepository.swift */; };
-		8D4C76EB0567C11E57ADAA1B /* TableParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A703BDEDC79C3484E6F80575 /* TableParser.swift */; };
-		A4F0225E1D3DAA18CE0DE934 /* NotesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */; };
-		A8F32496C70C760F63A553A8 /* ExportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF86799EAEEA063229FD0106 /* ExportViewModel.swift */; };
+		8BADB3113E743A889BD05974 /* ExportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B65A06A4674D49953B074D /* ExportViewModel.swift */; };
+		8CA391CD8B713BA676EF420C /* NotesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3BBA3D0F019A6123053DC62 /* NotesRepository.swift */; };
+		F1A2CCAB9A0B5CDD27B30853 /* NotesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7866FD4EAAA45D06B4A8F430 /* NotesViewModel.swift */; };
+		F2124EC3289ACB3F449A2CEA /* NotesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C816911C34A09905B753C1 /* NotesModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -65,11 +67,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		112D188009F1E92C1561588B /* NotesRepository.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesRepository.swift; path = Repository/NotesRepository.swift; sourceTree = "<group>"; };
-		17B94ED64713116D6A12BAFA /* ExportLogView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportLogView.swift; sourceTree = "<group>"; };
-		213C2B20532A819D34D10996 /* NotesModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesModels.swift; path = Models/NotesModels.swift; sourceTree = "<group>"; };
+		09C816911C34A09905B753C1 /* NotesModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesModels.swift; path = "Apple Notes Exporter/NotesModels.swift"; sourceTree = "<group>"; };
 		2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensePermissionsView.swift; sourceTree = "<group>"; };
+		2519EE8C2E3BF47000CC5D3C /* NoteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteStore.swift; sourceTree = "<group>"; };
+		257242432BF1878B00BD9A67 /* note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = note.swift; sourceTree = "<group>"; };
 		257242452BF18F7700BD9A67 /* utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = utilities.swift; sourceTree = "<group>"; };
+		2573ECD12A5D843D008591E7 /* script.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = script.swift; sourceTree = "<group>"; };
+		257E911C2BF26F030052606E /* export.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = export.swift; sourceTree = "<group>"; };
 		257E911E2BF26FC10052606E /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
 		257E91202BF26FD30052606E /* NoteSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteSelectorView.swift; sourceTree = "<group>"; };
 		258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Apple Notes Exporter.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -89,9 +93,9 @@
 		25A01F0A2E8F3EEF00C7D9FA /* notestore.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = notestore.pb.swift; sourceTree = "<group>"; };
 		25A01F112E8F3FBE00C7D9FA /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		25EB771F2BFA9E2600A35E62 /* ScriptingBridge.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ScriptingBridge.framework; path = System/Library/Frameworks/ScriptingBridge.framework; sourceTree = SDKROOT; };
-		A703BDEDC79C3484E6F80575 /* TableParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TableParser.swift; sourceTree = "<group>"; };
-		B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesViewModel.swift; path = ViewModels/NotesViewModel.swift; sourceTree = "<group>"; };
-		DF86799EAEEA063229FD0106 /* ExportViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExportViewModel.swift; path = ViewModels/ExportViewModel.swift; sourceTree = "<group>"; };
+		7866FD4EAAA45D06B4A8F430 /* NotesViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesViewModel.swift; path = "Apple Notes Exporter/NotesViewModel.swift"; sourceTree = "<group>"; };
+		D6B65A06A4674D49953B074D /* ExportViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExportViewModel.swift; path = "Apple Notes Exporter/ExportViewModel.swift"; sourceTree = "<group>"; };
+		E3BBA3D0F019A6123053DC62 /* NotesRepository.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesRepository.swift; path = "Apple Notes Exporter/NotesRepository.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -123,15 +127,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		0BEA79757FF1A8D4F96AC83E /* ViewModels */ = {
-			isa = PBXGroup;
-			children = (
-				B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */,
-				DF86799EAEEA063229FD0106 /* ExportViewModel.swift */,
-			);
-			name = ViewModels;
-			sourceTree = "<group>";
-		};
 		258D3A8629A7CC2E00858CE1 = {
 			isa = PBXGroup;
 			children = (
@@ -159,21 +154,24 @@
 				25A01F082E8F3EEF00C7D9FA /* AppleNotesDatabaseParser.swift */,
 				25A01F092E8F3EEF00C7D9FA /* DatabaseParserTest.swift */,
 				25A01F0A2E8F3EEF00C7D9FA /* notestore.pb.swift */,
+				2519EE8C2E3BF47000CC5D3C /* NoteStore.swift */,
 				2596C4D52A1F1DEE00EFF4F3 /* Apple-Notes-Exporter-Info.plist */,
 				258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */,
 				258D3A9429A7CC2E00858CE1 /* AppleNotesExporterView.swift */,
 				258D3A9629A7CC2F00858CE1 /* Assets.xcassets */,
 				258D3A9B29A7CC2F00858CE1 /* Apple_Notes_Exporter.entitlements */,
 				258D3A9829A7CC2F00858CE1 /* Preview Content */,
+				2573ECD12A5D843D008591E7 /* script.swift */,
+				257242432BF1878B00BD9A67 /* note.swift */,
 				257242452BF18F7700BD9A67 /* utilities.swift */,
+				257E911C2BF26F030052606E /* export.swift */,
 				257E911E2BF26FC10052606E /* ExportView.swift */,
 				257E91202BF26FD30052606E /* NoteSelectorView.swift */,
 				2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */,
-				0BEA79757FF1A8D4F96AC83E /* ViewModels */,
-				27C38E5382C319F20E10CA04 /* Repository */,
-				9E354112F2D9F31877DBB428 /* Models */,
-				17B94ED64713116D6A12BAFA /* ExportLogView.swift */,
-				A703BDEDC79C3484E6F80575 /* TableParser.swift */,
+				09C816911C34A09905B753C1 /* NotesModels.swift */,
+				E3BBA3D0F019A6123053DC62 /* NotesRepository.swift */,
+				7866FD4EAAA45D06B4A8F430 /* NotesViewModel.swift */,
+				D6B65A06A4674D49953B074D /* ExportViewModel.swift */,
 			);
 			path = "Apple Notes Exporter";
 			sourceTree = "<group>";
@@ -210,22 +208,6 @@
 				25EB771F2BFA9E2600A35E62 /* ScriptingBridge.framework */,
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		27C38E5382C319F20E10CA04 /* Repository */ = {
-			isa = PBXGroup;
-			children = (
-				112D188009F1E92C1561588B /* NotesRepository.swift */,
-			);
-			name = Repository;
-			sourceTree = "<group>";
-		};
-		9E354112F2D9F31877DBB428 /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				213C2B20532A819D34D10996 /* NotesModels.swift */,
-			);
-			name = Models;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -370,20 +352,22 @@
 			buildActionMask = 2147483647;
 			files = (
 				257242462BF18F7700BD9A67 /* utilities.swift in Sources */,
+				257242442BF1878B00BD9A67 /* note.swift in Sources */,
+				2519EE8D2E3BF47400CC5D3C /* NoteStore.swift in Sources */,
 				258D3A9529A7CC2E00858CE1 /* AppleNotesExporterView.swift in Sources */,
 				257E91212BF26FD30052606E /* NoteSelectorView.swift in Sources */,
 				25A01F0B2E8F3EEF00C7D9FA /* DatabaseParserTest.swift in Sources */,
 				25A01F0C2E8F3EEF00C7D9FA /* notestore.pb.swift in Sources */,
 				25A01F0D2E8F3EEF00C7D9FA /* AppleNotesDatabaseParser.swift in Sources */,
 				258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */,
+				2573ECD22A5D843D008591E7 /* script.swift in Sources */,
 				257E911F2BF26FC10052606E /* ExportView.swift in Sources */,
 				2519EE842E3AEA7200CC5D3C /* LicensePermissionsView.swift in Sources */,
-				A4F0225E1D3DAA18CE0DE934 /* NotesViewModel.swift in Sources */,
-				A8F32496C70C760F63A553A8 /* ExportViewModel.swift in Sources */,
-				8A94616573DA263AAD9AA0FB /* NotesRepository.swift in Sources */,
-				51456FAA94D28F3F9DA7ADEC /* NotesModels.swift in Sources */,
-				1C4D45247207F83682A109C7 /* ExportLogView.swift in Sources */,
-				8D4C76EB0567C11E57ADAA1B /* TableParser.swift in Sources */,
+				257E911D2BF26F030052606E /* export.swift in Sources */,
+				F2124EC3289ACB3F449A2CEA /* NotesModels.swift in Sources */,
+				8CA391CD8B713BA676EF420C /* NotesRepository.swift in Sources */,
+				F1A2CCAB9A0B5CDD27B30853 /* NotesViewModel.swift in Sources */,
+				8BADB3113E743A889BD05974 /* ExportViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -2,127 +2,132 @@
 //  ExportView.swift
 //  Apple Notes Exporter
 //
-//  Created by Konstantin Zaremski on 5/13/24.
+//  Export progress display view
 //
 
 import SwiftUI
 import OSLog
 
-struct ExportLineItem: View {
-    @ObservedObject var sharedState: AppleNotesExporterState
-    var item: ICItem
-    @State var logPopoverVisible = false
-    
-    private func getImage() -> String {
-        if self.item.error {
-            return "⚠️"
-        } else if self.item.exported && self.item.logString == "" {
-            return "✅"
-        } else if self.item.exported && self.item.logString != "" {
-            return "⚠️✅"
-        } else {
-            return "⏳"
-        }
-    }
-    
-    init(sharedState: AppleNotesExporterState, item: ICItem) {
-        self.sharedState = sharedState
-        self.item = item
-    }
-    
-    var body: some View {
-        HStack {
-            Image(systemName: item.icon).padding([.leading], 5).frame(width: 20)
-            Text("\(item.description)").frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(1) // Limit the text to one line
-                .truncationMode(.tail)
-            
-            // If the item is exporting, show the loader
-            if self.item.pending {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle())
-                    .padding(0)
-                    .scaleEffect(0.5)
-                    .frame(width: 20, height: 15)
-            } else {
-                if self.item.error || self.item.logString != "" {
-                    Button {
-                        self.logPopoverVisible = !self.logPopoverVisible
-                    } label: {
-                        Text(getImage())
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-                    .popover(isPresented: $logPopoverVisible, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
-                        ScrollView {
-                            Text(
-                                self.item.logString != "" ?
-                                self.item.logString : (self.item.children != nil ? "An error occured while exporting this item's children." : "An error occurred while exporting this item.")
-                            ).frame(width: 350, alignment: .leading)
-                                .multilineTextAlignment(.leading).padding(10)
-                                .contextMenu(ContextMenu(menuItems: {
-                                    Button("Copy", action: {
-                                        NSPasteboard.general.setString(self.item.logString, forType: .string)
-                                    })
-                                }))
-                        }
-                    }
-                } else {
-                    Text(getImage())
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 struct ExportView: View {
     @ObservedObject var sharedState: AppleNotesExporterState
+    @EnvironmentObject var exportViewModel: ExportViewModel
 
     var body: some View {
-        VStack {
-            VStack {
-                List {
-                    if sharedState.selectedRoot.count > 0 {
-                        OutlineGroup(sharedState.selectedRoot, children: \.children) { item in
-                            ExportLineItem(sharedState: sharedState, item: item)
+        VStack(spacing: 10) {
+            // Export status
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Exporting Notes")
+                    .font(.title)
+
+                if case .exporting(let progress) = exportViewModel.exportState {
+                    ProgressView(value: progress.percentage) {
+                        Text(progress.message)
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    .progressViewStyle(LinearProgressViewStyle())
+
+                    // Show attachment progress if available
+                    if let attachmentProgress = progress.attachmentProgress {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Note \(progress.current): Attachment \(attachmentProgress.current) of \(attachmentProgress.total) exported")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .font(.headline)
+
+                            ProgressView(value: attachmentProgress.percentage)
+                                .progressViewStyle(LinearProgressViewStyle())
                         }
-                    } else {
-                        Text("No notes were selected for export. If you are seeing this, this is a bug.")
+                        .padding(.top, 6)
+                    }
+                } else if case .completed(let stats) = exportViewModel.exportState {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Export completed successfully!")
+                                .font(.headline)
+                        }
+
+                        // Show statistics
+                        if stats.failedAttachments > 0 {
+                            HStack {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundColor(.orange)
+                                Text("\(stats.failedAttachments) attachment\(stats.failedAttachments == 1 ? "" : "s") failed")
+                                    .font(.headline)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+
+                        if stats.failedNotes > 0 {
+                            HStack {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text("\(stats.failedNotes) note\(stats.failedNotes == 1 ? "" : "s") failed")
+                                    .font(.headline)
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+                } else if case .cancelled = exportViewModel.exportState {
+                    HStack {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.orange)
+                        Text("Export cancelled")
+                            .font(.headline)
+                    }
+                } else if case .error(let message) = exportViewModel.exportState {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Export failed")
+                                .font(.headline)
+                            Text(message)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
-            .frame(maxHeight: .infinity, alignment: .leading)
-            .border(Color.gray, width: 1)
-            .padding([.top, .bottom], 5)
-            
-            ProgressView(value: sharedState.exportPercentage)
-                .progressViewStyle(LinearProgressViewStyle())
-            
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer()
+
+            // Action buttons
             HStack {
-                HStack {
-                    Text(sharedState.exportMessage)
+                Button {
+                    sharedState.showExportLog()
+                } label: {
+                    Text("View Export Log")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                
-                if sharedState.exporting {
+
+                Spacer()
+
+                if case .exporting = exportViewModel.exportState {
                     Button {
                         Logger.noteExport.info("User triggered export cancellation")
-                        sharedState.shouldCancelExport = true
+                        exportViewModel.cancelExport()
                     } label: {
-                        Text(sharedState.shouldCancelExport ? "Cancelling" : "Cancel Export")
-                    }.disabled(sharedState.shouldCancelExport)
+                        Text(exportViewModel.shouldCancel ? "Cancelling..." : "Cancel Export")
+                    }
+                    .disabled(exportViewModel.shouldCancel)
                 } else {
                     Button {
+                        exportViewModel.reset()
                         sharedState.showProgressWindow = false
                     } label: {
                         Text("Done")
                     }
+                    .keyboardShortcut(.defaultAction)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(15)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
+
