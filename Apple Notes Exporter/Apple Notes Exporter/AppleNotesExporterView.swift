@@ -208,7 +208,8 @@ struct AppleNotesExporterView: View {
             ExportView(
                 sharedState: sharedState
             )
-            .frame(width: 500, height: 190)
+            .frame(width: 400)
+            .fixedSize(horizontal: false, vertical: true)
             .allowsHitTesting(true)
             .onAppear {
                 NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in

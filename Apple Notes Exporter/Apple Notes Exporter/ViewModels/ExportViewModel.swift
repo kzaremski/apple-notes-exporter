@@ -12,24 +12,38 @@ import OSLog
 
 // MARK: - Export Progress
 
-struct AttachmentProgress: Equatable {
+struct ExportProgress: Equatable {
     var current: Int = 0
     var total: Int = 0
-    var noteTitle: String = ""
+    var message: String = ""
     var percentage: Double {
         guard total > 0 else { return 0 }
         return Double(current) / Double(total)
     }
 }
 
-struct ExportProgress: Equatable {
-    var current: Int = 0
-    var total: Int = 0
-    var message: String = ""
-    var attachmentProgress: AttachmentProgress? = nil
-    var percentage: Double {
-        guard total > 0 else { return 0 }
-        return Double(current) / Double(total)
+// MARK: - Progress Tracker Actor
+
+actor ExportProgressTracker {
+    private var completedCount: Int = 0
+    private var failedNotesCount: Int = 0
+    private var failedAttachmentsCount: Int = 0
+
+    func noteCompleted() -> Int {
+        completedCount += 1
+        return completedCount
+    }
+
+    func noteFailed() {
+        failedNotesCount += 1
+    }
+
+    func attachmentFailed() {
+        failedAttachmentsCount += 1
+    }
+
+    func getStats() -> (completed: Int, failedNotes: Int, failedAttachments: Int) {
+        return (completedCount, failedNotesCount, failedAttachmentsCount)
     }
 }
 
@@ -72,6 +86,11 @@ class ExportViewModel: ObservableObject {
     private var failedNotesCount: Int = 0
     private var failedAttachmentsCount: Int = 0
 
+    // MARK: - Concurrency Settings
+
+    private let maxConcurrentExports = 8  // Number of notes to export concurrently
+    private let logLock = NSLock()  // Thread-safe logging
+
     // MARK: - Dependencies
 
     private let repository: NotesRepository
@@ -109,64 +128,37 @@ class ExportViewModel: ObservableObject {
             // Group notes by account and folder for organized output
             let hierarchy = try await organizeNotesByHierarchy(notes)
 
-            // Export each account's notes
-            var currentIndex = 0
+            // Create all directory structure upfront
             for (accountName, folders) in hierarchy {
                 let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
                 try FileManager.default.createDirectory(at: accountURL, withIntermediateDirectories: true)
 
-                for (folderPath, folderNotes) in folders {
-                    // Check for cancellation
-                    if shouldCancel {
-                        exportState = .cancelled
-                        Logger.noteExport.info("Export cancelled by user")
-                        return
-                    }
-
-                    // Create folder structure
+                for (folderPath, _) in folders {
                     let folderURL = accountURL.appendingPathComponent(folderPath)
                     try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+                }
+            }
 
-                    // Export each note in the folder
+            // Flatten notes with their folder paths for concurrent export
+            var notesWithPaths: [(note: NotesNote, folderURL: URL)] = []
+            for (accountName, folders) in hierarchy {
+                let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
+                for (folderPath, folderNotes) in folders {
+                    let folderURL = accountURL.appendingPathComponent(folderPath)
                     for note in folderNotes {
-                        currentIndex += 1
-
-                        // Calculate time remaining
-                        let elapsedTime = Date().timeIntervalSince(startTime)
-                        let timePerNote = elapsedTime / Double(currentIndex)
-                        let remainingNotes = notes.count - currentIndex
-                        let estimatedRemaining = timePerNote * Double(remainingNotes)
-
-                        // Update progress
-                        let message = currentIndex >= 10
-                            ? "Exporting note \(currentIndex) of \(notes.count) (\(formatTimeRemaining(estimatedRemaining)) remaining)"
-                            : "Exporting note \(currentIndex) of \(notes.count)"
-
-                        exportState = .exporting(ExportProgress(
-                            current: currentIndex,
-                            total: notes.count,
-                            message: message
-                        ))
-
-                        // Export the note (with error handling to continue on failure)
-                        do {
-                            try await exportNote(
-                                note,
-                                toDirectory: folderURL,
-                                format: format,
-                                includeAttachments: includeAttachments,
-                                currentNoteIndex: currentIndex,
-                                totalNotes: notes.count,
-                                mainMessage: message
-                            )
-                        } catch {
-                            failedNotesCount += 1
-                            log("✗ Failed to export note '\(note.title)': \(error.localizedDescription)")
-                            Logger.noteExport.error("Failed to export note '\(note.title)': \(error.localizedDescription)")
-                        }
+                        notesWithPaths.append((note: note, folderURL: folderURL))
                     }
                 }
             }
+
+            // Export notes concurrently
+            try await exportNotesConcurrently(
+                notesWithPaths,
+                format: format,
+                includeAttachments: includeAttachments,
+                totalNotes: notes.count,
+                startTime: startTime
+            )
 
             // Export completed successfully
             let successfulNotes = notes.count - failedNotesCount
@@ -184,6 +176,193 @@ class ExportViewModel: ObservableObject {
         }
     }
 
+    /// Export notes concurrently using TaskGroup
+    private func exportNotesConcurrently(
+        _ notesWithPaths: [(note: NotesNote, folderURL: URL)],
+        format: ExportFormat,
+        includeAttachments: Bool,
+        totalNotes: Int,
+        startTime: Date
+    ) async throws {
+        let tracker = ExportProgressTracker()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var iterator = notesWithPaths.makeIterator()
+            var activeTaskCount = 0
+
+            // Launch initial batch of concurrent exports
+            while activeTaskCount < maxConcurrentExports, let noteWithPath = iterator.next() {
+                group.addTask {
+                    await self.exportNoteConcurrently(
+                        noteWithPath.note,
+                        toDirectory: noteWithPath.folderURL,
+                        format: format,
+                        includeAttachments: includeAttachments,
+                        tracker: tracker
+                    )
+                }
+                activeTaskCount += 1
+            }
+
+            // Process completed tasks and launch new ones
+            for try await _ in group {
+                // Check for cancellation
+                if shouldCancel {
+                    group.cancelAll()
+                    exportState = .cancelled
+                    Logger.noteExport.info("Export cancelled by user")
+                    return
+                }
+
+                // Update progress
+                let stats = await tracker.getStats()
+                let completed = stats.completed
+
+                // Update stats on main actor
+                failedNotesCount = stats.failedNotes
+                failedAttachmentsCount = stats.failedAttachments
+
+                // Calculate time remaining
+                let elapsedTime = Date().timeIntervalSince(startTime)
+                let timePerNote = elapsedTime / Double(completed)
+                let remainingNotes = totalNotes - completed
+                let estimatedRemaining = timePerNote * Double(remainingNotes)
+
+                // Update progress message
+                let message = completed >= 10
+                    ? "Exporting notes \(completed) of \(totalNotes) (\(formatTimeRemaining(estimatedRemaining)) remaining)"
+                    : "Exporting notes \(completed) of \(totalNotes)"
+
+                exportState = .exporting(ExportProgress(
+                    current: completed,
+                    total: totalNotes,
+                    message: message
+                ))
+
+                // Launch next task if available
+                if let noteWithPath = iterator.next() {
+                    group.addTask {
+                        await self.exportNoteConcurrently(
+                            noteWithPath.note,
+                            toDirectory: noteWithPath.folderURL,
+                            format: format,
+                            includeAttachments: includeAttachments,
+                            tracker: tracker
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Export a single note concurrently (non-throwing wrapper for TaskGroup)
+    private func exportNoteConcurrently(
+        _ note: NotesNote,
+        toDirectory directory: URL,
+        format: ExportFormat,
+        includeAttachments: Bool,
+        tracker: ExportProgressTracker
+    ) async {
+        do {
+            try await exportNoteSafely(
+                note,
+                toDirectory: directory,
+                format: format,
+                includeAttachments: includeAttachments,
+                tracker: tracker
+            )
+            _ = await tracker.noteCompleted()
+        } catch {
+            await tracker.noteFailed()
+            log("✗ Failed to export note '\(note.title)': \(error.localizedDescription)")
+            Logger.noteExport.error("Failed to export note '\(note.title)': \(error.localizedDescription)")
+        }
+    }
+
+    /// Export a single note to disk (thread-safe version for concurrent export)
+    private func exportNoteSafely(
+        _ note: NotesNote,
+        toDirectory directory: URL,
+        format: ExportFormat,
+        includeAttachments: Bool,
+        tracker: ExportProgressTracker
+    ) async throws {
+        // Sanitize filename
+        let filename = "\(note.sanitizedFileName).\(format.fileExtension)"
+        let fileURL = directory.appendingPathComponent(filename)
+
+        // Generate content based on format
+        let content = try generateContent(for: note, format: format)
+
+        // Write to file
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        log("✓ Exported note: \(note.title)")
+
+        // Export attachments if requested
+        if includeAttachments && note.hasAttachments {
+            try await exportAttachmentsSafely(
+                note.attachments,
+                toDirectory: directory,
+                noteTitle: note.title,
+                tracker: tracker
+            )
+        }
+    }
+
+    /// Export attachments for a note (thread-safe version for concurrent export)
+    private func exportAttachmentsSafely(
+        _ attachments: [NotesAttachment],
+        toDirectory directory: URL,
+        noteTitle: String,
+        tracker: ExportProgressTracker
+    ) async throws {
+        // Filter out non-file attachments (tables, URLs, etc. that are embedded in note content)
+        let nonFileAttachmentTypes = [
+            "com.apple.notes.table",
+            "public.url",
+            "com.apple.notes.inlinetextattachment",
+            "com.apple.notes.inlinehashtagattachment",
+            "com.apple.notes.inlinementionattachment"
+        ]
+
+        let fileAttachments = attachments.filter { attachment in
+            !nonFileAttachmentTypes.contains(attachment.typeUTI)
+        }
+
+        // Skip if no file attachments to export
+        guard !fileAttachments.isEmpty else {
+            return
+        }
+
+        // Create attachments subfolder with note title
+        let sanitizedTitle = sanitizeFilename(noteTitle)
+        let attachmentsURL = directory.appendingPathComponent("\(sanitizedTitle) (Attachments)")
+        try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+
+        // Export each attachment
+        for attachment in fileAttachments {
+            do {
+                // Fetch attachment data from repository
+                let data = try await repository.fetchAttachment(id: attachment.id)
+
+                // Determine filename
+                let filename = attachment.filename ?? "\(attachment.id).\(attachment.fileExtension ?? "bin")"
+                let fileURL = attachmentsURL.appendingPathComponent(filename)
+
+                // Write attachment to disk
+                try data.write(to: fileURL)
+                log("✓ Exported attachment: \(filename) for note '\(noteTitle)'")
+
+            } catch {
+                await tracker.attachmentFailed()
+                let typeInfo = attachment.typeUTI
+                log("✗ Failed to export attachment \(attachment.id) (type: \(typeInfo)) for note '\(noteTitle)': \(error.localizedDescription)")
+                Logger.noteExport.warning("Failed to export attachment \(attachment.id) (type: \(typeInfo)): \(error.localizedDescription)")
+                // Continue with other attachments even if one fails
+            }
+        }
+    }
+
     /// Cancel the current export operation
     func cancelExport() {
         shouldCancel = true
@@ -195,9 +374,11 @@ class ExportViewModel: ObservableObject {
         shouldCancel = false
     }
 
-    /// Add a log entry
+    /// Add a log entry (thread-safe)
     private func log(_ message: String) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        logLock.lock()
+        defer { logLock.unlock() }
         exportLog.append("[\(timestamp)] \(message)")
     }
 
@@ -282,24 +463,7 @@ class ExportViewModel: ObservableObject {
         let attachmentsURL = directory.appendingPathComponent("\(sanitizedTitle) (Attachments)")
         try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
 
-        let totalAttachments = fileAttachments.count
-        var currentAttachment = 0
-
         for attachment in fileAttachments {
-            currentAttachment += 1
-
-            // Update progress with attachment info
-            exportState = .exporting(ExportProgress(
-                current: currentNoteIndex,
-                total: totalNotes,
-                message: mainMessage,
-                attachmentProgress: AttachmentProgress(
-                    current: currentAttachment,
-                    total: totalAttachments,
-                    noteTitle: noteTitle
-                )
-            ))
-
             do {
                 // Fetch attachment data from repository
                 let data = try await repository.fetchAttachment(id: attachment.id)
@@ -310,24 +474,16 @@ class ExportViewModel: ObservableObject {
 
                 // Write attachment to disk
                 try data.write(to: fileURL)
-                log("  ✓ Exported attachment: \(filename) for note '\(noteTitle)'")
+                log("✓ Exported attachment: \(filename) for note '\(noteTitle)'")
 
             } catch {
                 failedAttachmentsCount += 1
                 let typeInfo = attachment.typeUTI
-                log("  ✗ Failed to export attachment \(attachment.id) (type: \(typeInfo)) for note '\(noteTitle)': \(error.localizedDescription)")
+                log("✗ Failed to export attachment \(attachment.id) (type: \(typeInfo)) for note '\(noteTitle)': \(error.localizedDescription)")
                 Logger.noteExport.warning("Failed to export attachment \(attachment.id) (type: \(typeInfo)): \(error.localizedDescription)")
                 // Continue with other attachments even if one fails
             }
         }
-
-        // Clear attachment progress after finishing
-        exportState = .exporting(ExportProgress(
-            current: currentNoteIndex,
-            total: totalNotes,
-            message: mainMessage,
-            attachmentProgress: nil
-        ))
     }
 
     // MARK: - Content Generation

@@ -27,20 +27,6 @@ struct ExportView: View {
                             .lineLimit(1)
                     }
                     .progressViewStyle(LinearProgressViewStyle())
-
-                    // Show attachment progress if available
-                    if let attachmentProgress = progress.attachmentProgress {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Note \(progress.current): Attachment \(attachmentProgress.current) of \(attachmentProgress.total) exported")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                                .font(.headline)
-
-                            ProgressView(value: attachmentProgress.percentage)
-                                .progressViewStyle(LinearProgressViewStyle())
-                        }
-                        .padding(.top, 6)
-                    }
                 } else if case .completed(let stats) = exportViewModel.exportState {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -127,7 +113,6 @@ struct ExportView: View {
             }
         }
         .padding(15)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
