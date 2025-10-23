@@ -12,8 +12,8 @@ import OSLog
 // App version and capability
 let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 let OUTPUT_FORMATS: [String] = [
-    //"PDF",
     "HTML",
+    "PDF",
     "TEX",
     "MD",
     "RTF",
@@ -54,185 +54,133 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// MARK: - App State (Legacy Compatibility Layer)
+// This class provides compatibility with the old UI while we migrate to ViewModels
+@MainActor
 class AppleNotesExporterState: ObservableObject {
-    @Published var initialLoadComplete: Bool = false
     @Published var showProgressWindow: Bool = false
-    
-    @Published var root: [ICItem] = []
-    @Published var itemByXID: [String:ICItem] = [:]
-    @Published var allNotes: [ICItem] = []
-    
-    @Published var selectedRoot: [ICItem] = []
-    @Published var selectedNotes: [ICItem] = []
-    
-    @Published var initialLoadMessage: String = "Loading..."
-    
     @Published var exportPercentage: Float = 0.0
     @Published var exportMessage: String = "Exporting..."
     @Published var exporting: Bool = false
     @Published var shouldCancelExport: Bool = false
     @Published var exportDone: Bool = false
-    
     @Published var selectedNotesCount: Int = 0
     @Published var fromAccountsCount: Int = 0
-    
-    @Published var stateHash: UUID = UUID()
-    
-    /**
-     Build a root for the selected notes
-     */
-    func buildSelectedRoot() {
-        // New directory structure but for the selected notes only
-        var newSelectedRoot: [ICItem] = []
-        
-        // Find item by XID in selected root
-        func findInNewSelectedRoot(xid: String) -> ICItem? {
-            // For each account in the root
-            for item in newSelectedRoot {
-                // Check if the current item's xid matches the desired xid
-                if item.xid == xid {
-                    return item
-                }
-                // Check if the current item's children contain the desired xid
-                if let found = item.find(xid: xid) {
-                    return found
-                }
-            }
-            
-            // If not found, return nil
-            return nil
-        }
-        
-        // Add all accounts (even if they are not selected)
-        //     This is needed for the container placing method as the [ICItem] does not have an appendChild method
-        for account in self.root {
-            newSelectedRoot.append(ICItem(from: account))
-        }
-        // For each selected note XID
-        for selectedNote in self.selectedNotes {
-            // Reuse the object from the selected note that way the reference is the same
-            var item = selectedNote
-            
-            // Place it where it belongs within the directory structure
-            var container = findInNewSelectedRoot(xid: item.container)
-            while container == nil {
-                // Create a new item that will represent the parent folder
-                let newItem = ICItem(from: self.itemByXID[item.container]!)
-                
-                // Add the current item as a child of the parent folder (new item)
-                newItem.appendChild(child: item)
-                
-                // Next level (try to place the item, which is now the parent folder, somewhere)
-                item = newItem
-                container = findInNewSelectedRoot(xid: item.container)
-            }
-            // Once we have created containers moving upwards to a point that there is a container that exists, place the nested structure (or single note) as a child of that final container.
-            container!.appendChild(child: item)
-        }
-        // Build the final selected root
-        var finalNewSelectedRoot: [ICItem] = []
-        for account in newSelectedRoot {
-            // If the account has children (notes are selected within it), it is kept
-            if account.children != nil {
-                finalNewSelectedRoot.append(account)
-            }
-        }
-        // Update the selected root
-        self.selectedRoot = finalNewSelectedRoot
+    @Published var licenseAccepted: Bool = false
+
+    // Export Log Window reference
+    var exportLogWindow: NSWindow?
+
+    // References to the new ViewModels
+    let notesViewModel: NotesViewModel
+    let exportViewModel: ExportViewModel
+
+    init(notesViewModel: NotesViewModel, exportViewModel: ExportViewModel) {
+        self.notesViewModel = notesViewModel
+        self.exportViewModel = exportViewModel
+
+        // Update counts from ViewModel
+        updateCounts()
     }
-    
+
+    func showExportLog() {
+        // Check if window already exists and bring to front
+        if let window = exportLogWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // Create new window
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Export Log"
+        window.minSize = NSSize(width: 500, height: 400)
+        window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.managed, .fullScreenDisallowsTiling]
+
+        // Create content view with close handler
+        let contentView = ExportLogView(onClose: {
+            window.close()
+        })
+        .environmentObject(exportViewModel)
+
+        window.contentView = NSHostingView(rootView: contentView)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        exportLogWindow = window
+    }
+
     func update() {
-        // Update the proportion selected for all items
-        for (_, value) in itemByXID {
-            // Update the proportion selected
-            value.updateProportionSelected()
-        }
-        // ** Update the totals & array of selected notes
-        var newSelectedNotes: [ICItem] = []
-        var totalSelectedNotes = 0
-        var selectedAccounts: Set<String> = []
-        for note in self.allNotes {
-            if note.selected {
-                // Increment total
-                totalSelectedNotes += 1
-                // Add it to the set of selected accounts
-                selectedAccounts.insert(note.account)
-                // Add the note to the new array of selected notes
-                newSelectedNotes.append(ICItem(from: note))
-            }
-        }
-        self.selectedNotesCount = totalSelectedNotes
-        self.fromAccountsCount = selectedAccounts.count
-        self.selectedNotes = newSelectedNotes
-        // Go through each selected note and build the new selected notes directory structure
-        buildSelectedRoot()
-        // Update the stateHash, which forces re-renders
-        refresh()
+        updateCounts()
     }
-    
+
     func refresh() {
-        // Update the stateHash, which forces re-renders
-        self.stateHash = UUID()
+        objectWillChange.send()
     }
-    
-    func findItem(xid: String) -> ICItem? {
-        // For each account in the root
-        for item in root {
-            // Check if the current item's xid matches the desired xid
-            if item.xid == xid {
-                return item
-            }
-            // Check if the current item's children contain the desired xid
-            if let found = item.find(xid: xid) {
-                return found
-            }
-        }
-        
-        // Return nil if nothing found
-        return nil
-    }
-    
+
     func reload() {
         // Cannot reload while exporting
         if self.exporting {
             return
         }
-        
-        self.initialLoadComplete = false
-        self.showProgressWindow = false
-        self.initialLoadMessage = "Loading..."
-        self.refresh()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.root = []
-            self.itemByXID = [:]
-            self.allNotes = []
-            self.selectedRoot = []
-            self.selectedNotes = []
-            
-            self.update()
-            
-            DispatchQueue.global(qos: .userInitiated).async {
-                initialLoad(sharedState: self)
-                DispatchQueue.main.async {
-                    self.initialLoadComplete = true
-                }
+
+        Task {
+            await notesViewModel.reload()
+            await MainActor.run {
+                updateCounts()
             }
         }
+    }
+
+    private func updateCounts() {
+        selectedNotesCount = notesViewModel.selectedCount
+
+        // Count unique accounts from selected notes
+        let uniqueAccounts = Set(notesViewModel.selectedNotes.map { $0.accountId })
+        fromAccountsCount = uniqueAccounts.count
     }
 }
 
 @main
 struct Apple_Notes_ExporterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    
-    @ObservedObject var sharedState: AppleNotesExporterState = AppleNotesExporterState()
-    
+
+    // New ViewModels
+    @StateObject private var notesViewModel = NotesViewModel()
+    @StateObject private var exportViewModel = ExportViewModel()
+
+    // Legacy compatibility state
+    @ObservedObject var sharedState: AppleNotesExporterState
+
+    init() {
+        // Initialize ViewModels first
+        let notesVM = NotesViewModel()
+        let exportVM = ExportViewModel()
+
+        // Create compatibility layer
+        let state = AppleNotesExporterState(
+            notesViewModel: notesVM,
+            exportViewModel: exportVM
+        )
+
+        self.sharedState = state
+        self._notesViewModel = StateObject(wrappedValue: notesVM)
+        self._exportViewModel = StateObject(wrappedValue: exportVM)
+    }
+
     var body: some Scene {
         WindowGroup(id: "main") {
-            AppleNotesExporterView(sharedState: sharedState).onAppear {
-                NSWindow.allowsAutomaticWindowTabbing = false
-            }
+            AppleNotesExporterView(sharedState: sharedState)
+                .environmentObject(notesViewModel)
+                .environmentObject(exportViewModel)
+                .onAppear {
+                    NSWindow.allowsAutomaticWindowTabbing = false
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -243,6 +191,45 @@ struct Apple_Notes_ExporterApp: App {
                 }
                 .keyboardShortcut("R", modifiers: [.command])
                 .disabled(sharedState.exporting)
+            }
+
+            CommandGroup(after: .sidebar) {
+                Toggle(isOn: Binding(
+                    get: { notesViewModel.foldersOnTop },
+                    set: { newValue in
+                        notesViewModel.foldersOnTop = newValue
+                        Task {
+                            await notesViewModel.rebuildHierarchy()
+                        }
+                    }
+                )) {
+                    Text("Display Folders Separately")
+                }
+
+                Picker("Sort By", selection: Binding(
+                    get: { notesViewModel.sortOption },
+                    set: { newValue in
+                        notesViewModel.sortOption = newValue
+                        Task {
+                            await notesViewModel.rebuildHierarchy()
+                        }
+                    }
+                )) {
+                    ForEach(NoteSortOption.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+                .pickerStyle(.inline)
+            }
+
+            CommandGroup(after: .windowArrangement) {
+                Button(action: {
+                    sharedState.showExportLog()
+                }) {
+                    Text("Show Export Log")
+                }
+                .keyboardShortcut("L", modifiers: [.command, .shift])
+                .disabled(!sharedState.licenseAccepted)
             }
         }
         .windowResizabilityContentSize()
