@@ -15,8 +15,8 @@ extension NotesNote {
     // MARK: - Public Export Methods
 
     /// Convert note to plain text format
-    /// Preserves list markers (*, -) and attachment references
-    /// No markdown syntax or special formatting
+    /// Converts HTML to plain text, preserving structure without markdown syntax
+    /// Includes tables (converted to plain text), links (with URLs in parentheses), hashtags
     /// Requires htmlBody to be available
     func toPlainText() -> String {
         return HTMLToPlainTextConverter.convert(htmlBody ?? "")
@@ -94,16 +94,25 @@ private struct HTMLToPlainTextConverter {
         // Simple HTML parsing - process tag by tag
         var currentText = bodyContent
 
-        // Handle headings - just extract text, add newline after
+        // Handle tables first - convert to plain text format
+        currentText = processTables(currentText)
+
+        // Handle headings - just extract text, add newline after (no # symbols)
         currentText = processHeadings(currentText)
 
-        // Handle lists - preserve * and - markers
+        // Handle lists - use simple bullets (no - or * prefixes)
         currentText = processLists(currentText, listDepth: &listDepth)
 
         // Handle line breaks
         currentText = currentText.replacingOccurrences(of: "<br>", with: "\n")
         currentText = currentText.replacingOccurrences(of: "<br/>", with: "\n")
         currentText = currentText.replacingOccurrences(of: "<br />", with: "\n")
+
+        // Handle pre/code blocks - just preserve content without backticks
+        currentText = currentText.replacingOccurrences(of: "<pre[^>]*>", with: "", options: .regularExpression)
+        currentText = currentText.replacingOccurrences(of: "</pre>", with: "\n")
+        currentText = currentText.replacingOccurrences(of: "<code>", with: "")
+        currentText = currentText.replacingOccurrences(of: "</code>", with: "")
 
         // Strip remaining HTML tags but keep content
         currentText = stripHTMLTags(currentText)
@@ -123,10 +132,30 @@ private struct HTMLToPlainTextConverter {
         return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
     }
 
+    private static func processTables(_ html: String) -> String {
+        var result = html
+
+        // Convert table rows to newlines, cells to tab-separated values
+        result = result.replacingOccurrences(of: "<table[^>]*>", with: "\n", options: .regularExpression)
+        result = result.replacingOccurrences(of: "</table>", with: "\n")
+        result = result.replacingOccurrences(of: "<thead>", with: "")
+        result = result.replacingOccurrences(of: "</thead>", with: "")
+        result = result.replacingOccurrences(of: "<tbody>", with: "")
+        result = result.replacingOccurrences(of: "</tbody>", with: "")
+        result = result.replacingOccurrences(of: "<tr>", with: "")
+        result = result.replacingOccurrences(of: "</tr>", with: "\n")
+        result = result.replacingOccurrences(of: "<th[^>]*>", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "</th>", with: "\t")
+        result = result.replacingOccurrences(of: "<td[^>]*>", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "</td>", with: "\t")
+
+        return result
+    }
+
     private static func processHeadings(_ html: String) -> String {
         var result = html
 
-        // Replace heading tags with just their content and newlines
+        // Replace heading tags with just their content and newlines (no # symbols)
         for i in 1...6 {
             let openTag = "<h\(i)>"
             let closeTag = "</h\(i)>"
@@ -150,9 +179,8 @@ private struct HTMLToPlainTextConverter {
         result = result.replacingOccurrences(of: "<ol>", with: "")
         result = result.replacingOccurrences(of: "</ol>", with: "\n")
 
-        // Process list items - add bullet marker
-        // For now, simple approach: use * for all bullets
-        result = result.replacingOccurrences(of: "<li>", with: "* ")
+        // Process list items - use bullet • for plain text (no *, -, or numbers)
+        result = result.replacingOccurrences(of: "<li>", with: "• ")
         result = result.replacingOccurrences(of: "</li>", with: "\n")
 
         return result

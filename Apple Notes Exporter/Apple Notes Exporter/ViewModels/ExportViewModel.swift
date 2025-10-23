@@ -12,6 +12,19 @@ import OSLog
 import HtmlToPdf
 import SQLite3
 
+// MARK: - Export Errors
+
+enum ExportError: Error, LocalizedError {
+    case pdfGenerationTimeout
+
+    var errorDescription: String? {
+        switch self {
+        case .pdfGenerationTimeout:
+            return "PDF generation timed out after 15 seconds. This note may contain corrupted images or attachments."
+        }
+    }
+}
+
 // MARK: - Export Progress
 
 struct ExportProgress: Equatable {
@@ -91,7 +104,28 @@ class ExportViewModel: ObservableObject {
 
     // MARK: - Concurrency Settings
 
-    private let maxConcurrentExports = 8  // Number of notes to export concurrently
+    /// Calculate optimal number of concurrent exports based on system resources
+    /// Formula: min(core_count, total_ram_gb_rounded_up / 2)
+    /// This balances CPU availability with memory constraints
+    private var maxConcurrentExports: Int {
+        let coreCount = ProcessInfo.processInfo.processorCount
+
+        // Get total physical memory in bytes
+        let totalMemory = ProcessInfo.processInfo.physicalMemory
+
+        // Convert to gigabytes and round up to nearest gigabyte
+        let totalMemoryGB = Int(ceil(Double(totalMemory) / 1_073_741_824.0))
+
+        // Calculate memory-based limit (half of available RAM in GB)
+        let memoryLimit = max(1, totalMemoryGB / 2)
+
+        // Take the minimum to respect both CPU and memory constraints
+        let optimal = min(coreCount, memoryLimit)
+
+        // Ensure at least 1 concurrent task, cap at 16 for safety
+        return max(1, min(optimal, 16))
+    }
+
     private let logLock = NSLock()  // Thread-safe logging
 
     // MARK: - Dependencies
@@ -373,7 +407,26 @@ class ExportViewModel: ObservableObject {
                 margins: margins,
                 paperSize: CGSize(width: pageSize.width, height: pageSize.height)
             )
-            try await html.print(to: fileURL, configuration: pdfConfiguration)
+
+            // Add timeout for PDF generation to prevent hangs on corrupted images
+            // WebKit can hang indefinitely trying to load corrupted HEIC/JPEG images
+            // Most PDFs render in < 5 seconds; 15 seconds allows for complex notes while catching hangs
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await html.print(to: fileURL, configuration: pdfConfiguration)
+                }
+
+                group.addTask {
+                    // 15 second timeout - aggressive enough to catch hangs, generous enough for complex PDFs
+                    try await Task.sleep(nanoseconds: 15_000_000_000)
+                    throw ExportError.pdfGenerationTimeout
+                }
+
+                // Wait for first task to complete (either PDF finishes or timeout)
+                try await group.next()
+                group.cancelAll()
+            }
+
             log("✓ Exported PDF: \(note.title)")
         } else {
             // Generate content based on format
@@ -664,19 +717,69 @@ class ExportViewModel: ObservableObject {
         switch format {
         case .html:
             return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-        case .markdown:
-            return note.toMarkdown()
         case .txt:
-            return note.toPlainText()
+            // Generate HTML first, then convert to plain text (includes tables, links, hashtags)
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = NotesNote(
+                id: note.id,
+                title: note.title,
+                plaintext: note.plaintext,
+                htmlBody: html,
+                creationDate: note.creationDate,
+                modificationDate: note.modificationDate,
+                folderId: note.folderId,
+                accountId: note.accountId,
+                attachments: note.attachments
+            )
+            return noteWithHTML.toPlainText()
+        case .markdown:
+            // For markdown and other formats, generate HTML first then convert
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = NotesNote(
+                id: note.id,
+                title: note.title,
+                plaintext: note.plaintext,
+                htmlBody: html,
+                creationDate: note.creationDate,
+                modificationDate: note.modificationDate,
+                folderId: note.folderId,
+                accountId: note.accountId,
+                attachments: note.attachments
+            )
+            return noteWithHTML.toMarkdown()
         case .rtf:
-            // Use RTF font configuration
-            return note.toRTF(
+            // Generate HTML first, then convert to RTF
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = NotesNote(
+                id: note.id,
+                title: note.title,
+                plaintext: note.plaintext,
+                htmlBody: html,
+                creationDate: note.creationDate,
+                modificationDate: note.modificationDate,
+                folderId: note.folderId,
+                accountId: note.accountId,
+                attachments: note.attachments
+            )
+            return noteWithHTML.toRTF(
                 fontFamily: configurations.rtf.fontFamily.rtfFontName,
                 fontSize: configurations.rtf.fontSizePoints
             )
         case .tex:
-            // Use LaTeX template from configuration
-            return note.toLatex(template: configurations.latex.template)
+            // Generate HTML first, then convert to LaTeX
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = NotesNote(
+                id: note.id,
+                title: note.title,
+                plaintext: note.plaintext,
+                htmlBody: html,
+                creationDate: note.creationDate,
+                modificationDate: note.modificationDate,
+                folderId: note.folderId,
+                accountId: note.accountId,
+                attachments: note.attachments
+            )
+            return noteWithHTML.toLatex(template: configurations.latex.template)
         case .pdf:
             return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
         }
@@ -703,7 +806,22 @@ class ExportViewModel: ObservableObject {
             } catch {
                 // Fallback to plaintext if HTML generation fails (corrupted protobuf, etc.)
                 Logger.noteExport.warning("Failed to generate HTML for note \(note.id), falling back to plaintext: \(error)")
-                htmlBody = "<html><body><p>\(note.plaintext.htmlEscaped)</p></body></html>"
+                // Create a properly structured HTML document for PDF rendering
+                htmlBody = """
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body { font-family: -apple-system, system-ui; font-size: 12pt; line-height: 1.6; }
+                        pre { white-space: pre-wrap; word-wrap: break-word; }
+                    </style>
+                </head>
+                <body>
+                    <pre>\(note.plaintext.htmlEscaped)</pre>
+                </body>
+                </html>
+                """
             }
         }
 
