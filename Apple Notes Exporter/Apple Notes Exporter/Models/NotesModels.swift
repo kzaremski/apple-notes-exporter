@@ -71,7 +71,7 @@ struct NotesNote: NotesItem {
     let id: String
     let title: String
     let plaintext: String
-    let htmlBody: String
+    let htmlBody: String?  // Optional - generated on-demand during export
     let creationDate: Date
     let modificationDate: Date
     let folderId: String
@@ -110,6 +110,13 @@ struct NotesAttachment: NotesItem {
 
     /// Extract file extension from type UTI
     var fileExtension: String? {
+        // If filename already has an extension, use that
+        if let filename = filename,
+           let ext = filename.components(separatedBy: ".").last,
+           ext.count <= 5 && ext != filename {
+            return ext
+        }
+
         // Common UTI mappings
         let utiExtensions: [String: String] = [
             "public.jpeg": "jpg",
@@ -117,10 +124,15 @@ struct NotesAttachment: NotesItem {
             "public.pdf": "pdf",
             "public.heic": "heic",
             "com.apple.quicktime-movie": "mov",
-            "public.mpeg-4": "mp4"
+            "public.mpeg-4": "mp4",
+            "public.plain-text": "txt",
+            "public.text": "txt",
+            "public.shell-script": "sh",
+            "com.adobe.encapsulated-postscript": "eps",
+            "com.compuserve.gif": "gif"
         ]
 
-        return utiExtensions[typeUTI] ?? typeUTI.components(separatedBy: ".").last
+        return utiExtensions[typeUTI] ?? "bin"
     }
 }
 

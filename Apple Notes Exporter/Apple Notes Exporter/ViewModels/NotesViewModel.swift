@@ -114,9 +114,9 @@ class NotesViewModel: ObservableObject {
         }
     }
 
-    /// Rebuild hierarchy with current sort settings (without reloading from database)
+    /// Rebuild hierarchy with current sort settings (uses cached data, does not reload from database)
     func rebuildHierarchy() async {
-        // Build new hierarchy using stored raw data with updated sort options
+        // Build hierarchy using stored raw data with current sort options
         hierarchy = NotesHierarchy.build(
             accounts: rawAccounts,
             folders: rawFolders,
@@ -128,7 +128,7 @@ class NotesViewModel: ObservableObject {
         Logger.noteQuery.debug("Rebuilt hierarchy with sort: \(self.sortOption.rawValue), foldersOnTop: \(self.foldersOnTop)")
     }
 
-    /// Reload notes (useful after permissions granted)
+    /// Reload notes from database (useful after permissions granted)
     func reload() async {
         selectionState.clearAll()
         await loadNotes()

@@ -2,7 +2,7 @@
 //  AppleNotesDatabaseParser.swift
 //  Apple Notes Exporter
 //
-//  Database-based parser for Apple Notes (replaces AppleScript approach)
+//  Database parser for Apple Notes that directly accesses the SQLite database
 //
 
 import Foundation
@@ -408,7 +408,7 @@ class AppleNotesDatabaseParser {
 
                 // Extract and decompress ZDATA
                 var plaintext = ""
-                var htmlBody = ""
+                let htmlBody = ""  // HTML is generated on-demand during export
                 var attachments: [NoteAttachment] = []
 
                 if sqlite3_column_type(statement, 6) == SQLITE_BLOB {
@@ -426,8 +426,8 @@ class AppleNotesDatabaseParser {
                                         let noteProto = document.note
                                         plaintext = noteProto.noteText
 
-                                        // Generate HTML from protobuf
-                                        htmlBody = generateHTML(from: noteProto)
+                                        // HTML is generated on-demand during export to improve load performance
+                                        // htmlBody = generateHTML(from: noteProto)
 
                                         // Extract attachments
                                         attachments = extractAttachments(from: noteProto)
@@ -500,6 +500,61 @@ class AppleNotesDatabaseParser {
                sameStrikethrough && sameSuperscript && sameLink && sameEmphasis
     }
 
+    // MARK: - Public HTML Generation for Export
+
+    /// Generate HTML for a specific note by its ID (called on-demand during export)
+    func generateHTMLForNote(noteId: Int) -> String? {
+        // Query for note data
+        let query = """
+        SELECT data.ZDATA
+        FROM ZICCLOUDSYNCINGOBJECT note
+        LEFT JOIN ZICNOTEDATA data ON note.ZNOTEDATA = data.Z_PK
+        WHERE note.Z_PK = ?
+        AND (note.ZMARKEDFORDELETION = 0 OR note.ZMARKEDFORDELETION IS NULL);
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+            Logger.noteQuery.error("Failed to prepare HTML generation query for note \(noteId)")
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+
+        sqlite3_bind_int64(statement, 1, Int64(noteId))
+
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            Logger.noteQuery.debug("No data found for note \(noteId)")
+            return nil
+        }
+
+        // Extract and decompress ZDATA
+        if sqlite3_column_type(statement, 0) == SQLITE_BLOB {
+            let dataSize = sqlite3_column_bytes(statement, 0)
+            if let dataPointer = sqlite3_column_blob(statement, 0) {
+                let data = Data(bytes: dataPointer, count: Int(dataSize))
+
+                // Decompress and parse
+                if let decompressed = decompressGzip(data) {
+                    do {
+                        let proto = try NoteStoreProto(serializedBytes: decompressed)
+                        if proto.hasDocument {
+                            let document = proto.document
+                            if document.hasNote {
+                                let noteProto = document.note
+                                return generateHTML(from: noteProto)
+                            }
+                        }
+                    } catch {
+                        Logger.noteQuery.error("Failed to parse protobuf for note \(noteId): \(error)")
+                        return nil
+                    }
+                }
+            }
+        }
+
+        return nil
+    }
+
     /// Generates HTML from a protobuf Note (from notestore.pb.swift)
     private func generateHTML(from note: Note) -> String {
         var html = "<html><body>"
@@ -533,9 +588,10 @@ class AppleNotesDatabaseParser {
             i += 1
         }
 
-        // Track list state
-        var currentListType: Int32? = nil  // Track current list type (100, 101, 102, 103)
-        var inList = false
+        // Track list state with nesting support
+        var listStack: [(type: Int32, indentLevel: Int32)] = []  // Stack of (list type, indent level)
+        var currentListItemHTML = ""  // Accumulate HTML for current list item
+        var inListItem = false  // Track if we're currently building a list item
 
         for (_, run) in condensedRuns.enumerated() {
             let length = Int(run.length) // Length in UTF-16 code units
@@ -553,32 +609,39 @@ class AppleNotesDatabaseParser {
             let utf16Slice = utf16View[startIndex..<endIndex]
             var segment = String(utf16Slice) ?? ""
 
-            // Determine if this is a list item
+            // Determine if this is a list item and get indent level
             var isListItem = false
             var listStyleType = ""
             var listTagName = ""
             var checkboxPrefix = ""
+            var indentLevel: Int32 = 0
+            var listType: Int32 = 0
 
             if run.hasParagraphStyle {
                 let style = run.paragraphStyle
+                indentLevel = style.indentAmount
 
                 switch style.styleType {
                 case 100: // Dotted list
                     isListItem = true
                     listStyleType = "disc"
                     listTagName = "ul"
+                    listType = 100
                 case 101: // Dashed list
                     isListItem = true
                     listStyleType = "square"
                     listTagName = "ul"
+                    listType = 101
                 case 102: // Numbered list
                     isListItem = true
                     listStyleType = "decimal"
                     listTagName = "ol"
+                    listType = 102
                 case 103: // Checkbox
                     isListItem = true
                     listStyleType = "none"
                     listTagName = "ul"
+                    listType = 103
                     let checked = style.hasChecklist && style.checklist.done != 0
                     checkboxPrefix = checked ? "☑ " : "☐ "
                 default:
@@ -586,92 +649,145 @@ class AppleNotesDatabaseParser {
                 }
             }
 
-            // Check if we need to close the current list
-            if inList && (!isListItem || currentListType != run.paragraphStyle.styleType) {
-                // Close the current list
-                if let prevType = currentListType {
-                    html += (prevType == 102) ? "</ol>" : "</ul>"
-                }
-                inList = false
-                currentListType = nil
-            }
-
-            // Check if we need to open a new list
-            if isListItem && !inList {
-                if listTagName == "ol" {
-                    html += "<ol>"
-                } else {
-                    // Add list-style-type for different bullet types
-                    if listStyleType == "square" {
-                        html += "<ul style='list-style-type: square;'>"
-                    } else if listStyleType == "none" {
-                        html += "<ul style='list-style-type: none;'>"
-                    } else {
-                        html += "<ul>"  // Default is disc
-                    }
-                }
-                inList = true
-                currentListType = run.paragraphStyle.styleType
-            }
-
-            // Handle list items specially - newlines separate list items
+            // Handle list nesting based on indent levels
             if isListItem {
-                let listItems = segment.components(separatedBy: "\n")
-                for (index, item) in listItems.enumerated() {
-                    // Skip empty items except the last one (which is just the trailing newline)
-                    if item.isEmpty && index < listItems.count - 1 {
-                        continue
+                // Close lists that are deeper than current indent
+                while !listStack.isEmpty && listStack.last!.indentLevel >= indentLevel &&
+                      (listStack.last!.indentLevel > indentLevel || listStack.last!.type != listType) {
+                    let closed = listStack.removeLast()
+                    html += (closed.type == 102) ? "</ol>" : "</ul>"
+                }
+
+                // Open new lists for deeper indents
+                while listStack.isEmpty || listStack.last!.indentLevel < indentLevel {
+                    let newIndent = listStack.isEmpty ? 0 : listStack.last!.indentLevel + 1
+                    if newIndent > indentLevel {
+                        break
                     }
 
-                    // Don't create a list item for the final trailing newline
-                    if item.isEmpty && index == listItems.count - 1 {
-                        continue
+                    // Open list at this level
+                    if listTagName == "ol" {
+                        html += "<ol>"
+                    } else {
+                        if listStyleType == "square" {
+                            html += "<ul style='list-style-type: square;'>"
+                        } else if listStyleType == "none" {
+                            html += "<ul style='list-style-type: none;'>"
+                        } else {
+                            html += "<ul>"
+                        }
                     }
-
-                    // Apply text styling
-                    var styledText = item
-                    var openTags: [String] = []
-                    var closeTags: [String] = []
-
-                    // Font weight
-                    if run.fontWeight == 1 || run.fontWeight == 3 {
-                        openTags.append("<b>")
-                        closeTags.insert("</b>", at: 0)
-                    }
-                    if run.fontWeight == 2 || run.fontWeight == 3 {
-                        openTags.append("<i>")
-                        closeTags.insert("</i>", at: 0)
-                    }
-
-                    // Underline
-                    if run.underlined != 0 {
-                        openTags.append("<u>")
-                        closeTags.insert("</u>", at: 0)
-                    }
-
-                    // Strikethrough
-                    if run.strikethrough != 0 {
-                        openTags.append("<s>")
-                        closeTags.insert("</s>", at: 0)
-                    }
-
-                    // Links
-                    if !run.link.isEmpty {
-                        openTags.append("<a href='\(run.link)'>")
-                        closeTags.insert("</a>", at: 0)
-                    }
-
-                    // Attachment placeholder
-                    if run.hasAttachmentInfo {
-                        styledText = "[Attachment: \(run.attachmentInfo.typeUti)]"
-                    }
-
-                    // List item - no inline style needed, parent ul/ol defines the type
-                    html += "<li>"
-                    html += checkboxPrefix + openTags.joined() + styledText + closeTags.joined()
-                    html += "</li>"
+                    listStack.append((type: listType, indentLevel: newIndent))
                 }
             } else {
+                // Close all open lists when we exit list context
+                while !listStack.isEmpty {
+                    let closed = listStack.removeLast()
+                    html += (closed.type == 102) ? "</ol>" : "</ul>"
+                }
+            }
+
+            // Handle list items - accumulate content until newline
+            if isListItem {
+                // Process text with styling
+                var styledText = segment
+                var openTags: [String] = []
+                var closeTags: [String] = []
+
+                // Font weight
+                if run.fontWeight == 1 || run.fontWeight == 3 {
+                    openTags.append("<b>")
+                    closeTags.insert("</b>", at: 0)
+                }
+                if run.fontWeight == 2 || run.fontWeight == 3 {
+                    openTags.append("<i>")
+                    closeTags.insert("</i>", at: 0)
+                }
+
+                // Underline
+                if run.underlined != 0 {
+                    openTags.append("<u>")
+                    closeTags.insert("</u>", at: 0)
+                }
+
+                // Strikethrough
+                if run.strikethrough != 0 {
+                    openTags.append("<s>")
+                    closeTags.insert("</s>", at: 0)
+                }
+
+                // Links
+                if !run.link.isEmpty {
+                    openTags.append("<a href='\(run.link)'>")
+                    closeTags.insert("</a>", at: 0)
+                }
+
+                // Handle attachments
+                if run.hasAttachmentInfo {
+                    let typeUti = run.attachmentInfo.typeUti
+                    let attachmentId = run.attachmentInfo.attachmentIdentifier
+
+                    // For tables, create a marker that will be rendered during export
+                    if typeUti == "com.apple.notes.table" {
+                        styledText = "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">&#xFFFC;</span>"
+                    }
+                    // For images, create a marker that will be processed during export
+                    else if typeUti.hasPrefix("public.image") || typeUti.hasPrefix("public.jpeg") || typeUti.hasPrefix("public.png") || typeUti.hasPrefix("public.heic") {
+                        styledText = "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">&#xFFFC;</span>"
+                    }
+                    // For inline attachments (hashtags, mentions, links, etc.)
+                    else if typeUti.hasPrefix("com.apple.notes.inlinetextattachment") {
+                        if let inlineText = getInlineAttachmentText(uuid: attachmentId, typeUti: typeUti) {
+                            styledText = inlineText
+                        } else {
+                            styledText = ""
+                        }
+                    }
+                    // For other file attachments
+                    else {
+                        styledText = "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">[File: \(typeUti)]</span>"
+                    }
+                }
+
+                // Split by newlines to handle multiple list items in this run
+                let parts = styledText.components(separatedBy: "\n")
+                for (partIndex, part) in parts.enumerated() {
+                    let isLastPart = (partIndex == parts.count - 1)
+
+                    // Skip empty trailing part (just a newline at the end)
+                    if isLastPart && part.isEmpty {
+                        continue
+                    }
+
+                    // Start new list item if needed
+                    if !inListItem {
+                        inListItem = true
+                        currentListItemHTML = checkboxPrefix
+                    }
+
+                    // Add styled content to current list item
+                    if !part.isEmpty {
+                        currentListItemHTML += openTags.joined() + part + closeTags.joined()
+                    }
+
+                    // Close list item on newline (not on the last part)
+                    if !isLastPart {
+                        html += "<li>" + currentListItemHTML + "</li>"
+                        currentListItemHTML = ""
+                        inListItem = false
+                    }
+                }
+            } else {
+                // Close any pending list item when we exit list context (only if it has content beyond checkbox)
+                if inListItem {
+                    // Only output if there's actual content (not just checkbox prefix)
+                    let hasContent = currentListItemHTML.trimmingCharacters(in: .whitespacesAndNewlines).count > 2 // More than just "☐ " or "☑ "
+                    if hasContent {
+                        html += "<li>" + currentListItemHTML + "</li>"
+                    }
+                    currentListItemHTML = ""
+                    inListItem = false
+                }
                 // Non-list items: apply paragraph styling and convert newlines to <br>
                 var openTags: [String] = []
                 var closeTags: [String] = []
@@ -690,8 +806,8 @@ class AppleNotesDatabaseParser {
                         openTags.append("<h3>")
                         closeTags.insert("</h3>", at: 0)
                     case 4: // Monospaced
-                        openTags.append("<code>")
-                        closeTags.insert("</code>", at: 0)
+                        openTags.append("<pre style='white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: 8px; border-radius: 4px; margin: 4px 0;'>")
+                        closeTags.insert("</pre>", at: 0)
                     default:
                         break
                     }
@@ -725,9 +841,31 @@ class AppleNotesDatabaseParser {
                     closeTags.insert("</a>", at: 0)
                 }
 
-                // Attachment placeholder
+                // Handle attachments
                 if run.hasAttachmentInfo {
-                    segment = "[Attachment: \(run.attachmentInfo.typeUti)]"
+                    let typeUti = run.attachmentInfo.typeUti
+                    let attachmentId = run.attachmentInfo.attachmentIdentifier
+
+                    // For tables, create a marker that will be rendered during export
+                    if typeUti == "com.apple.notes.table" {
+                        segment = "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">&#xFFFC;</span>"
+                    }
+                    // For images, create a marker that will be processed during export
+                    else if typeUti.hasPrefix("public.image") || typeUti.hasPrefix("public.jpeg") || typeUti.hasPrefix("public.png") || typeUti.hasPrefix("public.heic") {
+                        segment = "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">&#xFFFC;</span>"
+                    }
+                    // For inline attachments (hashtags, mentions, links, etc.)
+                    else if typeUti.hasPrefix("com.apple.notes.inlinetextattachment") {
+                        if let inlineText = getInlineAttachmentText(uuid: attachmentId, typeUti: typeUti) {
+                            segment = inlineText
+                        } else {
+                            segment = "" // Fallback: skip if we can't get the text
+                        }
+                    }
+                    // For other file attachments
+                    else {
+                        segment = "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">[File: \(typeUti)]</span>"
+                    }
                 }
 
                 html += openTags.joined() + segment.replacingOccurrences(of: "\n", with: "<br>") + closeTags.joined()
@@ -736,15 +874,71 @@ class AppleNotesDatabaseParser {
             currentPos = endPos
         }
 
-        // Close any open list at the end
-        if inList {
-            if let prevType = currentListType {
-                html += (prevType == 102) ? "</ol>" : "</ul>"
+        // Close any pending list item (only if it has content beyond checkbox/whitespace)
+        if inListItem {
+            let hasContent = currentListItemHTML.trimmingCharacters(in: .whitespacesAndNewlines).count > 2
+            if hasContent {
+                html += "<li>" + currentListItemHTML + "</li>"
             }
+        }
+
+        // Close any open lists at the end
+        while !listStack.isEmpty {
+            let closed = listStack.removeLast()
+            html += (closed.type == 102) ? "</ol>" : "</ul>"
         }
 
         html += "</body></html>"
         return html
+    }
+
+    /// Get text content for inline attachments (hashtags, mentions, links, etc.)
+    private func getInlineAttachmentText(uuid: String, typeUti: String) -> String? {
+        let query = """
+        SELECT ZALTTEXT, ZTOKENCONTENTIDENTIFIER
+        FROM ZICCLOUDSYNCINGOBJECT
+        WHERE ZIDENTIFIER = ?
+        AND (ZMARKEDFORDELETION = 0 OR ZMARKEDFORDELETION IS NULL);
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+            Logger.noteQuery.error("Failed to prepare inline attachment query")
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+
+        sqlite3_bind_text(statement, 1, (uuid as NSString).utf8String, -1, nil)
+
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            Logger.noteQuery.debug("No inline attachment data found for UUID \(uuid)")
+            return nil
+        }
+
+        // Get ZALTTEXT (the display text)
+        if let altText = sqlite3_column_text(statement, 0) {
+            let text = String(cString: altText)
+
+            // For specific types, we may want to add additional info
+            if typeUti == "com.apple.notes.inlinetextattachment.mention" {
+                // For mentions, could add the token identifier in brackets if available
+                if let tokenId = sqlite3_column_text(statement, 1) {
+                    let token = String(cString: tokenId)
+                    return "\(text) [\(token)]"
+                }
+            } else if typeUti == "com.apple.notes.inlinetextattachment.link" {
+                // For links, could add the token identifier
+                if let tokenId = sqlite3_column_text(statement, 1) {
+                    let token = String(cString: tokenId)
+                    return "\(text) [\(token)]"
+                }
+            }
+
+            // For hashtags and other inline attachments, just return the text
+            return text
+        }
+
+        return nil
     }
 
     /// Extracts attachment info from a protobuf Note
@@ -1079,6 +1273,72 @@ class AppleNotesDatabaseParser {
         }
 
         Logger.noteQuery.debug("Could not find fallback image for \(attachmentId)")
+        return nil
+    }
+
+    /// Fetch filename for an attachment by its ID
+    func fetchAttachmentFilename(attachmentId: String) -> String? {
+        // First, find the attachment row to get the ZMEDIA reference
+        let attachmentQuery = """
+        SELECT att.ZMEDIA
+        FROM ZICCLOUDSYNCINGOBJECT att
+        WHERE att.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICAttachment')
+        AND att.ZIDENTIFIER = ?
+        AND (att.ZMARKEDFORDELETION = 0 OR att.ZMARKEDFORDELETION IS NULL);
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, attachmentQuery, -1, &statement, nil) == SQLITE_OK else {
+            Logger.noteQuery.error("Failed to prepare attachment filename query")
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+
+        sqlite3_bind_text(statement, 1, (attachmentId as NSString).utf8String, -1, nil)
+
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            Logger.noteQuery.debug("No attachment found with ZIDENTIFIER=\(attachmentId)")
+            return nil
+        }
+
+        // Check if ZMEDIA is NULL
+        guard sqlite3_column_type(statement, 0) != SQLITE_NULL else {
+            Logger.noteQuery.debug("Attachment \(attachmentId) has NULL ZMEDIA, cannot fetch filename")
+            return nil
+        }
+
+        // Get the ZMEDIA foreign key
+        let mediaId = sqlite3_column_int64(statement, 0)
+
+        // Now fetch the ZFILENAME from the media object
+        let mediaQuery = """
+        SELECT ZFILENAME
+        FROM ZICCLOUDSYNCINGOBJECT
+        WHERE Z_PK = ?;
+        """
+
+        var mediaStatement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, mediaQuery, -1, &mediaStatement, nil) == SQLITE_OK else {
+            Logger.noteQuery.error("Failed to prepare media filename query")
+            return nil
+        }
+        defer { sqlite3_finalize(mediaStatement) }
+
+        sqlite3_bind_int64(mediaStatement, 1, mediaId)
+
+        guard sqlite3_step(mediaStatement) == SQLITE_ROW else {
+            Logger.noteQuery.debug("No media object row found with Z_PK=\(mediaId)")
+            return nil
+        }
+
+        // Get the filename from ZFILENAME column
+        if let filenamePtr = sqlite3_column_text(mediaStatement, 0) {
+            let filename = String(cString: filenamePtr)
+            Logger.noteQuery.debug("Found filename for attachment \(attachmentId): \(filename)")
+            return filename
+        }
+
+        Logger.noteQuery.debug("No ZFILENAME found for media object \(mediaId)")
         return nil
     }
 

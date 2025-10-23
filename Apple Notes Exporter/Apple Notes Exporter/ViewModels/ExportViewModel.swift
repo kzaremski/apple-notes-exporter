@@ -10,6 +10,7 @@ import Foundation
 import SwiftUI
 import OSLog
 import HtmlToPdf
+import SQLite3
 
 // MARK: - Export Progress
 
@@ -96,11 +97,13 @@ class ExportViewModel: ObservableObject {
     // MARK: - Dependencies
 
     private let repository: NotesRepository
+    private let databasePath: String
 
     // MARK: - Initialization
 
-    init(repository: NotesRepository = DatabaseNotesRepository()) {
+    init(repository: NotesRepository = DatabaseNotesRepository(), databasePath: String = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite") {
         self.repository = repository
+        self.databasePath = databasePath
         self.configurations = ExportConfigurations.load()
     }
 
@@ -168,6 +171,15 @@ class ExportViewModel: ObservableObject {
                 totalNotes: notes.count,
                 startTime: startTime
             )
+
+            // Check if export was cancelled before marking as completed
+            guard !shouldCancel else {
+                // State already set to .cancelled in exportNotesConcurrently
+                return
+            }
+
+            // Set folder timestamps based on their notes
+            try await setFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
 
             // Export completed successfully
             let successfulNotes = notes.count - failedNotesCount
@@ -318,7 +330,7 @@ class ExportViewModel: ObservableObject {
         // Check for cancellation before starting export
         try Task.checkCancellation()
 
-        // Generate unique filename (handles duplicates)
+        // Generate unique filename early (handles duplicates)
         let baseFilename = note.sanitizedFileName
         let filename = generateUniqueFilename(
             baseName: baseFilename,
@@ -326,6 +338,24 @@ class ExportViewModel: ObservableObject {
             inDirectory: directory
         )
         let fileURL = directory.appendingPathComponent(filename)
+        let uniqueBaseName = filename.replacingOccurrences(of: ".\(format.fileExtension)", with: "")
+
+        // Export attachments before note content (required for HTML attachment path resolution)
+        var attachmentPaths: [String: String] = [:]
+        if includeAttachments && note.hasAttachments {
+            // Check for cancellation before processing attachments
+            try Task.checkCancellation()
+
+            attachmentPaths = try await exportAttachmentsAndReturnPaths(
+                note.attachments,
+                toDirectory: directory,
+                noteBaseName: uniqueBaseName,
+                noteTitle: note.title,
+                noteCreationDate: note.creationDate,
+                noteModificationDate: note.modificationDate,
+                tracker: tracker
+            )
+        }
 
         // Handle PDF export separately (binary format, requires WebKit)
         if format == .pdf {
@@ -334,7 +364,7 @@ class ExportViewModel: ObservableObject {
 
             // Use PDF configuration
             let pdfConfig = configurations.pdf
-            let html = generateHTML(for: note, config: pdfConfig.htmlConfiguration, forPDF: true)
+            let html = try await generateHTML(for: note, config: pdfConfig.htmlConfiguration, forPDF: true, attachmentPaths: attachmentPaths, exportDirectory: directory)
 
             // Apply page size and margin configuration
             let pageSize = pdfConfig.pageSize.dimensions
@@ -347,38 +377,29 @@ class ExportViewModel: ObservableObject {
             log("✓ Exported PDF: \(note.title)")
         } else {
             // Generate content based on format
-            let content = try generateContent(for: note, format: format)
+            let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
 
             // Write to file
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
             log("✓ Exported note: \(note.title)")
         }
 
-        // Export attachments if requested
-        if includeAttachments && note.hasAttachments {
-            // Check for cancellation before processing attachments
-            try Task.checkCancellation()
-
-            // Use the unique filename base (without extension) for attachment folder
-            let uniqueBaseName = filename.replacingOccurrences(of: ".\(format.fileExtension)", with: "")
-            try await exportAttachmentsSafely(
-                note.attachments,
-                toDirectory: directory,
-                noteBaseName: uniqueBaseName,
-                noteTitle: note.title,
-                tracker: tracker
-            )
-        }
+        // Set file timestamps to match note's creation and modification dates
+        try setFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
     }
 
-    /// Export attachments for a note (thread-safe version for concurrent export)
-    private func exportAttachmentsSafely(
+    /// Export attachments for a note and return a map of attachment IDs to relative paths
+    private func exportAttachmentsAndReturnPaths(
         _ attachments: [NotesAttachment],
         toDirectory directory: URL,
         noteBaseName: String,
         noteTitle: String,
+        noteCreationDate: Date,
+        noteModificationDate: Date,
         tracker: ExportProgressTracker
-    ) async throws {
+    ) async throws -> [String: String] {
+        var attachmentPaths: [String: String] = [:]
+
         // Filter out non-file attachments (inline content embedded in note)
         let nonFileAttachmentPrefixes = [
             "com.apple.notes.table",                    // Tables
@@ -397,12 +418,15 @@ class ExportViewModel: ObservableObject {
 
         // Skip if no file attachments to export
         guard !fileAttachments.isEmpty else {
-            return
+            return attachmentPaths
         }
 
         // Create attachments subfolder using the unique note base name
         let attachmentsURL = directory.appendingPathComponent("\(noteBaseName) (Attachments)")
         try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+
+        // Track used filenames to handle collisions
+        var usedFilenames: [String: Int] = [:]
 
         // Export each attachment
         for attachment in fileAttachments {
@@ -413,13 +437,44 @@ class ExportViewModel: ObservableObject {
                 // Fetch attachment data from repository
                 let data = try await repository.fetchAttachment(id: attachment.id)
 
-                // Determine filename
-                let filename = attachment.filename ?? "\(attachment.id).\(attachment.fileExtension ?? "bin")"
-                let fileURL = attachmentsURL.appendingPathComponent(filename)
+                // Determine base filename
+                // If attachment.filename is not available, try to get it from the database
+                let baseFilename: String
+                if let filename = attachment.filename {
+                    baseFilename = filename
+                } else if let fetchedFilename = await repository.fetchAttachmentFilename(id: attachment.id) {
+                    baseFilename = fetchedFilename
+                } else {
+                    // Final fallback to UUID with extension
+                    baseFilename = "\(attachment.id).\(attachment.fileExtension ?? "bin")"
+                }
+
+                // Handle filename collisions by adding a counter suffix
+                let finalFilename: String
+                if let count = usedFilenames[baseFilename] {
+                    // This filename has been used before, add a counter
+                    let (name, ext) = splitFilename(baseFilename)
+                    finalFilename = "\(name) (\(count + 1)).\(ext)"
+                    usedFilenames[baseFilename] = count + 1
+                } else {
+                    // First time using this filename
+                    finalFilename = baseFilename
+                    usedFilenames[baseFilename] = 1
+                }
+
+                let fileURL = attachmentsURL.appendingPathComponent(finalFilename)
 
                 // Write attachment to disk
                 try data.write(to: fileURL)
-                log("✓ Exported attachment: \(filename) for note '\(noteTitle)'")
+
+                // Set attachment timestamps to match note's dates
+                try setFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+
+                log("✓ Exported attachment: \(finalFilename) for note '\(noteTitle)'")
+
+                // Store relative path for this attachment
+                let relativePath = "\(noteBaseName) (Attachments)/\(finalFilename)"
+                attachmentPaths[attachment.id] = relativePath
 
             } catch {
                 await tracker.attachmentFailed()
@@ -453,6 +508,134 @@ class ExportViewModel: ObservableObject {
                 // Continue with other attachments even if one fails
             }
         }
+
+        // Set attachments folder timestamps to match note's dates
+        if !fileAttachments.isEmpty {
+            try setFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+        }
+
+        return attachmentPaths
+    }
+
+    /// Export attachments for a note (thread-safe version for concurrent export)
+    private func exportAttachmentsSafely(
+        _ attachments: [NotesAttachment],
+        toDirectory directory: URL,
+        noteBaseName: String,
+        noteTitle: String,
+        noteCreationDate: Date,
+        noteModificationDate: Date,
+        tracker: ExportProgressTracker
+    ) async throws {
+        // Filter out non-file attachments (inline content embedded in note)
+        let nonFileAttachmentPrefixes = [
+            "com.apple.notes.table",                    // Tables
+            "com.apple.notes.inlinetextattachment",     // Hashtags, calculations, etc.
+            "com.apple.notes.inlinehashtagattachment",  // Hashtags (legacy)
+            "com.apple.notes.inlinementionattachment",  // Mentions
+            "com.apple.paper",                          // Apple Paper documents
+            "public.url"                                // URLs
+        ]
+
+        let fileAttachments = attachments.filter { attachment in
+            !nonFileAttachmentPrefixes.contains { prefix in
+                attachment.typeUTI.hasPrefix(prefix)
+            }
+        }
+
+        // Skip if no file attachments to export
+        guard !fileAttachments.isEmpty else {
+            return
+        }
+
+        // Create attachments subfolder using the unique note base name
+        let attachmentsURL = directory.appendingPathComponent("\(noteBaseName) (Attachments)")
+        try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+
+        // Track used filenames to handle collisions
+        var usedFilenames: [String: Int] = [:]
+
+        // Export each attachment
+        for attachment in fileAttachments {
+            // Check for cancellation before processing each attachment
+            try Task.checkCancellation()
+
+            do {
+                // Fetch attachment data from repository
+                let data = try await repository.fetchAttachment(id: attachment.id)
+
+                // Determine base filename
+                // If attachment.filename is not available, try to get it from the database
+                let baseFilename: String
+                if let filename = attachment.filename {
+                    baseFilename = filename
+                } else if let fetchedFilename = await repository.fetchAttachmentFilename(id: attachment.id) {
+                    baseFilename = fetchedFilename
+                } else {
+                    // Final fallback to UUID with extension
+                    baseFilename = "\(attachment.id).\(attachment.fileExtension ?? "bin")"
+                }
+
+                // Handle filename collisions by adding a counter suffix
+                let finalFilename: String
+                if let count = usedFilenames[baseFilename] {
+                    // This filename has been used before, add a counter
+                    let (name, ext) = splitFilename(baseFilename)
+                    finalFilename = "\(name) (\(count + 1)).\(ext)"
+                    usedFilenames[baseFilename] = count + 1
+                } else {
+                    // First time using this filename
+                    finalFilename = baseFilename
+                    usedFilenames[baseFilename] = 1
+                }
+
+                let fileURL = attachmentsURL.appendingPathComponent(finalFilename)
+
+                // Write attachment to disk
+                try data.write(to: fileURL)
+
+                // Set attachment timestamps to match note's dates
+                try setFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+
+                log("✓ Exported attachment: \(finalFilename) for note '\(noteTitle)'")
+
+            } catch {
+                await tracker.attachmentFailed()
+
+                // Build detailed error message for user logs
+                var errorDetails = [
+                    "Attachment ID: \(attachment.id)",
+                    "Type: \(attachment.typeUTI)",
+                    "Note: '\(noteTitle)'"
+                ]
+
+                if let filename = attachment.filename {
+                    errorDetails.append("Filename: \(filename)")
+                }
+
+                // Include detailed error information
+                errorDetails.append("Error: \(error.localizedDescription)")
+
+                if let nsError = error as NSError? {
+                    errorDetails.append("Domain: \(nsError.domain)")
+                    errorDetails.append("Code: \(nsError.code)")
+
+                    if let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+                        errorDetails.append("Underlying: \(underlyingError.localizedDescription)")
+                    }
+                }
+
+                let detailedMessage = "✗ Failed to export attachment - " + errorDetails.joined(separator: ", ")
+                log(detailedMessage)
+                Logger.noteExport.warning("Failed to export attachment: \(errorDetails.joined(separator: ", "))")
+                // Continue with other attachments even if one fails
+            }
+        }
+
+        // Set attachments folder timestamps to match note's dates
+        if !fileAttachments.isEmpty {
+            try setFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+        }
     }
 
     /// Cancel the current export operation
@@ -477,10 +660,10 @@ class ExportViewModel: ObservableObject {
     // MARK: - Content Generation
 
     /// Generate content for a note in the specified format
-    private func generateContent(for note: NotesNote, format: ExportFormat) throws -> String {
+    private func generateContent(for note: NotesNote, format: ExportFormat, attachmentPaths: [String: String] = [:], exportDirectory: URL? = nil) async throws -> String {
         switch format {
         case .html:
-            return generateHTML(for: note)
+            return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
         case .markdown:
             return note.toMarkdown()
         case .txt:
@@ -495,13 +678,13 @@ class ExportViewModel: ObservableObject {
             // Use LaTeX template from configuration
             return note.toLatex(template: configurations.latex.template)
         case .pdf:
-            return generateHTML(for: note)
+            return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
         }
     }
 
     // MARK: - Content Generation
 
-    private func generateHTML(for note: NotesNote, config: HTMLConfiguration? = nil, forPDF: Bool = false) -> String {
+    private func generateHTML(for note: NotesNote, config: HTMLConfiguration? = nil, forPDF: Bool = false, attachmentPaths: [String: String] = [:], exportDirectory: URL? = nil) async throws -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
@@ -509,12 +692,48 @@ class ExportViewModel: ObservableObject {
         // Use provided config or default from configurations
         let htmlConfig = config ?? configurations.html
 
+        // Generate HTML on-demand during export if not already present
+        let htmlBody: String
+        if let existingHTML = note.htmlBody {
+            htmlBody = existingHTML
+        } else {
+            // Generate HTML from protobuf during export
+            do {
+                htmlBody = try await repository.generateHTML(forNoteId: note.id)
+            } catch {
+                // Fallback to plaintext if HTML generation fails (corrupted protobuf, etc.)
+                Logger.noteExport.warning("Failed to generate HTML for note \(note.id), falling back to plaintext: \(error)")
+                htmlBody = "<html><body><p>\(note.plaintext.htmlEscaped)</p></body></html>"
+            }
+        }
+
+        // Process HTML to replace attachment markers with actual content
+        var processedHTML = htmlBody
+
+        // Only process attachments if we have a database connection and attachments to process
+        if !note.attachments.isEmpty {
+            // Open database connection for attachment processing
+            var db: OpaquePointer?
+            if sqlite3_open(databasePath, &db) == SQLITE_OK, let database = db {
+                let processor = HTMLAttachmentProcessor(database: database)
+                processedHTML = processor.processHTML(
+                    html: htmlBody,
+                    attachments: note.attachments,
+                    attachmentPaths: attachmentPaths,
+                    exportDirectory: exportDirectory?.path,
+                    embedImages: htmlConfig.embedImagesInline,
+                    linkEmbeddedImages: htmlConfig.linkEmbeddedImages
+                )
+                sqlite3_close(database)
+            }
+        }
+
         // Build CSS for font and margin
         let fontFamily = htmlConfig.fontFamily.cssFontStack
         let fontSize = "\(htmlConfig.fontSizePoints)pt"
 
-        // For PDF, margins are handled by PDFConfiguration, so set body margin to 0
-        // For HTML export, use the configured margin
+        // For PDF, margins are handled by PDFConfiguration (set body margin to 0)
+        // For HTML export, use the configured margin value
         let marginValue = forPDF ? "0" : "\(htmlConfig.marginSize)\(htmlConfig.marginUnit.displayName)"
 
         return """
@@ -553,11 +772,14 @@ class ExportViewModel: ObservableObject {
                     padding: 0;
                     line-height: 1.0;
                 }
+                img {
+                    max-width: 100%;
+                }
             </style>
         </head>
         <body>
             <div class="content">
-                \(note.htmlBody)
+                \(processedHTML)
             </div>
         </body>
         </html>
@@ -623,6 +845,66 @@ class ExportViewModel: ObservableObject {
 
         // Join with "/" to create a relative path
         return pathComponents.joined(separator: "/")
+    }
+
+    /// Split a filename into name and extension
+    private func splitFilename(_ filename: String) -> (name: String, ext: String) {
+        if let lastDotIndex = filename.lastIndex(of: "."),
+           lastDotIndex != filename.startIndex {
+            let name = String(filename[..<lastDotIndex])
+            let ext = String(filename[filename.index(after: lastDotIndex)...])
+            return (name, ext)
+        } else {
+            // No extension found
+            return (filename, "")
+        }
+    }
+
+    /// Set file creation and modification timestamps
+    private func setFileTimestamps(_ fileURL: URL, creationDate: Date, modificationDate: Date) throws {
+        let attributes: [FileAttributeKey: Any] = [
+            .creationDate: creationDate,
+            .modificationDate: modificationDate
+        ]
+        try FileManager.default.setAttributes(attributes, ofItemAtPath: fileURL.path)
+    }
+
+    /// Set folder timestamps based on the oldest creation date and latest modification date of notes within
+    private func setFolderTimestamps(hierarchy: [String: [String: [NotesNote]]], outputURL: URL) async throws {
+        for (accountName, folders) in hierarchy {
+            let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
+
+            // Track dates for the account
+            var accountOldestCreation: Date?
+            var accountLatestModification: Date?
+
+            for (folderPath, notes) in folders {
+                guard !notes.isEmpty else { continue }
+
+                let folderURL = accountURL.appendingPathComponent(folderPath)
+
+                // Find oldest creation and latest modification among all notes in this folder
+                let oldestCreation = notes.map { $0.creationDate }.min() ?? Date()
+                let latestModification = notes.map { $0.modificationDate }.max() ?? Date()
+
+                // Set folder timestamps
+                try setFileTimestamps(folderURL, creationDate: oldestCreation, modificationDate: latestModification)
+
+                // Track for account-level timestamps
+                if accountOldestCreation == nil || oldestCreation < accountOldestCreation! {
+                    accountOldestCreation = oldestCreation
+                }
+                if accountLatestModification == nil || latestModification > accountLatestModification! {
+                    accountLatestModification = latestModification
+                }
+            }
+
+            // Set account folder timestamps
+            if let oldestCreation = accountOldestCreation,
+               let latestModification = accountLatestModification {
+                try setFileTimestamps(accountURL, creationDate: oldestCreation, modificationDate: latestModification)
+            }
+        }
     }
 
     /// Sanitize filename for filesystem

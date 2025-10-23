@@ -24,6 +24,12 @@ protocol NotesRepository {
     /// Fetch binary data for a specific attachment
     func fetchAttachment(id: String) async throws -> Data
 
+    /// Fetch filename for a specific attachment
+    func fetchAttachmentFilename(id: String) async -> String?
+
+    /// Generate HTML for a specific note (called during export)
+    func generateHTML(forNoteId noteId: String) async throws -> String
+
     /// Build complete hierarchy of accounts, folders, and notes
     func fetchHierarchy(sortBy: NoteSortOption, foldersOnTop: Bool) async throws -> NotesHierarchy
 }
@@ -149,7 +155,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                         id: "\(note.id)",
                         title: note.title,
                         plaintext: note.plaintext,
-                        htmlBody: note.htmlBody,
+                        htmlBody: nil,  // HTML is generated on-demand during export for better load performance
                         creationDate: note.creationDate,
                         modificationDate: note.modificationDate,
                         folderId: "\(note.folderId)",
@@ -179,6 +185,50 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                     continuation.resume(returning: attachmentData)
                 } else {
                     continuation.resume(throwing: RepositoryError.attachmentNotFound(id))
+                }
+            }
+        }
+    }
+
+    func fetchAttachmentFilename(id: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let parser = AppleNotesDatabaseParser(databasePath: self.databasePath)
+
+                guard parser.open() else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                defer { parser.close() }
+
+                let filename = parser.fetchAttachmentFilename(attachmentId: id)
+                continuation.resume(returning: filename)
+            }
+        }
+    }
+
+    func generateHTML(forNoteId noteId: String) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let parser = AppleNotesDatabaseParser(databasePath: self.databasePath)
+
+                guard parser.open() else {
+                    continuation.resume(throwing: RepositoryError.databaseUnavailable)
+                    return
+                }
+
+                defer { parser.close() }
+
+                guard let noteIdInt = Int(noteId) else {
+                    continuation.resume(throwing: RepositoryError.itemNotFound(noteId))
+                    return
+                }
+
+                if let html = parser.generateHTMLForNote(noteId: noteIdInt) {
+                    continuation.resume(returning: html)
+                } else {
+                    continuation.resume(throwing: RepositoryError.itemNotFound(noteId))
                 }
             }
         }
@@ -231,6 +281,15 @@ class MockNotesRepository: NotesRepository {
     func fetchAttachment(id: String) async throws -> Data {
         try await Task.sleep(nanoseconds: 100_000_000)
         return mockAttachmentData
+    }
+
+    func fetchAttachmentFilename(id: String) async -> String? {
+        return "mock-attachment.bin"
+    }
+
+    func generateHTML(forNoteId noteId: String) async throws -> String {
+        try await Task.sleep(nanoseconds: 100_000_000)
+        return "<html><body><p>Mock HTML for note \(noteId)</p></body></html>"
     }
 
     func fetchHierarchy(sortBy: NoteSortOption = .dateModified, foldersOnTop: Bool = true) async throws -> NotesHierarchy {

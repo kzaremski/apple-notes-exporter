@@ -17,26 +17,30 @@ extension NotesNote {
     /// Convert note to plain text format
     /// Preserves list markers (*, -) and attachment references
     /// No markdown syntax or special formatting
+    /// Requires htmlBody to be available
     func toPlainText() -> String {
-        return HTMLToPlainTextConverter.convert(htmlBody)
+        return HTMLToPlainTextConverter.convert(htmlBody ?? "")
     }
 
     /// Convert note to Markdown format
     /// Preserves headings, lists, bold, italic, links, etc.
+    /// Requires htmlBody to be available
     func toMarkdown() -> String {
-        return HTMLToMarkdownConverter.convert(htmlBody)
+        return HTMLToMarkdownConverter.convert(htmlBody ?? "")
     }
 
     /// Convert note to RTF format
     /// Preserves formatting with RTF control codes
+    /// Requires htmlBody to be available
     func toRTF(fontFamily: String = "Helvetica", fontSize: Double = 12) -> String {
-        return HTMLToRTFConverter.convert(htmlBody, fontFamily: fontFamily, fontSize: fontSize)
+        return HTMLToRTFConverter.convert(htmlBody ?? "", fontFamily: fontFamily, fontSize: fontSize)
     }
 
     /// Convert note to LaTeX format with template
     /// Preserves formatting with LaTeX commands and replaces placeholders
+    /// Requires htmlBody to be available
     func toLatex(template: String = LaTeXConfiguration.defaultTemplate) -> String {
-        let content = HTMLToLatexConverter.convert(htmlBody)
+        let content = HTMLToLatexConverter.convert(htmlBody ?? "")
 
         // Date formatters
         let dateFormatter = DateFormatter()

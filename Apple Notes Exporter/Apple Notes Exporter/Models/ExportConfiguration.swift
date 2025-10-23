@@ -21,6 +21,8 @@ struct HTMLConfiguration: ExportConfigurable {
     var fontFamily: FontFamily
     var marginSize: Double
     var marginUnit: MarginUnit
+    var embedImagesInline: Bool
+    var linkEmbeddedImages: Bool
 
     enum FontFamily: String, Codable, CaseIterable {
         case system = "System"
@@ -82,7 +84,9 @@ struct HTMLConfiguration: ExportConfigurable {
             fontSizePoints: 14,
             fontFamily: .system,
             marginSize: 36,  // 0.5 inches at 72 DPI
-            marginUnit: .pt
+            marginUnit: .pt,
+            embedImagesInline: true,
+            linkEmbeddedImages: false
         )
     }
 }

@@ -102,6 +102,15 @@ struct AccountRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+        .contextMenu {
+            let allNotes = collectAllNotes(from: accountNode.folders)
+            if !allNotes.isEmpty {
+                let allSelected = allNotes.allSatisfy { viewModel.isNoteSelected($0.id) }
+                Button(allSelected ? "Deselect" : "Select") {
+                    toggleAccount()
+                }
+            }
+        }
         .onTapGesture(count: 2) {
             // Double-click to expand/collapse
             isExpanded.toggle()
@@ -187,6 +196,15 @@ struct FolderRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+        .contextMenu {
+            let allNotes = collectAllNotes(from: folderNode)
+            if !allNotes.isEmpty {
+                let allSelected = allNotes.allSatisfy { viewModel.isNoteSelected($0.id) }
+                Button(allSelected ? "Deselect" : "Select") {
+                    toggleFolder()
+                }
+            }
+        }
         .onTapGesture(count: 2) {
             // Double-click to expand/collapse
             isExpanded.toggle()
@@ -224,6 +242,12 @@ struct NoteRow: View {
             .buttonStyle(BorderlessButtonStyle())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+            let isSelected = viewModel.isNoteSelected(note.id)
+            Button(isSelected ? "Deselect" : "Select") {
+                viewModel.toggleNote(note.id)
+            }
+        }
     }
 }
 

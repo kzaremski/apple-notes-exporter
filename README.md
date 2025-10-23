@@ -45,7 +45,7 @@ Attachments are always saved in a folder corresponding to the name/title of the 
     * I was able to backport from Ventura back to Big Sur, but any further would have required rewrites of the UI because of the changes made to the MacOS UI at that time.
 * Intel or Apple Silicon Mac
 * 4GB RAM minimum
-    * Optimized database-driven approach uses approximately 200MB of RAM regardless of library size
+    * Optimized database-driven approach uses approximately 200MB of RAM regardless of Notes library size
     * Concurrent export processing for maximum performance
 * Disk Space
     * 20MB to accommodate the app itself

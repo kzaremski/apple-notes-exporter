@@ -142,6 +142,20 @@ struct HTMLOptionsView: View {
                 }
                 .frame(width: 80)
             }
+
+            Divider()
+
+            Text("Image Attachments")
+                .font(.headline)
+
+            Toggle("Embed images inline (base64)", isOn: $config.embedImagesInline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if config.embedImagesInline {
+                Toggle("Also link to image files", isOn: $config.linkEmbeddedImages)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 20)
+            }
         }
     }
 }
