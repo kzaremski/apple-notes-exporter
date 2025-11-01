@@ -20,7 +20,7 @@ enum ExportError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .pdfGenerationTimeout:
-            return "PDF generation timed out after 15 seconds. This note may contain corrupted images or attachments."
+            return "PDF generation timed out after 60 seconds. This note may contain many large images or corrupted attachments."
         }
     }
 }
@@ -398,27 +398,40 @@ class ExportViewModel: ObservableObject {
 
             // Use PDF configuration
             let pdfConfig = configurations.pdf
-            let html = try await generateHTML(for: note, config: pdfConfig.htmlConfiguration, forPDF: true, attachmentPaths: attachmentPaths, exportDirectory: directory)
 
             // Apply page size and margin configuration
             let pageSize = pdfConfig.pageSize.dimensions
             let margins = pdfConfig.htmlConfiguration.toPDFEdgeInsets()
+
+            // Generate HTML with PDF-specific constraints
+            let pageSizeCG = CGSize(width: pageSize.width, height: pageSize.height)
+            let marginsNS = pdfConfig.htmlConfiguration.toNSEdgeInsets()
+
+            let html = try await generateHTML(
+                for: note,
+                config: pdfConfig.htmlConfiguration,
+                forPDF: true,
+                attachmentPaths: attachmentPaths,
+                exportDirectory: directory,
+                pdfPageSize: pageSizeCG,
+                pdfMargins: marginsNS
+            )
             let pdfConfiguration = HtmlToPdf.PDFConfiguration(
                 margins: margins,
-                paperSize: CGSize(width: pageSize.width, height: pageSize.height)
+                paperSize: pageSizeCG
             )
 
-            // Add timeout for PDF generation to prevent hangs on corrupted images
-            // WebKit can hang indefinitely trying to load corrupted HEIC/JPEG images
-            // Most PDFs render in < 5 seconds; 15 seconds allows for complex notes while catching hangs
+            // Add timeout for PDF generation to prevent infinite hangs on corrupted images
+            // Notes with many images can take 30+ seconds to render
+            // HEIC conversion to JPEG helps, but timeout still needed for truly corrupted files
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
                     try await html.print(to: fileURL, configuration: pdfConfiguration)
                 }
 
                 group.addTask {
-                    // 15 second timeout - aggressive enough to catch hangs, generous enough for complex PDFs
-                    try await Task.sleep(nanoseconds: 15_000_000_000)
+                    // 60 second timeout - allows image-heavy notes to render while catching infinite hangs
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
                     throw ExportError.pdfGenerationTimeout
                 }
 
@@ -787,7 +800,15 @@ class ExportViewModel: ObservableObject {
 
     // MARK: - Content Generation
 
-    private func generateHTML(for note: NotesNote, config: HTMLConfiguration? = nil, forPDF: Bool = false, attachmentPaths: [String: String] = [:], exportDirectory: URL? = nil) async throws -> String {
+    private func generateHTML(
+        for note: NotesNote,
+        config: HTMLConfiguration? = nil,
+        forPDF: Bool = false,
+        attachmentPaths: [String: String] = [:],
+        exportDirectory: URL? = nil,
+        pdfPageSize: CGSize? = nil,
+        pdfMargins: NSEdgeInsets? = nil
+    ) async throws -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
@@ -892,6 +913,7 @@ class ExportViewModel: ObservableObject {
                 }
                 img {
                     max-width: 100%;
+                    \(generateImageHeightConstraint(forPDF: forPDF, pageSize: pdfPageSize, margins: pdfMargins))
                 }
             </style>
         </head>
@@ -905,6 +927,22 @@ class ExportViewModel: ObservableObject {
     }
 
     // MARK: - Helper Methods
+
+    /// Generate CSS constraint for image height in PDFs
+    private func generateImageHeightConstraint(forPDF: Bool, pageSize: CGSize?, margins: NSEdgeInsets?) -> String {
+        guard forPDF, let pageSize = pageSize, let margins = margins else {
+            return "" // No constraint for non-PDF exports
+        }
+
+        // Calculate maximum image height: page height - top margin - bottom margin
+        // Use points as CSS unit (1 point = 1/72 inch, standard for PDF)
+        let maxHeight = pageSize.height - margins.top - margins.bottom
+
+        // Add some padding to ensure images don't touch margins (subtract 20pt)
+        let safeMaxHeight = max(100, maxHeight - 20)
+
+        return "max-height: \(safeMaxHeight)pt; height: auto;"
+    }
 
     /// Organize notes by account and folder hierarchy
     private func organizeNotesByHierarchy(_ notes: [NotesNote]) async throws -> [String: [String: [NotesNote]]] {

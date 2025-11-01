@@ -8,6 +8,7 @@
 import Foundation
 import SQLite3
 import OSLog
+import AppKit
 
 /// Processes HTML to replace attachment placeholders with inline content or links
 class HTMLAttachmentProcessor {
@@ -415,7 +416,7 @@ class HTMLAttachmentProcessor {
 
         guard sqlite3_step(statement) == SQLITE_ROW else {
             Logger.noteQuery.debug("No media data found in ZMEDIA for UUID \(uuid), trying external file")
-            return tryLoadFromFile(relativePath: relativePath, uuid: uuid)
+            return tryLoadFromFile(relativePath: relativePath, uuid: uuid, typeUTI: typeUTI)
         }
 
         // Get the blob data
@@ -425,20 +426,31 @@ class HTMLAttachmentProcessor {
             // If size is very small (< 100 bytes), it's likely just a reference, not actual image data
             if size < 100 {
                 Logger.noteQuery.debug("ZMEDIA has only \(size) bytes for UUID \(uuid) - likely a reference, trying external file")
-                return tryLoadFromFile(relativePath: relativePath, uuid: uuid)
+                return tryLoadFromFile(relativePath: relativePath, uuid: uuid, typeUTI: typeUTI)
             }
 
             let data = Data(bytes: blob, count: Int(size))
-            Logger.noteQuery.debug("Successfully retrieved \(size) bytes of image data from ZMEDIA for UUID \(uuid), encoding as base64")
+            Logger.noteQuery.debug("Successfully retrieved \(size) bytes of image data from ZMEDIA for UUID \(uuid)")
+
+            // Convert HEIC to JPEG to avoid WebKit rendering issues
+            if typeUTI.contains("heic") || typeUTI.contains("HEIC") {
+                if let convertedData = convertHEICToJPEG(data) {
+                    Logger.noteQuery.debug("Converted HEIC to JPEG for UUID \(uuid), new size: \(convertedData.count) bytes")
+                    return convertedData.base64EncodedString()
+                } else {
+                    Logger.noteQuery.warning("Failed to convert HEIC to JPEG for UUID \(uuid), using original data")
+                }
+            }
+
             return data.base64EncodedString()
         }
 
         Logger.noteQuery.warning("ZMEDIA column was NULL for UUID \(uuid), trying external file")
-        return tryLoadFromFile(relativePath: relativePath, uuid: uuid)
+        return tryLoadFromFile(relativePath: relativePath, uuid: uuid, typeUTI: typeUTI)
     }
 
     /// Try to load image data from the exported file
-    private func tryLoadFromFile(relativePath: String?, uuid: String) -> String? {
+    private func tryLoadFromFile(relativePath: String?, uuid: String, typeUTI: String = "") -> String? {
         guard let relativePath = relativePath, let exportDir = exportDirectory else {
             Logger.noteQuery.debug("Cannot load from file - no relativePath or exportDirectory for UUID \(uuid)")
             return nil
@@ -450,6 +462,17 @@ class HTMLAttachmentProcessor {
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: fullPath))
             Logger.noteQuery.debug("Successfully loaded \(data.count) bytes from external file for UUID \(uuid)")
+
+            // Convert HEIC to JPEG to avoid WebKit rendering issues
+            if typeUTI.contains("heic") || typeUTI.contains("HEIC") || fullPath.hasSuffix(".heic") || fullPath.hasSuffix(".HEIC") {
+                if let convertedData = convertHEICToJPEG(data) {
+                    Logger.noteQuery.debug("Converted external HEIC to JPEG for UUID \(uuid), new size: \(convertedData.count) bytes")
+                    return convertedData.base64EncodedString()
+                } else {
+                    Logger.noteQuery.warning("Failed to convert external HEIC to JPEG for UUID \(uuid), using original data")
+                }
+            }
+
             return data.base64EncodedString()
         } catch {
             Logger.noteQuery.warning("Failed to load image from file \(fullPath): \(error.localizedDescription)")
@@ -457,12 +480,39 @@ class HTMLAttachmentProcessor {
         }
     }
 
+    /// Convert HEIC image data to JPEG to avoid WebKit rendering issues
+    /// Returns nil if conversion fails
+    private func convertHEICToJPEG(_ heicData: Data) -> Data? {
+        guard let image = NSImage(data: heicData) else {
+            Logger.noteQuery.error("Failed to create NSImage from HEIC data")
+            return nil
+        }
+
+        guard let tiffData = image.tiffRepresentation else {
+            Logger.noteQuery.error("Failed to get TIFF representation from NSImage")
+            return nil
+        }
+
+        guard let bitmap = NSBitmapImageRep(data: tiffData) else {
+            Logger.noteQuery.error("Failed to create bitmap from TIFF data")
+            return nil
+        }
+
+        // Convert to JPEG with quality 0.9 (good balance between quality and size)
+        guard let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.9]) else {
+            Logger.noteQuery.error("Failed to convert bitmap to JPEG")
+            return nil
+        }
+
+        return jpegData
+    }
+
     /// Convert UTI to MIME type
     private func utiToMimeType(_ uti: String) -> String {
         let mimeTypes: [String: String] = [
             "public.jpeg": "image/jpeg",
             "public.png": "image/png",
-            "public.heic": "image/heic",
+            "public.heic": "image/jpeg",  // Return JPEG MIME type for HEIC since we convert it
             "public.image": "image/png",
             "public.tiff": "image/tiff",
             "com.compuserve.gif": "image/gif"

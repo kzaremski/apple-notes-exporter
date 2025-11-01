@@ -12,22 +12,55 @@ struct ExportLogView: View {
     @EnvironmentObject var exportViewModel: ExportViewModel
     var onClose: () -> Void
 
+    @State private var logFilter: LogFilter = .all
+
+    enum LogFilter: String, CaseIterable {
+        case all = "Show All"
+        case errorsOnly = "Show Errors Only"
+    }
+
+    var filteredLogEntries: [String] {
+        switch logFilter {
+        case .all:
+            return exportViewModel.exportLog
+        case .errorsOnly:
+            return exportViewModel.exportLog.filter { $0.contains("✗") }
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Export Log")
                 .font(.title)
 
             // Use NSTextView for selectable text with color support
-            SelectableLogView(logEntries: exportViewModel.exportLog)
+            SelectableLogView(logEntries: filteredLogEntries)
                 .cornerRadius(6)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
                 )
 
-            // Close button
+            // Filter controls and close button below log
             HStack {
+                // Radio buttons horizontally on the left
+                HStack(spacing: 15) {
+                    ForEach(LogFilter.allCases, id: \.self) { filter in
+                        Button(action: {
+                            logFilter = filter
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: logFilter == filter ? "circle.inset.filled" : "circle")
+                                    .font(.system(size: 12))
+                                Text(filter.rawValue)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
                 Spacer()
+
                 Button {
                     onClose()
                 } label: {

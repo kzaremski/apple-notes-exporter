@@ -79,6 +79,33 @@ struct HTMLConfiguration: ExportConfigurable {
         )
     }
 
+    /// Convert margin settings to NSEdgeInsets (in points) for CSS calculations
+    func toNSEdgeInsets() -> NSEdgeInsets {
+        // Convert margin to points based on unit (same logic as toPDFEdgeInsets)
+        let marginInPoints: CGFloat
+        switch marginUnit {
+        case .pt:
+            marginInPoints = CGFloat(marginSize)
+        case .px:
+            // Assuming 72 DPI: 1px ≈ 0.75pt
+            marginInPoints = CGFloat(marginSize) * 0.75
+        case .em, .rem:
+            // Approximate: use font size as base (1em = font size)
+            marginInPoints = CGFloat(marginSize * fontSizePoints)
+        case .percent:
+            // For PDF, percent doesn't make sense for margins
+            // Default to 0.5 inches (36pt)
+            marginInPoints = 36
+        }
+
+        return NSEdgeInsets(
+            top: marginInPoints,
+            left: marginInPoints,
+            bottom: marginInPoints,
+            right: marginInPoints
+        )
+    }
+
     static var defaultConfiguration: HTMLConfiguration {
         HTMLConfiguration(
             fontSizePoints: 14,
