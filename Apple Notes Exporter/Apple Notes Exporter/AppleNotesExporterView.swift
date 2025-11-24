@@ -132,12 +132,22 @@ struct AppleNotesExporterView: View {
     @State private var activeAlert: ActiveAlert = .noneSelected
     @State private var showConfigurePopover: Bool = false
     
+    // Adjust spacing for macOS 15+ which has increased title font spacing
+    private var titleBottomPadding: CGFloat {
+        if #available(macOS 15.0, *) {
+            return -5
+        } else {
+            return 0
+        }
+    }
+
     // Body of the ContentView
     var body: some View {
         VStack(alignment: .leading) {
             Text("Step 1: Select Notes")
                 .font(.title)
                 .multilineTextAlignment(.leading).lineLimit(1)
+                .padding(.bottom, titleBottomPadding)
             HStack() {
                 Image(systemName: "list.bullet.clipboard")
                 Text(notesViewModel.loadingState.isLoading ? "Querying database" : "\(self.sharedState.selectedNotesCount) note\(self.sharedState.selectedNotesCount == 1 ? "" : "s") from \(self.sharedState.fromAccountsCount) account\(self.sharedState.fromAccountsCount == 1 ? "" : "s")")
@@ -166,6 +176,7 @@ struct AppleNotesExporterView: View {
                 .multilineTextAlignment(.leading)
                 .lineLimit(1)
                 .padding(.top, 5)
+                .padding(.bottom, titleBottomPadding)
 
             HStack(spacing: 0) {
                 ForEach(OUTPUT_FORMATS, id: \.self) { format in
@@ -226,6 +237,7 @@ struct AppleNotesExporterView: View {
                 .multilineTextAlignment(.leading)
                 .lineLimit(1)
                 .padding(.top, 5)
+                .padding(.bottom, titleBottomPadding)
             
             HStack() {
                 Image(systemName: "folder")
@@ -245,6 +257,7 @@ struct AppleNotesExporterView: View {
                 .multilineTextAlignment(.leading)
                 .lineLimit(1)
                 .padding(.top, 5)
+                .padding(.bottom, titleBottomPadding)
             Button(action: {
                 triggerExportNotes()
             }) {
