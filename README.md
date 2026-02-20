@@ -99,7 +99,7 @@ This project benefited from the groundwork and research done by [threeplanetssof
 ```
 MIT License
 
-Copyright (c) 2025 Konstantin Zaremski
+Copyright (c) 2026 Konstantin Zaremski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

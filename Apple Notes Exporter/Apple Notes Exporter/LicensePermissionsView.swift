@@ -101,7 +101,7 @@ struct LicensePermissionsView: View {
                         //    .frame(maxWidth: .infinity, alignment: .leading)
                         Text("Apple Notes Exporter").font(.title2).multilineTextAlignment(.leading).lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Copyright © 2025 Konstantin Zaremski")
+                        Text("Copyright © 2026 Konstantin Zaremski")
                             .padding(.bottom, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text("Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:")

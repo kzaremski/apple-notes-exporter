@@ -239,11 +239,38 @@ struct RTFConfiguration: ExportConfigurable {
 
 // MARK: - Export Configuration Container
 
+// MARK: - Filename Date Format
+
+enum FilenameDateFormat: String, Codable, CaseIterable {
+    case iso = "yyyy-MM-dd"
+    case isoTime = "yyyy-MM-dd HHmm"
+    case usDate = "MM-dd-yyyy"
+    case usDateTime = "MM-dd-yyyy HHmm"
+    case euDate = "dd-MM-yyyy"
+    case euDateTime = "dd-MM-yyyy HHmm"
+
+    var displayName: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = rawValue
+        let example = formatter.string(from: Date())
+        return "\(rawValue) (\(example))"
+    }
+}
+
+// MARK: - Export Configuration Container
+
 struct ExportConfigurations: Codable {
     var html: HTMLConfiguration
     var pdf: PDFConfiguration
     var latex: LaTeXConfiguration
     var rtf: RTFConfiguration
+
+    // General export options
+    var addDateToFilename: Bool = false
+    var filenameDateFormat: FilenameDateFormat = .iso
+    var includeAttachments: Bool = true
+    var concatenateOutput: Bool = false
+    var incrementalSync: Bool = false
 
     static var `default`: ExportConfigurations {
         ExportConfigurations(

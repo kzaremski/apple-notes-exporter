@@ -101,7 +101,7 @@ struct AppleNotesExporterView: View {
                 notesViewModel.selectedNotes,
                 toDirectory: outputURL!,
                 format: format,
-                includeAttachments: true
+                includeAttachments: exportViewModel.configurations.includeAttachments
             )
         }
     }
@@ -138,9 +138,9 @@ struct AppleNotesExporterView: View {
     // ** State
     // Data
     @ObservedObject private var sharedState: AppleNotesExporterState
-    // Preferences
-    @State private var outputFormat = "HTML"
-    @State private var outputPath: String = ""
+    // Preferences (persisted across launches)
+    @AppStorage("outputFormat") private var outputFormat = "HTML"
+    @AppStorage("outputPath") private var outputPath: String = ""
     @State private var outputURL: URL? = nil
     // Show/hide different views
     @State private var showLicensePermissionsView: Bool = !UserDefaults.standard.bool(forKey: "licenseAccepted")
@@ -151,7 +151,23 @@ struct AppleNotesExporterView: View {
     @State private var showAlert: Bool = false
     @State private var activeAlert: ActiveAlert = .noneSelected
     @State private var showConfigurePopover: Bool = false
+    @State private var showSyncWarning: Bool = false
+    @State private var now: Date = Date()
+    private let syncTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
+    /// Formatted "last synced" string based on manifest in the selected output directory
+    private var lastSyncedText: String {
+        // Reference `now` so SwiftUI re-evaluates when the timer ticks
+        _ = now
+        guard let url = outputURL,
+              let manifest = SyncManifest.load(from: url) else {
+            return "Last synced never"
+        }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Last synced \(formatter.localizedString(for: manifest.lastSync, relativeTo: Date()))"
+    }
+
     // Adjust spacing for macOS 15+ which has increased title font spacing
     private var titleBottomPadding: CGFloat {
         if #available(macOS 15.0, *) {
@@ -163,6 +179,7 @@ struct AppleNotesExporterView: View {
 
     // Body of the ContentView
     var body: some View {
+        VStack {
         VStack(alignment: .leading) {
             Text("Step 1: Select Notes")
                 .font(.title)
@@ -225,6 +242,7 @@ struct AppleNotesExporterView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(isSelected ? SwiftUI.Color.clear : SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
                     )
+                    .animation(.easeInOut(duration: 0.15), value: isSelected)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -235,6 +253,7 @@ struct AppleNotesExporterView: View {
                 Text(formatDescription(for: outputFormat))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(.easeInOut(duration: 0.15), value: outputFormat)
 
                 Button {
                     let configurableFormats = ["HTML", "PDF", "TEX", "RTF"]
@@ -260,7 +279,7 @@ struct AppleNotesExporterView: View {
                 }
             }
 
-            Text("Step 3: Choose Output Folder")
+            Text("Step 3: Choose Output Options")
                 .font(.title)
                 .multilineTextAlignment(.leading)
                 .lineLimit(1)
@@ -270,8 +289,12 @@ struct AppleNotesExporterView: View {
             HStack() {
                 Image(systemName: "folder")
                 Text(
-                    outputPath != "" ? outputPath : "Choose an output folder"
+                    outputPath != "" ? (outputPath + (exportViewModel.configurations.concatenateOutput ? "/Exported Notes.\(outputFormat.lowercased())" : "")) : "Choose an output folder"
                 ).frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .animation(.easeInOut(duration: 0.15), value: outputPath)
+                .animation(.easeInOut(duration: 0.15), value: exportViewModel.configurations.concatenateOutput)
                 Button {
                     selectOutputFolder()
                 } label: {
@@ -279,7 +302,69 @@ struct AppleNotesExporterView: View {
                     Text("Choose")
                 }
             }
-            
+
+            VStack(spacing: 4) {
+                HStack {
+                    Toggle("Add date to filename", isOn: $exportViewModel.configurations.addDateToFilename)
+                    Spacer()
+                    Picker("", selection: $exportViewModel.configurations.filenameDateFormat) {
+                        ForEach(FilenameDateFormat.allCases, id: \.self) { format in
+                            Text(format.displayName).tag(format)
+                        }
+                    }
+                    .frame(width: 210)
+                    .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
+                    .disabled(!exportViewModel.configurations.addDateToFilename)
+                }
+                HStack {
+                    Toggle("Include attachments", isOn: $exportViewModel.configurations.includeAttachments)
+                    Spacer()
+                }
+                HStack {
+                    Toggle("Concatenate into single file", isOn: $exportViewModel.configurations.concatenateOutput)
+                        .disabled(exportViewModel.configurations.incrementalSync)
+                    Spacer()
+                }
+                HStack {
+                    Toggle("Incremental sync", isOn: $exportViewModel.configurations.incrementalSync)
+                        .disabled(exportViewModel.configurations.concatenateOutput)
+                    Spacer()
+                }
+            }
+            .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
+            .onChange(of: exportViewModel.configurations.filenameDateFormat) { _ in exportViewModel.saveConfigurations() }
+            .onChange(of: exportViewModel.configurations.includeAttachments) { _ in exportViewModel.saveConfigurations() }
+            .onChange(of: exportViewModel.configurations.concatenateOutput) { _ in exportViewModel.saveConfigurations() }
+            .onChange(of: exportViewModel.configurations.incrementalSync) { _ in
+                exportViewModel.saveConfigurations()
+                showSyncWarning = exportViewModel.configurations.incrementalSync
+            }
+
+            // Sync overwrite warning
+            VStack {
+                if showSyncWarning {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.yellow)
+                        Text("Sync will overwrite previously exported files. Apple Notes is the source of truth.")
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(SwiftUI.Color.orange.opacity(0.12))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(SwiftUI.Color.orange.opacity(0.35), lineWidth: 1)
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: showSyncWarning)
+
             Text("Step 4: Export!")
                 .font(.title)
                 .multilineTextAlignment(.leading)
@@ -289,22 +374,58 @@ struct AppleNotesExporterView: View {
             Button(action: {
                 triggerExportNotes()
             }) {
-                Text("Export").frame(maxWidth: .infinity).font(.headline)
+                Group {
+                    if #available(macOS 13.0, *) {
+                        Text(exportViewModel.configurations.incrementalSync ? "Sync (\(lastSyncedText))" : "Export")
+                            .frame(maxWidth: .infinity).font(.headline)
+                            .contentTransition(.opacity)
+                            .animation(.easeInOut(duration: 0.15), value: exportViewModel.configurations.incrementalSync)
+                    } else {
+                        Text(exportViewModel.configurations.incrementalSync ? "Sync (\(lastSyncedText))" : "Export")
+                            .frame(maxWidth: .infinity).font(.headline)
+                    }
+                }
             }
             .buttonStyle(BorderedProminentButtonStyle())
+            .onReceive(syncTimer) { now = $0 }
             
-            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2025 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
+            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2026 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
                 .pointerOnHover()
         }
-        .frame(width: 500.0, height: 320.0)
+        }
+        .frame(width: 500.0, height: showSyncWarning ? 455.0 : 410.0, alignment: .top)
         .padding(10.0)
         .onAppear {
+            // Initialize sync warning state from persisted config
+            showSyncWarning = exportViewModel.configurations.incrementalSync
+            // Restore output URL from persisted path
+            if !outputPath.isEmpty {
+                outputURL = URL(fileURLWithPath: outputPath)
+            }
             // If license was previously accepted, auto-load notes on launch
             if sharedState.licenseAccepted && !showLicensePermissionsView {
                 sharedState.reload()
+            }
+        }
+        .onReceive(sharedState.$triggerSelectNotes) { triggered in
+            if triggered {
+                sharedState.triggerSelectNotes = false
+                showNoteSelectorView = true
+            }
+        }
+        .onReceive(sharedState.$triggerChooseFolder) { triggered in
+            if triggered {
+                sharedState.triggerChooseFolder = false
+                selectOutputFolder()
+            }
+        }
+        .onReceive(sharedState.$triggerExport) { triggered in
+            if triggered {
+                sharedState.triggerExport = false
+                triggerExportNotes()
             }
         }
         .sheet(isPresented: $sharedState.showProgressWindow) {

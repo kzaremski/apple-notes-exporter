@@ -25,6 +25,25 @@ enum ExportError: Error, LocalizedError {
     }
 }
 
+// MARK: - Sync Manifest Actor
+
+/// Thread-safe wrapper for SyncManifest mutations during concurrent export
+actor SyncManifestTracker {
+    private var manifest: SyncManifest
+
+    init(manifest: SyncManifest) {
+        self.manifest = manifest
+    }
+
+    func recordExport(noteId: String, modificationDate: Date, exportedPath: String, attachmentPaths: [String] = []) {
+        manifest.recordExport(noteId: noteId, modificationDate: modificationDate, exportedPath: exportedPath, attachmentPaths: attachmentPaths)
+    }
+
+    func getManifest() -> SyncManifest {
+        return manifest
+    }
+}
+
 // MARK: - Export Progress
 
 struct ExportProgress: Equatable {
@@ -164,15 +183,45 @@ class ExportViewModel: ObservableObject {
         let startTime = Date()
 
         do {
+            // Incremental sync: load existing manifest and filter to new/changed notes
+            let isSync = configurations.incrementalSync
+            let existingManifest = isSync ? SyncManifest.load(from: outputURL) : nil
+            let syncTracker: SyncManifestTracker?
+
+            let notesToExport: [NotesNote]
+            if isSync, let manifest = existingManifest {
+                notesToExport = manifest.notesNeedingExport(from: notes)
+                // Start from existing manifest so we preserve entries for unchanged notes
+                syncTracker = SyncManifestTracker(manifest: manifest)
+                if notesToExport.isEmpty {
+                    log("✓ All notes are up to date, nothing to export")
+                    exportState = .completed(ExportStatistics(
+                        successfulNotes: 0,
+                        failedNotes: 0,
+                        failedAttachments: 0,
+                        completionDate: Date()
+                    ))
+                    // Still update lastSync timestamp
+                    var updatedManifest = manifest
+                    updatedManifest.lastSync = Date()
+                    try updatedManifest.save(to: outputURL)
+                    return
+                }
+                log("Incremental sync: \(notesToExport.count) new/changed notes of \(notes.count) total")
+            } else {
+                notesToExport = notes
+                syncTracker = isSync ? SyncManifestTracker(manifest: .empty()) : nil
+            }
+
             // Start exporting
             exportState = .exporting(ExportProgress(
                 current: 0,
-                total: notes.count,
-                message: "Starting export..."
+                total: notesToExport.count,
+                message: isSync ? "Starting incremental sync..." : "Starting export..."
             ))
 
             // Group notes by account and folder for organized output
-            let hierarchy = try await organizeNotesByHierarchy(notes)
+            let hierarchy = try await organizeNotesByHierarchy(notesToExport)
 
             // Create all directory structure upfront
             for (accountName, folders) in hierarchy {
@@ -197,14 +246,29 @@ class ExportViewModel: ObservableObject {
                 }
             }
 
-            // Export notes concurrently
-            try await exportNotesConcurrently(
-                notesWithPaths,
-                format: format,
-                includeAttachments: includeAttachments,
-                totalNotes: notes.count,
-                startTime: startTime
-            )
+            // Check if we should concatenate all notes into a single file
+            if configurations.concatenateOutput {
+                try await exportNotesConcatenated(
+                    notesWithPaths,
+                    format: format,
+                    includeAttachments: includeAttachments,
+                    totalNotes: notesToExport.count,
+                    outputURL: outputURL,
+                    startTime: startTime
+                )
+            } else {
+                // Export notes concurrently (default behavior)
+                try await exportNotesConcurrently(
+                    notesWithPaths,
+                    format: format,
+                    includeAttachments: includeAttachments,
+                    totalNotes: notesToExport.count,
+                    startTime: startTime,
+                    syncTracker: syncTracker,
+                    syncManifest: existingManifest,
+                    outputRootURL: isSync ? outputURL : nil
+                )
+            }
 
             // Check if export was cancelled before marking as completed
             guard !shouldCancel else {
@@ -215,8 +279,15 @@ class ExportViewModel: ObservableObject {
             // Set folder timestamps based on their notes
             try await setFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
 
+            // Save sync manifest if incremental sync is enabled
+            if let syncTracker = syncTracker {
+                let finalManifest = await syncTracker.getManifest()
+                try finalManifest.save(to: outputURL)
+                log("✓ Sync manifest saved")
+            }
+
             // Export completed successfully
-            let successfulNotes = notes.count - failedNotesCount
+            let successfulNotes = notesToExport.count - failedNotesCount
             exportState = .completed(ExportStatistics(
                 successfulNotes: successfulNotes,
                 failedNotes: failedNotesCount,
@@ -237,7 +308,10 @@ class ExportViewModel: ObservableObject {
         format: ExportFormat,
         includeAttachments: Bool,
         totalNotes: Int,
-        startTime: Date
+        startTime: Date,
+        syncTracker: SyncManifestTracker? = nil,
+        syncManifest: SyncManifest? = nil,
+        outputRootURL: URL? = nil
     ) async throws {
         let tracker = ExportProgressTracker()
 
@@ -247,13 +321,17 @@ class ExportViewModel: ObservableObject {
 
             // Launch initial batch of concurrent exports
             while activeTaskCount < maxConcurrentExports, let noteWithPath = iterator.next() {
+                let overridePath = syncManifest?.existingPath(for: noteWithPath.note.id)
                 group.addTask {
                     await self.exportNoteConcurrently(
                         noteWithPath.note,
                         toDirectory: noteWithPath.folderURL,
                         format: format,
                         includeAttachments: includeAttachments,
-                        tracker: tracker
+                        tracker: tracker,
+                        syncTracker: syncTracker,
+                        overrideRelativePath: overridePath,
+                        outputRootURL: outputRootURL
                     )
                 }
                 activeTaskCount += 1
@@ -296,18 +374,139 @@ class ExportViewModel: ObservableObject {
 
                 // Launch next task if available
                 if let noteWithPath = iterator.next() {
+                    let overridePath = syncManifest?.existingPath(for: noteWithPath.note.id)
                     group.addTask {
                         await self.exportNoteConcurrently(
                             noteWithPath.note,
                             toDirectory: noteWithPath.folderURL,
                             format: format,
                             includeAttachments: includeAttachments,
-                            tracker: tracker
+                            tracker: tracker,
+                            syncTracker: syncTracker,
+                            overrideRelativePath: overridePath,
+                            outputRootURL: outputRootURL
                         )
                     }
                 }
             }
         }
+    }
+
+    /// Export all notes concatenated into a single file
+    private func exportNotesConcatenated(
+        _ notesWithPaths: [(note: NotesNote, folderURL: URL)],
+        format: ExportFormat,
+        includeAttachments: Bool,
+        totalNotes: Int,
+        outputURL: URL,
+        startTime: Date
+    ) async throws {
+        var contentParts: [String] = []
+
+        for (index, noteWithPath) in notesWithPaths.enumerated() {
+            guard !shouldCancel else {
+                exportState = .cancelled
+                Logger.noteExport.info("Export cancelled by user")
+                return
+            }
+
+            let note = noteWithPath.note
+
+            exportState = .exporting(ExportProgress(
+                current: index,
+                total: totalNotes,
+                message: "Processing note \(index + 1) of \(totalNotes)..."
+            ))
+
+            do {
+                // Export attachments if needed (into the output root directory)
+                var attachmentPaths: [String: String] = [:]
+                if includeAttachments && note.hasAttachments {
+                    let tracker = ExportProgressTracker()
+                    let baseFilename = note.sanitizedFileName
+                    attachmentPaths = try await exportAttachmentsAndReturnPaths(
+                        note.attachments,
+                        toDirectory: outputURL,
+                        noteBaseName: baseFilename,
+                        noteTitle: note.title,
+                        noteCreationDate: note.creationDate,
+                        noteModificationDate: note.modificationDate,
+                        tracker: tracker
+                    )
+                    let stats = await tracker.getStats()
+                    failedAttachmentsCount += stats.failedAttachments
+                }
+
+                // Generate content for this note
+                let content = try await generateContent(
+                    for: note,
+                    format: format,
+                    attachmentPaths: attachmentPaths,
+                    exportDirectory: outputURL
+                )
+                contentParts.append(content)
+                log("✓ Processed note: \(note.title)")
+            } catch {
+                failedNotesCount += 1
+                log("✗ Failed to process note '\(note.title)': \(error.localizedDescription)")
+                Logger.noteExport.error("Failed to process note for concatenation: \(note.title) - \(error.localizedDescription)")
+            }
+        }
+
+        guard !shouldCancel else {
+            exportState = .cancelled
+            return
+        }
+
+        // Join all content with format-appropriate separators
+        let separator: String
+        switch format {
+        case .html:
+            separator = "\n<hr style=\"page-break-after: always;\">\n"
+        case .pdf:
+            separator = "\n<hr style=\"page-break-after: always;\">\n"
+        case .markdown:
+            separator = "\n\n---\n\n"
+        case .txt:
+            separator = "\n\n" + String(repeating: "=", count: 72) + "\n\n"
+        case .rtf:
+            separator = "\n\\page\n"
+        case .tex:
+            separator = "\n\n\\newpage\n\n"
+        }
+
+        let concatenated = contentParts.joined(separator: separator)
+
+        // Write the single concatenated file
+        let filename = "Exported Notes.\(format.fileExtension)"
+        let fileURL = outputURL.appendingPathComponent(filename)
+
+        if format == .pdf {
+            // For PDF, the concatenated content is HTML — render it
+            let pdfConfig = configurations.pdf
+            let pageSize = pdfConfig.pageSize.dimensions
+            let margins = pdfConfig.htmlConfiguration.toPDFEdgeInsets()
+            let pdfConfiguration = HtmlToPdf.PDFConfiguration(
+                margins: margins,
+                paperSize: CGSize(width: pageSize.width, height: pageSize.height)
+            )
+
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await concatenated.print(to: fileURL, configuration: pdfConfiguration)
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: UInt64(totalNotes) * 60_000_000_000)
+                    throw ExportError.pdfGenerationTimeout
+                }
+                try await group.next()
+                group.cancelAll()
+            }
+        } else {
+            try concatenated.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+
+        log("✓ Exported concatenated file: \(filename)")
     }
 
     /// Export a single note concurrently (non-throwing wrapper for TaskGroup)
@@ -316,7 +515,10 @@ class ExportViewModel: ObservableObject {
         toDirectory directory: URL,
         format: ExportFormat,
         includeAttachments: Bool,
-        tracker: ExportProgressTracker
+        tracker: ExportProgressTracker,
+        syncTracker: SyncManifestTracker? = nil,
+        overrideRelativePath: String? = nil,
+        outputRootURL: URL? = nil
     ) async {
         do {
             try await exportNoteSafely(
@@ -324,7 +526,10 @@ class ExportViewModel: ObservableObject {
                 toDirectory: directory,
                 format: format,
                 includeAttachments: includeAttachments,
-                tracker: tracker
+                tracker: tracker,
+                syncTracker: syncTracker,
+                overrideRelativePath: overrideRelativePath,
+                outputRootURL: outputRootURL
             )
             _ = await tracker.noteCompleted()
         } catch {
@@ -359,20 +564,43 @@ class ExportViewModel: ObservableObject {
         toDirectory directory: URL,
         format: ExportFormat,
         includeAttachments: Bool,
-        tracker: ExportProgressTracker
+        tracker: ExportProgressTracker,
+        syncTracker: SyncManifestTracker? = nil,
+        overrideRelativePath: String? = nil,
+        outputRootURL: URL? = nil
     ) async throws {
         // Check for cancellation before starting export
         try Task.checkCancellation()
 
-        // Generate unique filename early (handles duplicates)
-        let baseFilename = note.sanitizedFileName
-        let filename = generateUniqueFilename(
-            baseName: baseFilename,
-            extension: format.fileExtension,
-            inDirectory: directory
-        )
-        let fileURL = directory.appendingPathComponent(filename)
-        let uniqueBaseName = filename.replacingOccurrences(of: ".\(format.fileExtension)", with: "")
+        // Determine file URL — either overwrite at existing path (sync) or generate new
+        let fileURL: URL
+        let uniqueBaseName: String
+
+        if let relativePath = overrideRelativePath, let rootURL = outputRootURL {
+            // Sync mode: overwrite at previously exported path
+            fileURL = rootURL.appendingPathComponent(relativePath)
+            // Ensure parent directory exists (in case folder structure was deleted)
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            uniqueBaseName = fileURL.deletingPathExtension().lastPathComponent
+        } else {
+            // Normal mode: generate unique filename
+            let baseFilename: String
+            if configurations.addDateToFilename {
+                let formatter = DateFormatter()
+                formatter.dateFormat = configurations.filenameDateFormat.rawValue
+                let datePrefix = formatter.string(from: note.creationDate)
+                baseFilename = "\(datePrefix) \(note.sanitizedFileName)"
+            } else {
+                baseFilename = note.sanitizedFileName
+            }
+            let filename = generateUniqueFilename(
+                baseName: baseFilename,
+                extension: format.fileExtension,
+                inDirectory: directory
+            )
+            fileURL = directory.appendingPathComponent(filename)
+            uniqueBaseName = filename.replacingOccurrences(of: ".\(format.fileExtension)", with: "")
+        }
 
         // Export attachments before note content (required for HTML attachment path resolution)
         var attachmentPaths: [String: String] = [:]
@@ -452,6 +680,23 @@ class ExportViewModel: ObservableObject {
 
         // Set file timestamps to match note's creation and modification dates
         try setFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
+
+        // Record in sync manifest if tracking
+        if let syncTracker = syncTracker, let rootURL = outputRootURL {
+            // Compute relative path from output root
+            let relativePath = fileURL.path.replacingOccurrences(of: rootURL.path + "/", with: "")
+            let attachmentRelPaths = attachmentPaths.values.map { path in
+                // attachmentPaths values are relative to the note's directory, make them relative to root
+                let noteDir = directory.path.replacingOccurrences(of: rootURL.path + "/", with: "")
+                return noteDir.isEmpty ? path : "\(noteDir)/\(path)"
+            }
+            await syncTracker.recordExport(
+                noteId: note.id,
+                modificationDate: note.modificationDate,
+                exportedPath: relativePath,
+                attachmentPaths: attachmentRelPaths
+            )
+        }
     }
 
     /// Export attachments for a note and return a map of attachment IDs to relative paths

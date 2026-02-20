@@ -68,6 +68,11 @@ class AppleNotesExporterState: ObservableObject {
     @Published var fromAccountsCount: Int = 0
     @Published var licenseAccepted: Bool = UserDefaults.standard.bool(forKey: "licenseAccepted")
 
+    // Action triggers (set from menu commands, observed by view)
+    @Published var triggerSelectNotes: Bool = false
+    @Published var triggerChooseFolder: Bool = false
+    @Published var triggerExport: Bool = false
+
     // Export Log Window reference
     var exportLogWindow: NSWindow?
 
@@ -220,6 +225,69 @@ struct Apple_Notes_ExporterApp: App {
                     }
                 }
                 .pickerStyle(.inline)
+            }
+
+            CommandGroup(after: .newItem) {
+                let canInteract = sharedState.licenseAccepted && !sharedState.exporting
+
+                // Format selection: Cmd+1 through Cmd+6
+                Button("HTML Format") {
+                    UserDefaults.standard.set("HTML", forKey: "outputFormat")
+                }
+                .keyboardShortcut("1", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Button("PDF Format") {
+                    UserDefaults.standard.set("PDF", forKey: "outputFormat")
+                }
+                .keyboardShortcut("2", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Button("LaTeX Format") {
+                    UserDefaults.standard.set("TEX", forKey: "outputFormat")
+                }
+                .keyboardShortcut("3", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Button("Markdown Format") {
+                    UserDefaults.standard.set("MD", forKey: "outputFormat")
+                }
+                .keyboardShortcut("4", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Button("RTF Format") {
+                    UserDefaults.standard.set("RTF", forKey: "outputFormat")
+                }
+                .keyboardShortcut("5", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Button("Plain Text Format") {
+                    UserDefaults.standard.set("TXT", forKey: "outputFormat")
+                }
+                .keyboardShortcut("6", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Divider()
+
+                Button("Select Notes...") {
+                    sharedState.triggerSelectNotes = true
+                }
+                .keyboardShortcut("a", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Button("Choose Output Folder...") {
+                    sharedState.triggerChooseFolder = true
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Button("Export") {
+                    sharedState.triggerExport = true
+                }
+                .keyboardShortcut("e", modifiers: [.command])
+                .disabled(!canInteract)
+
+                Divider()
             }
 
             CommandGroup(after: .windowArrangement) {
