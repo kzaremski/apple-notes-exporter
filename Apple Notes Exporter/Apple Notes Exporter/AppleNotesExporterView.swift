@@ -45,6 +45,26 @@ struct AppleNotesExporterView: View {
         }
     }
 
+    /// Get SF Symbol icon name for each export format
+    private func formatIcon(for format: String) -> String {
+        switch format {
+        case "HTML":
+            return "globe"
+        case "PDF":
+            return "doc.richtext"
+        case "TEX":
+            return "function"
+        case "MD":
+            return "number"
+        case "RTF":
+            return "doc.text"
+        case "TXT":
+            return "text.alignleft"
+        default:
+            return "doc"
+        }
+    }
+
     func setProgressWindow(_ state: Bool?) {
         self.sharedState.showProgressWindow = state ?? !self.sharedState.showProgressWindow
     }
@@ -178,27 +198,35 @@ struct AppleNotesExporterView: View {
                 .padding(.top, 5)
                 .padding(.bottom, titleBottomPadding)
 
-            HStack(spacing: 0) {
+            HStack(spacing: 6) {
                 ForEach(OUTPUT_FORMATS, id: \.self) { format in
+                    let isSelected = outputFormat == format
                     Button(action: {
                         outputFormat = format
                     }) {
-                        Text(format)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(.vertical, 6)
-                            .foregroundColor(outputFormat == format ? .white : .primary)
-                            .contentShape(Rectangle())
+                        VStack(spacing: 3) {
+                            Image(systemName: formatIcon(for: format))
+                                .font(.system(size: 16))
+                                .frame(height: 20)
+                            Text(format)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .foregroundColor(isSelected ? .white : .secondary)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .background(outputFormat == format ? SwiftUI.Color.accentColor : SwiftUI.Color.clear)
-                    .cornerRadius(0)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(isSelected ? SwiftUI.Color.accentColor : SwiftUI.Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isSelected ? SwiftUI.Color.clear : SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
+                    )
                 }
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
-            )
-            .cornerRadius(6)
             .frame(maxWidth: .infinity)
 
             HStack {
@@ -269,6 +297,7 @@ struct AppleNotesExporterView: View {
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
+                .pointerOnHover()
         }
         .frame(width: 500.0, height: 320.0)
         .padding(10.0)
@@ -341,6 +370,21 @@ struct AppleNotesExporterView: View {
                     }
                     return event
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Pointer Cursor for Links
+
+extension View {
+    /// Show a pointing hand cursor on hover (for hyperlinks)
+    func pointerOnHover() -> some View {
+        self.onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
             }
         }
     }
