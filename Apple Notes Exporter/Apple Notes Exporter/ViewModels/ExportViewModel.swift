@@ -467,12 +467,13 @@ class ExportViewModel: ObservableObject {
         var attachmentPaths: [String: String] = [:]
 
         // Filter out non-file attachments (inline content embedded in note)
+        // Note: com.apple.paper, com.apple.drawing, and com.apple.drawing.2 are NOT filtered
+        // because they are drawing/sketch attachments with fallback images that should be exported
         let nonFileAttachmentPrefixes = [
             "com.apple.notes.table",                    // Tables
             "com.apple.notes.inlinetextattachment",     // Hashtags, calculations, etc.
             "com.apple.notes.inlinehashtagattachment",  // Hashtags (legacy)
             "com.apple.notes.inlinementionattachment",  // Mentions
-            "com.apple.paper",                          // Apple Paper documents
             "public.url"                                // URLs
         ]
 
@@ -594,12 +595,13 @@ class ExportViewModel: ObservableObject {
         tracker: ExportProgressTracker
     ) async throws {
         // Filter out non-file attachments (inline content embedded in note)
+        // Note: com.apple.paper, com.apple.drawing, and com.apple.drawing.2 are NOT filtered
+        // because they are drawing/sketch attachments with fallback images that should be exported
         let nonFileAttachmentPrefixes = [
             "com.apple.notes.table",                    // Tables
             "com.apple.notes.inlinetextattachment",     // Hashtags, calculations, etc.
             "com.apple.notes.inlinehashtagattachment",  // Hashtags (legacy)
             "com.apple.notes.inlinementionattachment",  // Mentions
-            "com.apple.paper",                          // Apple Paper documents
             "public.url"                                // URLs
         ]
 

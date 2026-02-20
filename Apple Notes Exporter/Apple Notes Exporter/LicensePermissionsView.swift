@@ -201,8 +201,9 @@ struct LicensePermissionsView: View {
                 }.frame(maxWidth: .infinity, alignment: .trailing)
                 
                 Button {
-                    // Mark license as accepted
+                    // Mark license as accepted and persist to UserDefaults
                     sharedState.licenseAccepted = true
+                    UserDefaults.standard.set(true, forKey: "licenseAccepted")
                     // Start loading immediately before dismissing
                     sharedState.reload()
                     showLicensePermissionsView = false

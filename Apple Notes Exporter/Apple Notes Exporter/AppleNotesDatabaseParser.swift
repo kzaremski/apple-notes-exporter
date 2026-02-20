@@ -961,12 +961,32 @@ class AppleNotesDatabaseParser {
 
     /// Fetch binary data for an attachment by its ID
     func fetchAttachmentData(attachmentId: String) -> Data? {
-        // First, try to find the attachment using ZIDENTIFIER
+        // Determine the correct account column for notes (varies by iOS/macOS version)
+        // This must match the column used in fetchNotes() for consistency
+        let columns = getTableColumns("ZICCLOUDSYNCINGOBJECT")
+        let noteAccountColumn: String
+        if columns.contains("ZACCOUNT7") {
+            noteAccountColumn = "ZACCOUNT7"
+        } else if columns.contains("ZACCOUNT4") {
+            noteAccountColumn = "ZACCOUNT4"
+        } else if columns.contains("ZACCOUNT3") {
+            noteAccountColumn = "ZACCOUNT3"
+        } else if columns.contains("ZACCOUNT2") {
+            noteAccountColumn = "ZACCOUNT2"
+        } else if columns.contains("ZACCOUNT") {
+            noteAccountColumn = "ZACCOUNT"
+        } else {
+            noteAccountColumn = "Z_PK"
+        }
+
+        // Find the attachment using ZIDENTIFIER, joining to the account table
+        // to get the account's ZIDENTIFIER (filesystem path uses account identifier, not Z_PK)
         let attachmentQuery = """
         SELECT att.ZMEDIA, att.Z_PK, att.ZIDENTIFIER, att.ZTYPEUTI, att.ZFILENAME,
-               note.ZACCOUNT as ZACCOUNT
+               acct.ZIDENTIFIER as ZACCOUNTIDENTIFIER
         FROM ZICCLOUDSYNCINGOBJECT att
         LEFT JOIN ZICCLOUDSYNCINGOBJECT note ON att.ZNOTE = note.Z_PK
+        LEFT JOIN ZICCLOUDSYNCINGOBJECT acct ON note.\(noteAccountColumn) = acct.Z_PK
         WHERE att.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICAttachment')
         AND att.ZIDENTIFIER = ?
         AND (att.ZMARKEDFORDELETION = 0 OR att.ZMARKEDFORDELETION IS NULL);
@@ -983,20 +1003,24 @@ class AppleNotesDatabaseParser {
                 // Get additional info for debugging
                 let typeUTI = sqlite3_column_text(statement, 3).flatMap { String(cString: $0) }
                 let attachmentFilename = sqlite3_column_text(statement, 4).flatMap { String(cString: $0) }
-                let accountPK = String(sqlite3_column_int64(statement, 5))
+                let accountIdentifier = sqlite3_column_text(statement, 5).flatMap { String(cString: $0) } ?? ""
 
                 // Check if ZMEDIA is NULL
                 if sqlite3_column_type(statement, 0) == SQLITE_NULL {
-                    Logger.noteQuery.debug("Attachment \(attachmentId) ZMEDIA=NULL, type=\(typeUTI ?? "nil"), filename=\(attachmentFilename ?? "nil")")
+                    Logger.noteQuery.debug("Attachment \(attachmentId) ZMEDIA=NULL, type=\(typeUTI ?? "nil"), filename=\(attachmentFilename ?? "nil"), account=\(accountIdentifier)")
 
                     // Handle special attachment types that use fallback files
                     if let type = typeUTI {
-                        if type == "com.apple.paper" {
-                            // Drawing/sketch - look for fallback image
-                            return fetchFallbackImage(attachmentId: attachmentId, accountId: accountPK)
+                        // Drawing/sketch types - look for fallback image
+                        if type == "com.apple.paper" || type == "com.apple.drawing" || type == "com.apple.drawing.2" {
+                            return fetchFallbackImage(attachmentId: attachmentId, accountId: accountIdentifier)
                         } else if type == "com.apple.paper.doc.pdf" {
                             // Scanned document - look for fallback PDF
-                            return fetchFallbackPDF(attachmentId: attachmentId, accountId: accountPK)
+                            return fetchFallbackPDF(attachmentId: attachmentId, accountId: accountIdentifier)
+                        } else if type == "com.apple.notes.gallery" {
+                            // Gallery (multi-image container, e.g. scanned documents)
+                            // Try to export the first child image as a representative
+                            return fetchGalleryData(galleryId: attachmentId, accountId: accountIdentifier)
                         }
                     }
 
@@ -1390,5 +1414,100 @@ class AppleNotesDatabaseParser {
 
         Logger.noteQuery.debug("Could not find fallback PDF for \(attachmentId)")
         return nil
+    }
+
+    // MARK: - Gallery Attachments
+
+    /// Fetch data for a gallery (com.apple.notes.gallery) attachment.
+    /// Galleries are container attachments (e.g. multi-page scanned documents) whose
+    /// child attachments hold the actual image data. This method finds the child
+    /// attachments and returns the first child's image data as a representative.
+    func fetchGalleryData(galleryId: String, accountId: String) -> Data? {
+        // Look up the gallery's Z_PK from its ZIDENTIFIER
+        let pkQuery = """
+        SELECT Z_PK FROM ZICCLOUDSYNCINGOBJECT
+        WHERE ZIDENTIFIER = ?
+        AND (ZMARKEDFORDELETION = 0 OR ZMARKEDFORDELETION IS NULL);
+        """
+
+        var galleryPK: Int64?
+        var statement: OpaquePointer?
+        if sqlite3_prepare_v2(db, pkQuery, -1, &statement, nil) == SQLITE_OK {
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_text(statement, 1, (galleryId as NSString).utf8String, -1, nil)
+            if sqlite3_step(statement) == SQLITE_ROW {
+                galleryPK = sqlite3_column_int64(statement, 0)
+            }
+        }
+
+        guard let pk = galleryPK else {
+            Logger.noteQuery.debug("Could not find gallery Z_PK for \(galleryId)")
+            return nil
+        }
+
+        // Find child attachments that belong to this gallery
+        // Children reference the gallery via ZPARENTATTACHMENT (or similar FK column)
+        let columns = getTableColumns("ZICCLOUDSYNCINGOBJECT")
+        let parentColumn: String
+        if columns.contains("ZPARENTATTACHMENT") {
+            parentColumn = "ZPARENTATTACHMENT"
+        } else if columns.contains("ZATTACHMENT") {
+            parentColumn = "ZATTACHMENT"
+        } else {
+            Logger.noteQuery.debug("No parent attachment column found for gallery children")
+            // Fallback: try to find the gallery's fallback image directly
+            return fetchFallbackImage(attachmentId: galleryId, accountId: accountId)
+        }
+
+        let childQuery = """
+        SELECT ZIDENTIFIER, ZTYPEUTI, ZMEDIA, ZFILENAME
+        FROM ZICCLOUDSYNCINGOBJECT
+        WHERE \(parentColumn) = ?
+        AND (ZMARKEDFORDELETION = 0 OR ZMARKEDFORDELETION IS NULL)
+        ORDER BY Z_PK ASC;
+        """
+
+        var childStatement: OpaquePointer?
+        if sqlite3_prepare_v2(db, childQuery, -1, &childStatement, nil) == SQLITE_OK {
+            defer { sqlite3_finalize(childStatement) }
+            sqlite3_bind_int64(childStatement, 1, pk)
+
+            // Try each child until we find one with data
+            while sqlite3_step(childStatement) == SQLITE_ROW {
+                let childId = sqlite3_column_text(childStatement, 0).flatMap { String(cString: $0) }
+                let childType = sqlite3_column_text(childStatement, 1).flatMap { String(cString: $0) }
+                let childFilename = sqlite3_column_text(childStatement, 3).flatMap { String(cString: $0) }
+
+                Logger.noteQuery.debug("Gallery child: id=\(childId ?? "nil"), type=\(childType ?? "nil"), filename=\(childFilename ?? "nil")")
+
+                // Try to fetch this child's data through normal attachment flow
+                if let childIdentifier = childId {
+                    if let data = fetchAttachmentData(attachmentId: childIdentifier) {
+                        Logger.noteQuery.debug("Successfully fetched gallery child data for \(childIdentifier)")
+                        return data
+                    }
+                }
+
+                // If child has a media reference, try that
+                if sqlite3_column_type(childStatement, 2) != SQLITE_NULL {
+                    let mediaId = sqlite3_column_int64(childStatement, 2)
+                    if let data = fetchMediaData(mediaId: Int(mediaId)) {
+                        Logger.noteQuery.debug("Successfully fetched gallery child media for mediaId=\(mediaId)")
+                        return data
+                    }
+                }
+
+                // Try filename
+                if let filename = childFilename {
+                    if let data = findExternalAttachment(filename: filename) {
+                        return data
+                    }
+                }
+            }
+        }
+
+        // Fallback: try to find the gallery's own fallback image
+        Logger.noteQuery.debug("No child data found for gallery \(galleryId), trying fallback image")
+        return fetchFallbackImage(attachmentId: galleryId, accountId: accountId)
     }
 }

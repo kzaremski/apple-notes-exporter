@@ -128,13 +128,18 @@ class HTMLAttachmentProcessor {
         linkEmbeddedImages: Bool
     ) -> String {
         // Check if this is an image
+        // Also treat drawings/sketches as images since they have fallback image data
         if attachment.typeUTI.hasPrefix("public.image") ||
            attachment.typeUTI.hasPrefix("public.jpeg") ||
            attachment.typeUTI.hasPrefix("public.png") ||
            attachment.typeUTI.hasPrefix("public.heic") ||
            attachment.typeUTI.hasPrefix("public.tiff") ||
            attachment.typeUTI.hasPrefix("com.compuserve.gif") ||
-           attachment.typeUTI == "com.compuserve.gif" {
+           attachment.typeUTI == "com.compuserve.gif" ||
+           attachment.typeUTI == "com.apple.paper" ||
+           attachment.typeUTI == "com.apple.drawing" ||
+           attachment.typeUTI == "com.apple.drawing.2" ||
+           attachment.typeUTI == "com.apple.notes.gallery" {
             return generateImageHTML(
                 attachment: attachment,
                 uuid: uuid,

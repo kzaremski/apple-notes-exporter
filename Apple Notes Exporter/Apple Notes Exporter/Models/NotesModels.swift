@@ -129,7 +129,12 @@ struct NotesAttachment: NotesItem {
             "public.text": "txt",
             "public.shell-script": "sh",
             "com.adobe.encapsulated-postscript": "eps",
-            "com.compuserve.gif": "gif"
+            "com.compuserve.gif": "gif",
+            "com.apple.paper": "jpg",
+            "com.apple.drawing": "jpg",
+            "com.apple.drawing.2": "jpg",
+            "com.apple.paper.doc.pdf": "pdf",
+            "com.apple.notes.gallery": "jpg"
         ]
 
         return utiExtensions[typeUTI] ?? "bin"

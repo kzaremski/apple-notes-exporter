@@ -66,7 +66,7 @@ class AppleNotesExporterState: ObservableObject {
     @Published var exportDone: Bool = false
     @Published var selectedNotesCount: Int = 0
     @Published var fromAccountsCount: Int = 0
-    @Published var licenseAccepted: Bool = false
+    @Published var licenseAccepted: Bool = UserDefaults.standard.bool(forKey: "licenseAccepted")
 
     // Export Log Window reference
     var exportLogWindow: NSWindow?

@@ -123,7 +123,7 @@ struct AppleNotesExporterView: View {
     @State private var outputPath: String = ""
     @State private var outputURL: URL? = nil
     // Show/hide different views
-    @State private var showLicensePermissionsView: Bool = true
+    @State private var showLicensePermissionsView: Bool = !UserDefaults.standard.bool(forKey: "licenseAccepted")
     @State private var showNoteSelectorView: Bool = false
     @State private var showFormatOptionsView: Bool = false
     @State private var showProgressWindow: Bool = false
@@ -165,7 +165,7 @@ struct AppleNotesExporterView: View {
                 Button {
                     showNoteSelectorView = true
                 } label: {
-                    Image(systemName: "pointer.arrow.rays")
+                    Image(systemName: "scope")
                     Text("Select")
                 }
             }
@@ -272,6 +272,12 @@ struct AppleNotesExporterView: View {
         }
         .frame(width: 500.0, height: 320.0)
         .padding(10.0)
+        .onAppear {
+            // If license was previously accepted, auto-load notes on launch
+            if sharedState.licenseAccepted && !showLicensePermissionsView {
+                sharedState.reload()
+            }
+        }
         .sheet(isPresented: $sharedState.showProgressWindow) {
             ExportView(
                 sharedState: sharedState

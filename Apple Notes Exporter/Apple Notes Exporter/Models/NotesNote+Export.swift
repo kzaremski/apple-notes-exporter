@@ -217,6 +217,15 @@ private struct HTMLToMarkdownConverter {
 
         var result = bodyContent
 
+        // Convert code blocks FIRST (before other transformations strip inner tags)
+        // Handles <pre> with optional style attributes (e.g. from Apple Notes monospaced blocks)
+        result = processCodeBlocks(result)
+
+        // Convert inline code
+        result = result.replacingOccurrences(of: "<code>([^<]*)</code>",
+                                            with: "`$1`",
+                                            options: .regularExpression)
+
         // Convert headings
         result = result.replacingOccurrences(of: "<h1>", with: "# ")
         result = result.replacingOccurrences(of: "</h1>", with: "\n")
@@ -276,6 +285,45 @@ private struct HTMLToMarkdownConverter {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Convert <pre> blocks (with optional style attributes) to Markdown fenced code blocks.
+    /// Apple Notes generates: <pre style='white-space: pre-wrap; font-family: monospace; ...'>content</pre>
+    private static func processCodeBlocks(_ html: String) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: "<pre[^>]*>(.*?)</pre>",
+            options: [.dotMatchesLineSeparators]
+        ) else {
+            return html
+        }
+
+        let nsString = html as NSString
+        let matches = regex.matches(in: html, options: [], range: NSRange(location: 0, length: nsString.length))
+
+        // Process matches in reverse order to preserve string indices
+        var result = html
+        for match in matches.reversed() {
+            guard let fullRange = Range(match.range, in: result),
+                  let contentRange = Range(match.range(at: 1), in: result) else {
+                continue
+            }
+
+            // Extract the code content, strip any inner HTML tags (like <br>, <b>, etc.)
+            var codeContent = String(result[contentRange])
+            // Convert <br> variants to newlines within code blocks
+            codeContent = codeContent.replacingOccurrences(of: "<br>", with: "\n")
+            codeContent = codeContent.replacingOccurrences(of: "<br/>", with: "\n")
+            codeContent = codeContent.replacingOccurrences(of: "<br />", with: "\n")
+            // Strip any remaining HTML tags inside the code block
+            codeContent = codeContent.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+
+            // Build the fenced code block
+            let fencedBlock = "\n```\n\(codeContent)\n```\n"
+
+            result.replaceSubrange(fullRange, with: fencedBlock)
+        }
+
+        return result
+    }
+
     private static func extractBodyContent(_ html: String) -> String? {
         guard let bodyStart = html.range(of: "<body>"),
               let bodyEnd = html.range(of: "</body>") else {
@@ -295,25 +343,38 @@ private struct HTMLToMarkdownConverter {
 
 private struct HTMLToRTFConverter {
     static func convert(_ html: String, fontFamily: String = "Helvetica", fontSize: Double = 12) -> String {
-        // Build RTF header with font table
+        // Build RTF header with font table and Unicode support
         let rtfHeader = """
-        {\\rtf1\\ansi\\deff0
+        {\\rtf1\\ansi\\ansicpg1252\\deff0
         {\\fonttbl{\\f0\\fnil \(fontFamily);}}
 
         """
         let rtfFooter = "\n}"
 
         guard let bodyContent = extractBodyContent(html) else {
-            return rtfHeader + escapeRTF(html) + rtfFooter
+            return rtfHeader + escapeRTFText(html) + rtfFooter
         }
 
-        var result = bodyContent
+        // IMPORTANT: We must escape text content BEFORE converting HTML tags to RTF codes.
+        // Otherwise escapeRTF would destroy the RTF control characters we insert.
+        // Strategy: first extract and protect HTML tags, escape the text between them,
+        // then convert HTML tags to RTF codes.
+
+        // Step 1: Escape text content between HTML tags (preserving the tags themselves)
+        var escaped = escapeTextBetweenTags(bodyContent)
+
+        // Step 2: Decode HTML entities (after escaping RTF special chars but before RTF conversion)
+        escaped = decodeHTMLEntities(escaped)
 
         // RTF uses half-points for font size (fs = fontSize * 2)
         let baseFontSize = Int(fontSize * 2)
         let h1FontSize = Int(fontSize * 2.67)  // ~32pt for 12pt base
         let h2FontSize = Int(fontSize * 2.33)  // ~28pt for 12pt base
         let h3FontSize = Int(fontSize * 2.0)   // ~24pt for 12pt base
+
+        var result = escaped
+
+        // Step 3: Convert HTML tags to RTF control codes (text is already escaped)
 
         // Convert headings (larger font size)
         result = result.replacingOccurrences(of: "<h1>", with: "{\\b\\fs\(h1FontSize) ")
@@ -326,8 +387,12 @@ private struct HTMLToRTFConverter {
         // Convert formatting
         result = result.replacingOccurrences(of: "<b>", with: "{\\b ")
         result = result.replacingOccurrences(of: "</b>", with: "}")
+        result = result.replacingOccurrences(of: "<strong>", with: "{\\b ")
+        result = result.replacingOccurrences(of: "</strong>", with: "}")
         result = result.replacingOccurrences(of: "<i>", with: "{\\i ")
         result = result.replacingOccurrences(of: "</i>", with: "}")
+        result = result.replacingOccurrences(of: "<em>", with: "{\\i ")
+        result = result.replacingOccurrences(of: "</em>", with: "}")
         result = result.replacingOccurrences(of: "<u>", with: "{\\ul ")
         result = result.replacingOccurrences(of: "</u>", with: "}")
         result = result.replacingOccurrences(of: "<s>", with: "{\\strike ")
@@ -351,8 +416,8 @@ private struct HTMLToRTFConverter {
         // Strip remaining HTML tags
         result = result.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
 
-        // Escape RTF special characters
-        result = escapeRTF(result)
+        // Step 4: Convert non-ASCII Unicode characters to RTF unicode escapes
+        result = encodeUnicode(result)
 
         // Apply default font and font size (RTF uses half-points)
         return rtfHeader + "\\f0\\fs\(baseFontSize) " + result + rtfFooter
@@ -366,11 +431,131 @@ private struct HTMLToRTFConverter {
         return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
     }
 
-    private static func escapeRTF(_ text: String) -> String {
+    /// Escape RTF special characters in plain text (not containing RTF codes)
+    private static func escapeRTFText(_ text: String) -> String {
         var result = text
         result = result.replacingOccurrences(of: "\\", with: "\\\\")
         result = result.replacingOccurrences(of: "{", with: "\\{")
         result = result.replacingOccurrences(of: "}", with: "\\}")
+        return encodeUnicode(result)
+    }
+
+    /// Escape RTF special characters only in text segments between HTML tags.
+    /// HTML tags themselves are preserved intact for later conversion to RTF codes.
+    private static func escapeTextBetweenTags(_ html: String) -> String {
+        var result = ""
+        var index = html.startIndex
+
+        while index < html.endIndex {
+            if html[index] == "<" {
+                // Find end of tag
+                if let tagEnd = html[index...].firstIndex(of: ">") {
+                    // Append the tag as-is (don't escape it)
+                    result.append(contentsOf: html[index...tagEnd])
+                    index = html.index(after: tagEnd)
+                } else {
+                    // Malformed tag, escape the < and continue
+                    result.append("\\<")
+                    index = html.index(after: index)
+                }
+            } else {
+                // Text content: escape RTF special characters
+                let ch = html[index]
+                switch ch {
+                case "\\":
+                    result.append("\\\\")
+                case "{":
+                    result.append("\\{")
+                case "}":
+                    result.append("\\}")
+                default:
+                    result.append(ch)
+                }
+                index = html.index(after: index)
+            }
+        }
+
+        return result
+    }
+
+    /// Decode common HTML entities to their character equivalents
+    private static func decodeHTMLEntities(_ text: String) -> String {
+        var result = text
+        result = result.replacingOccurrences(of: "&amp;", with: "&")
+        result = result.replacingOccurrences(of: "&lt;", with: "<")
+        result = result.replacingOccurrences(of: "&gt;", with: ">")
+        result = result.replacingOccurrences(of: "&quot;", with: "\"")
+        result = result.replacingOccurrences(of: "&#39;", with: "'")
+        result = result.replacingOccurrences(of: "&apos;", with: "'")
+        result = result.replacingOccurrences(of: "&nbsp;", with: " ")
+
+        // Decode numeric HTML entities (&#NNN; and &#xHHH;)
+        // Decimal entities
+        if let regex = try? NSRegularExpression(pattern: "&#(\\d+);", options: []) {
+            let nsString = result as NSString
+            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: nsString.length))
+            // Process in reverse to preserve string indices
+            for match in matches.reversed() {
+                if let codeRange = Range(match.range(at: 1), in: result),
+                   let codePoint = UInt32(result[codeRange]),
+                   let scalar = Unicode.Scalar(codePoint) {
+                    let replacement = String(Character(scalar))
+                    if let fullRange = Range(match.range, in: result) {
+                        result.replaceSubrange(fullRange, with: replacement)
+                    }
+                }
+            }
+        }
+
+        // Hex entities
+        if let regex = try? NSRegularExpression(pattern: "&#x([0-9a-fA-F]+);", options: []) {
+            let nsString = result as NSString
+            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: nsString.length))
+            for match in matches.reversed() {
+                if let codeRange = Range(match.range(at: 1), in: result),
+                   let codePoint = UInt32(result[codeRange], radix: 16),
+                   let scalar = Unicode.Scalar(codePoint) {
+                    let replacement = String(Character(scalar))
+                    if let fullRange = Range(match.range, in: result) {
+                        result.replaceSubrange(fullRange, with: replacement)
+                    }
+                }
+            }
+        }
+
+        return result
+    }
+
+    /// Convert non-ASCII Unicode characters to RTF unicode escape sequences (\uN?)
+    /// RTF format: \uN? where N is the signed 16-bit Unicode code point and ? is a
+    /// single-byte fallback character (we use '?' as the fallback).
+    /// Characters in the supplementary planes (above U+FFFF) are encoded as surrogate pairs.
+    private static func encodeUnicode(_ text: String) -> String {
+        var result = ""
+        result.reserveCapacity(text.count)
+
+        for scalar in text.unicodeScalars {
+            if scalar.value < 128 {
+                // ASCII - pass through directly
+                result.append(Character(scalar))
+            } else if scalar.value <= 0x7FFF {
+                // BMP character that fits in signed 16-bit positive
+                result.append("\\u\(scalar.value)?")
+            } else if scalar.value <= 0xFFFF {
+                // BMP character that needs signed 16-bit representation
+                // RTF uses signed Int16, so values > 32767 must be negative
+                let signedValue = Int16(bitPattern: UInt16(scalar.value))
+                result.append("\\u\(signedValue)?")
+            } else {
+                // Supplementary plane character - encode as UTF-16 surrogate pair
+                let high = 0xD800 + ((scalar.value - 0x10000) >> 10)
+                let low = 0xDC00 + ((scalar.value - 0x10000) & 0x3FF)
+                let highSigned = Int16(bitPattern: UInt16(high))
+                let lowSigned = Int16(bitPattern: UInt16(low))
+                result.append("\\u\(highSigned)?\\u\(lowSigned)?")
+            }
+        }
+
         return result
     }
 }
