@@ -1,7 +1,7 @@
 # apple-notes-exporter
 MacOS app written in Swift that bulk exports Apple Notes (including iCloud Notes) to a multitude of formats preserving note folder structure.
 
-![Screenshot of version 1.0 of the Apple Notes Exporter](screenshots/v1.0.png)
+![Screenshot of version 1.1 of the Apple Notes Exporter](screenshots/v1.1.png)
 
 ## Purpose & Rationale
 
@@ -70,10 +70,10 @@ This limitation is due to the database-driven approach used in version 1.0, whic
 ![Note Selection](screenshots/v1.0_selection.png)
 
 **Export Progress**
-![Export Progress](screenshots/v1.0_export_progress.png)
+![Export Progress](screenshots/v1.1_export_progress.png)
 
 **Export Complete**
-![Export Complete](screenshots/v1.0_export_done.png)
+![Export Complete](screenshots/v1.1_export_done.png)
 
 **Detailed Export Log**
 ![Export Log](screenshots/v1.0_export_log.png)

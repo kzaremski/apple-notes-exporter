@@ -32,8 +32,8 @@
 		981EF032D162367F78219491 /* NotesNote+Export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */; };
 		A4F0225E1D3DAA18CE0DE934 /* NotesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */; };
 		A763A884FDDA01ABEE1BEE17 /* ExportConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83A62FC148D1934031FD191 /* ExportConfiguration.swift */; };
-		B2D4E9A1F3C8A7B5D6E0F123 /* SyncManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A3F7B2E4C9D8A6F5B0E234 /* SyncManifest.swift */; };
 		A8F32496C70C760F63A553A8 /* ExportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF86799EAEEA063229FD0106 /* ExportViewModel.swift */; };
+		B2D4E9A1F3C8A7B5D6E0F123 /* SyncManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A3F7B2E4C9D8A6F5B0E234 /* SyncManifest.swift */; };
 		CD247032451BCF2264B446AC /* FormatOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F873000AF0346FE18B1971CF /* FormatOptionsView.swift */; };
 		F6A42B2B6E8AFF8161AA22CE /* HTMLAttachmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E296FC967ECC48BECE58F68 /* HTMLAttachmentProcessor.swift */; };
 /* End PBXBuildFile section */
@@ -612,13 +612,14 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter/Apple_Notes_Exporter.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
-				DEVELOPMENT_TEAM = Q7TB7B38LW;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = Q7TB7B38LW;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
