@@ -156,7 +156,7 @@ struct AppleNotesExporterView: View {
     @AppStorage("outputPath") private var outputPath: String = ""
     @State private var outputURL: URL? = nil
     // Show/hide different views
-    @State private var showLicensePermissionsView: Bool = !UserDefaults.standard.bool(forKey: "licenseAccepted")
+    @State private var showLicensePermissionsView: Bool = !UserDefaults.standard.bool(forKey: "licenseAcceptedGPLv3")
     @State private var showNoteSelectorView: Bool = false
     @State private var showFormatOptionsView: Bool = false
     @State private var showProgressWindow: Bool = false
@@ -402,7 +402,7 @@ struct AppleNotesExporterView: View {
             .buttonStyle(BorderedProminentButtonStyle())
             .onReceive(syncTimer) { now = $0 }
             
-            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2026 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
+            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2026 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [GNU GPL v3](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)

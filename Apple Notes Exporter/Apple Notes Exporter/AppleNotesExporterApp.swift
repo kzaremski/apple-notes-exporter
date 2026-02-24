@@ -79,7 +79,7 @@ class AppleNotesExporterState: ObservableObject {
     @Published var exportDone: Bool = false
     @Published var selectedNotesCount: Int = 0
     @Published var fromAccountsCount: Int = 0
-    @Published var licenseAccepted: Bool = UserDefaults.standard.bool(forKey: "licenseAccepted")
+    @Published var licenseAccepted: Bool = UserDefaults.standard.bool(forKey: "licenseAcceptedGPLv3")
 
     // Action triggers (set from menu commands, observed by view)
     @Published var triggerSelectNotes: Bool = false
