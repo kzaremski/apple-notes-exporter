@@ -90,4 +90,4 @@ When filing an issue, it helps to include:
 
 ## License
 
-By contributing you agree that your work will be licensed under the project's [MIT License](LICENSE).
+By contributing you agree that your work will be licensed under the project's [GNU General Public License v3.0](LICENSE).

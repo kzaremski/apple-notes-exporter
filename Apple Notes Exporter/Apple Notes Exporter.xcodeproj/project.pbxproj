@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AAAA000000000002LICENSES /* Licenses in Resources */ = {isa = PBXBuildFile; fileRef = AAAA000000000001LICENSES /* Licenses */; };
 		1C4D45247207F83682A109C7 /* ExportLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B94ED64713116D6A12BAFA /* ExportLogView.swift */; };
 		2519EE842E3AEA7200CC5D3C /* LicensePermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */; };
 		2519EE892E3BD57E00CC5D3C /* FullDiskAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE882E3BD57E00CC5D3C /* FullDiskAccess */; };
@@ -102,6 +103,7 @@
 		D1A3F7B2E4C9D8A6F5B0E234 /* SyncManifest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SyncManifest.swift; path = Models/SyncManifest.swift; sourceTree = "<group>"; };
 		DF86799EAEEA063229FD0106 /* ExportViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExportViewModel.swift; path = ViewModels/ExportViewModel.swift; sourceTree = "<group>"; };
 		F873000AF0346FE18B1971CF /* FormatOptionsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FormatOptionsView.swift; sourceTree = "<group>"; };
+		AAAA000000000001LICENSES /* Licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Licenses; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -175,6 +177,7 @@
 				258D3A9629A7CC2F00858CE1 /* Assets.xcassets */,
 				258D3A9B29A7CC2F00858CE1 /* Apple_Notes_Exporter.entitlements */,
 				258D3A9829A7CC2F00858CE1 /* Preview Content */,
+				AAAA000000000001LICENSES /* Licenses */,
 				257242452BF18F7700BD9A67 /* utilities.swift */,
 				257E911E2BF26FC10052606E /* ExportView.swift */,
 				257E91202BF26FD30052606E /* NoteSelectorView.swift */,
@@ -368,6 +371,7 @@
 			files = (
 				258D3A9A29A7CC2F00858CE1 /* Preview Assets.xcassets in Resources */,
 				258D3A9729A7CC2F00858CE1 /* Assets.xcassets in Resources */,
+				AAAA000000000002LICENSES /* Licenses in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -576,7 +580,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = Q7TB7B38LW;
@@ -587,7 +591,7 @@
 				INFOPLIST_FILE = "Apple-Notes-Exporter-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Apple Notes Exporter";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Konstantin Zaremski. Licensed under GPL v3.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -615,7 +619,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
@@ -627,7 +631,7 @@
 				INFOPLIST_FILE = "Apple-Notes-Exporter-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Apple Notes Exporter";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Konstantin Zaremski. Licensed under GPL v3.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

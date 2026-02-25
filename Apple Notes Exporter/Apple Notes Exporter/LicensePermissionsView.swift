@@ -2,7 +2,20 @@
 //  LicensePermissionsView.swift
 //  Apple Notes Exporter
 //
-//  Created by Konstantin Zaremski on 7/30/25.
+//  Copyright (C) 2026 Konstantin Zaremski
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 import SwiftUI
@@ -96,24 +109,23 @@ struct LicensePermissionsView: View {
             VStack {
                 ScrollView {
                     VStack{
-                        //Text("MIT License")
-                        //    .padding(.bottom, 5)
-                        //    .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Apple Notes Exporter").font(.title2).multilineTextAlignment(.leading).lineLimit(1)
+                        Text("GNU General Public License v3.0").font(.title2).multilineTextAlignment(.leading).lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Apple Notes Exporter")
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text("Copyright © 2026 Konstantin Zaremski")
                             .padding(.bottom, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:")
+                        Text("This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.")
                             .padding(.bottom, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.")
-                            .padding(.bottom, 5)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.")
+                        Text("This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.")
                             .padding(.bottom, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .foregroundColor(.red)
+                        Text("You should have received a copy of the GNU General Public License along with this program. If not, see https://www.gnu.org/licenses/.")
+                            .padding(.bottom, 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         
                         
                         Divider()
@@ -121,22 +133,74 @@ struct LicensePermissionsView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.bottom, 5)
 
-                        Text("This software uses the following open-source libraries:")
+                        Text("This software uses the following open-source libraries. Full license texts are bundled with the application.")
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.bottom, 5)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Link("FullDiskAccess - MIT License", destination: URL(string: "https://github.com/inket/FullDiskAccess/blob/main/LICENSE")!)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .pointerOnHover()
-
-                            Link("swift-html-to-pdf - Apache 2.0 License", destination: URL(string: "https://github.com/coenttb/swift-html-to-pdf/blob/main/LICENCE")!)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .pointerOnHover()
-
-                            Link("SwiftProtobuf - Apache 2.0 License", destination: URL(string: "https://github.com/apple/swift-protobuf/blob/main/LICENSE.txt")!)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .pointerOnHover()
+                        VStack(alignment: .leading, spacing: 8) {
+                            LicenseEntryView(
+                                name: "FullDiskAccess",
+                                licenseType: "MIT License",
+                                copyright: "Copyright (c) 2024 Mahdi Bchatnia",
+                                url: "https://github.com/inket/FullDiskAccess",
+                                filename: "FullDiskAccess-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-html-to-pdf",
+                                licenseType: "Apache 2.0 License (with Runtime Library Exception)",
+                                copyright: "Copyright coenttb",
+                                url: "https://github.com/coenttb/swift-html-to-pdf",
+                                filename: "swift-html-to-pdf-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "SwiftProtobuf",
+                                licenseType: "Apache 2.0 License (with Runtime Library Exception)",
+                                copyright: "Copyright 2008 Google Inc.",
+                                url: "https://github.com/apple/swift-protobuf",
+                                filename: "SwiftProtobuf-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "combine-schedulers",
+                                licenseType: "MIT License",
+                                copyright: "Copyright (c) 2020 Point-Free, Inc.",
+                                url: "https://github.com/pointfreeco/combine-schedulers",
+                                filename: "combine-schedulers-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-clocks",
+                                licenseType: "MIT License",
+                                copyright: "Copyright (c) 2022 Point-Free",
+                                url: "https://github.com/pointfreeco/swift-clocks",
+                                filename: "swift-clocks-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-concurrency-extras",
+                                licenseType: "MIT License",
+                                copyright: "Copyright (c) 2023 Point-Free",
+                                url: "https://github.com/pointfreeco/swift-concurrency-extras",
+                                filename: "swift-concurrency-extras-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-dependencies",
+                                licenseType: "MIT License",
+                                copyright: "Copyright (c) 2022 Point-Free, Inc.",
+                                url: "https://github.com/pointfreeco/swift-dependencies",
+                                filename: "swift-dependencies-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-syntax",
+                                licenseType: "Apache 2.0 License (with Runtime Library Exception)",
+                                copyright: "Copyright (c) 2014-2023 Apple Inc. and the Swift project authors",
+                                url: "https://github.com/swiftlang/swift-syntax",
+                                filename: "swift-syntax-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "xctest-dynamic-overlay",
+                                licenseType: "MIT License",
+                                copyright: "Copyright (c) 2021 Point-Free, Inc.",
+                                url: "https://github.com/pointfreeco/xctest-dynamic-overlay",
+                                filename: "xctest-dynamic-overlay-LICENSE"
+                            )
                         }
 
                         Divider()
@@ -146,13 +210,19 @@ struct LicensePermissionsView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.bottom, 5)
 
-                        Text("This project benefited from the groundwork and research done by threeplanetssoftware on Apple Notes protobuf formats and database parsing.")
+                        Text("This project's protobuf schema for Apple Notes is based on the groundwork and research done by threeplanetssoftware.")
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.bottom, 5)
 
-                        Link("apple_cloud_notes_parser by threeplanetssoftware", destination: URL(string: "https://github.com/threeplanetssoftware/apple_cloud_notes_parser")!)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .pointerOnHover()
+                        VStack(alignment: .leading, spacing: 8) {
+                            LicenseEntryView(
+                                name: "apple_cloud_notes_parser",
+                                licenseType: "MIT License",
+                                copyright: "Copyright (c) 2019 Three Planets Software",
+                                url: "https://github.com/threeplanetssoftware/apple_cloud_notes_parser",
+                                filename: "threeplanetssoftware-LICENSE"
+                            )
+                        }
                     }
                     .padding(10)
                 }
@@ -207,7 +277,7 @@ struct LicensePermissionsView: View {
                 Button {
                     // Mark license as accepted and persist to UserDefaults
                     sharedState.licenseAccepted = true
-                    UserDefaults.standard.set(true, forKey: "licenseAccepted")
+                    UserDefaults.standard.set(true, forKey: "licenseAcceptedGPLv3")
                     // Start loading immediately before dismissing
                     sharedState.reload()
                     showLicensePermissionsView = false
@@ -226,5 +296,58 @@ struct LicensePermissionsView: View {
         .onDisappear {
             permissionCheckTimer?.invalidate()
         }
+    }
+}
+
+/// A reusable view for displaying a third-party license entry with expandable full text
+struct LicenseEntryView: View {
+    let name: String
+    let licenseType: String
+    let copyright: String
+    let url: String
+    let filename: String
+
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button(action: { expanded.toggle() }) {
+                HStack {
+                    Text(expanded ? "▼" : "▶").font(.caption).frame(width: 12)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(name) — \(licenseType)").font(.body).bold()
+                        Text(copyright).font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointerOnHover()
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    Link("View on GitHub", destination: URL(string: url)!)
+                        .font(.caption)
+                        .pointerOnHover()
+
+                    if let path = Bundle.main.path(forResource: filename, ofType: "txt", inDirectory: "Licenses"),
+                       let text = try? String(contentsOfFile: path, encoding: .utf8) {
+                        Text(text)
+                            .font(.system(size: 9, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(6)
+                            .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+                            .cornerRadius(4)
+                    } else {
+                        Text("License text bundled as \(filename).txt")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.leading, 14)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -1,8 +1,21 @@
 //
-//  ContentView.swift
+//  AppleNotesExporterView.swift
 //  Apple Notes Exporter
 //
-//  Created by Konstantin Zaremski on 2/23/23.
+//  Copyright (C) 2026 Konstantin Zaremski
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 import SwiftUI
@@ -143,7 +156,7 @@ struct AppleNotesExporterView: View {
     @AppStorage("outputPath") private var outputPath: String = ""
     @State private var outputURL: URL? = nil
     // Show/hide different views
-    @State private var showLicensePermissionsView: Bool = !UserDefaults.standard.bool(forKey: "licenseAccepted")
+    @State private var showLicensePermissionsView: Bool = !UserDefaults.standard.bool(forKey: "licenseAcceptedGPLv3")
     @State private var showNoteSelectorView: Bool = false
     @State private var showFormatOptionsView: Bool = false
     @State private var showProgressWindow: Bool = false
@@ -389,7 +402,7 @@ struct AppleNotesExporterView: View {
             .buttonStyle(BorderedProminentButtonStyle())
             .onReceive(syncTimer) { now = $0 }
             
-            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2026 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [MIT License](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
+            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2026 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [GNU GPL v3](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
