@@ -337,7 +337,7 @@ struct LicenseEntryView: View {
                             .font(.system(size: 9, design: .monospaced))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(6)
-                            .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+                            .background(SwiftUI.Color.gray.opacity(0.15))
                             .cornerRadius(4)
                     } else {
                         Text("License text bundled as \(filename).txt")

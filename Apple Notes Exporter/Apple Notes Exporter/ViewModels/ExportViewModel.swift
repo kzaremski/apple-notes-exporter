@@ -22,7 +22,6 @@ import Foundation
 import SwiftUI
 import OSLog
 import HtmlToPdf
-import SQLite3
 
 // MARK: - Export Errors
 
@@ -1110,19 +1109,21 @@ class ExportViewModel: ObservableObject {
 
         // Only process attachments if we have a database connection and attachments to process
         if !note.attachments.isEmpty {
-            // Open database connection for attachment processing
-            var db: OpaquePointer?
-            if sqlite3_open(databasePath, &db) == SQLITE_OK, let database = db {
-                let processor = HTMLAttachmentProcessor(database: database)
-                processedHTML = processor.processHTML(
-                    html: htmlBody,
-                    attachments: note.attachments,
-                    attachmentPaths: attachmentPaths,
-                    exportDirectory: exportDirectory?.path,
-                    embedImages: htmlConfig.embedImagesInline,
-                    linkEmbeddedImages: htmlConfig.linkEmbeddedImages
-                )
-                sqlite3_close(database)
+            // Open a C parser handle and extract the sqlite3 pointer for HTMLAttachmentProcessor
+            if let parserHandle = ane_open(databasePath) {
+                defer { ane_close(parserHandle) }
+                if let rawHandle = ane_get_sqlite_handle(parserHandle) {
+                    let database = OpaquePointer(rawHandle)
+                    let processor = HTMLAttachmentProcessor(database: database)
+                    processedHTML = processor.processHTML(
+                        html: htmlBody,
+                        attachments: note.attachments,
+                        attachmentPaths: attachmentPaths,
+                        exportDirectory: exportDirectory?.path,
+                        embedImages: htmlConfig.embedImagesInline,
+                        linkEmbeddedImages: htmlConfig.linkEmbeddedImages
+                    )
+                }
             }
         }
 

@@ -1,4 +1,15 @@
 # Apple Notes Exporter (apple-notes-exporter)
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![macOS 11.0+](https://img.shields.io/badge/macOS-11.0%2B-brightgreen.svg)](https://www.apple.com/macos/)
+[![Latest Release](https://img.shields.io/github/v/release/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/kzaremski/apple-notes-exporter/total)](https://github.com/kzaremski/apple-notes-exporter/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter/stargazers)
+[![GitHub Issues](https://img.shields.io/github/issues/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter/commits/main)
+[![Code Size](https://img.shields.io/github/languages/code-size/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter)
+[![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](https://swift.org/)
+
 MacOS app written in Swift that bulk exports Apple Notes (including iCloud Notes) to a multitude of formats preserving note folder structure.
 
 ![Screenshot of version 1.1 of the Apple Notes Exporter](screenshots/v1.1.png)
