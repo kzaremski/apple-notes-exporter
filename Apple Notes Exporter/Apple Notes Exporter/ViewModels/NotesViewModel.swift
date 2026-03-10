@@ -22,14 +22,6 @@ import Foundation
 import SwiftUI
 import OSLog
 
-// MARK: - Sort Options
-
-enum NoteSortOption: String, CaseIterable {
-    case name = "Name"
-    case dateModified = "Date Modified"
-    case dateCreated = "Date Created"
-}
-
 // MARK: - Notes ViewModel
 
 @MainActor

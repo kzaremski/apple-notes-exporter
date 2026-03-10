@@ -20,6 +20,14 @@
 
 import Foundation
 
+// MARK: - Sort Options
+
+enum NoteSortOption: String, CaseIterable {
+    case name = "Name"
+    case dateModified = "Date Modified"
+    case dateCreated = "Date Created"
+}
+
 // MARK: - Base Protocol
 
 /// Base protocol for all Notes items (accounts, folders, notes, attachments)
