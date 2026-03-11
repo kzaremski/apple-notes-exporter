@@ -449,7 +449,7 @@ static void _prepare_statements(ane_db *db)
         /* iOS 11: three-table join via Z_11NOTES */
         snprintf(sql, sizeof(sql),
             "SELECT  ZICCLOUDSYNCINGOBJECT.Z_PK, "
-            "ZICCLOUDSYNCINGOBJECT.%s AS TITLE, "
+            "%s AS TITLE, "
             "ZICCLOUDSYNCINGOBJECT.%s AS CREATION_DATE, "
             "ZICCLOUDSYNCINGOBJECT.%s AS MODIFICATION_DATE, "
             "Z_11NOTES.Z_11FOLDERS AS FOLDER_ID, "
@@ -468,7 +468,7 @@ static void _prepare_statements(ane_db *db)
     } else {
         /* iOS 12+: standard two-table join */
         snprintf(sql, sizeof(sql),
-            "SELECT  note.Z_PK, note.%s AS TITLE, "
+            "SELECT  note.Z_PK, %s AS TITLE, "
             "note.%s AS CREATION_DATE, "
             "note.%s AS MODIFICATION_DATE, "
             "note.%s AS FOLDER_ID, "
@@ -492,7 +492,7 @@ static void _prepare_statements(ane_db *db)
     /* STMT_NOTES_RANGE -- date-filtered variant (modern only, not iOS 11) */
     if (!is_ios11) {
         snprintf(sql, sizeof(sql),
-            "SELECT  note.Z_PK, note.%s AS TITLE, "
+            "SELECT  note.Z_PK, %s AS TITLE, "
             "note.%s AS CREATION_DATE, "
             "note.%s AS MODIFICATION_DATE, "
             "note.%s AS FOLDER_ID, "
@@ -821,8 +821,13 @@ static const char *_resolve_folder_account_col(const ane_db *db)
 
 static const char *_resolve_title_col(const ane_db *db)
 {
-    if (_has_column(db, "ZTITLE2"))    return "ZTITLE2";
-    if (_has_column(db, "ZTITLE1"))    return "ZTITLE1";
+    int has2 = _has_column(db, "ZTITLE2");
+    int has1 = _has_column(db, "ZTITLE1");
+    /* Use COALESCE so handwriting-recognized titles stored in ZTITLE1 are picked up
+     * even when the schema also has ZTITLE2 (which is NULL for handwritten notes). */
+    if (has2 && has1) return "COALESCE(ZTITLE2, ZTITLE1, ZTITLE)";
+    if (has2)         return "COALESCE(ZTITLE2, ZTITLE)";
+    if (has1)         return "COALESCE(ZTITLE1, ZTITLE)";
     return "ZTITLE";
 }
 

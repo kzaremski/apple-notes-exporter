@@ -198,7 +198,23 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
 
                 for i in 0..<count {
                     let n = raw[i]
-                    let title = n.title != nil ? String(cString: n.title) : "Untitled"
+
+                    // Title: COALESCE(ZTITLE2, ZTITLE1, ZTITLE) in the SQL covers typed and
+                    // handwriting-recognized notes; fall back to creation date for pure ink
+                    // drawings where all three title columns are NULL.
+                    let title: String
+                    if let ptr = n.title {
+                        let t = String(cString: ptr).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if t.isEmpty {
+                            let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
+                            title = df.string(from: Date(timeIntervalSinceReferenceDate: n.creation_date))
+                        } else {
+                            title = t
+                        }
+                    } else {
+                        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
+                        title = df.string(from: Date(timeIntervalSinceReferenceDate: n.creation_date))
+                    }
 
                     // Convert CoreTime dates to Swift Date
                     // CoreTime is seconds since 2001-01-01, Date(timeIntervalSinceReferenceDate:) uses the same epoch
@@ -407,6 +423,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
             foldersOnTop: foldersOnTop
         )
     }
+
 }
 
 // MARK: - Mock Implementation (for testing/previews)
