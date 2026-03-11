@@ -36,25 +36,6 @@ enum ExportError: Error, LocalizedError {
     }
 }
 
-// MARK: - Sync Manifest Actor
-
-/// Thread-safe wrapper for SyncManifest mutations during concurrent export
-actor SyncManifestTracker {
-    private var manifest: SyncManifest
-
-    init(manifest: SyncManifest) {
-        self.manifest = manifest
-    }
-
-    func recordExport(noteId: String, modificationDate: Date, exportedPath: String, attachmentPaths: [String] = []) {
-        manifest.recordExport(noteId: noteId, modificationDate: modificationDate, exportedPath: exportedPath, attachmentPaths: attachmentPaths)
-    }
-
-    func getManifest() -> SyncManifest {
-        return manifest
-    }
-}
-
 // MARK: - Export Progress
 
 struct ExportProgress: Equatable {
@@ -64,31 +45,6 @@ struct ExportProgress: Equatable {
     var percentage: Double {
         guard total > 0 else { return 0 }
         return Double(current) / Double(total)
-    }
-}
-
-// MARK: - Progress Tracker Actor
-
-actor ExportProgressTracker {
-    private var completedCount: Int = 0
-    private var failedNotesCount: Int = 0
-    private var failedAttachmentsCount: Int = 0
-
-    func noteCompleted() -> Int {
-        completedCount += 1
-        return completedCount
-    }
-
-    func noteFailed() {
-        failedNotesCount += 1
-    }
-
-    func attachmentFailed() {
-        failedAttachmentsCount += 1
-    }
-
-    func getStats() -> (completed: Int, failedNotes: Int, failedAttachments: Int) {
-        return (completedCount, failedNotesCount, failedAttachmentsCount)
     }
 }
 
@@ -1378,36 +1334,3 @@ class ExportViewModel: ObservableObject {
     }
 }
 
-// MARK: - String Extensions for Escaping
-
-extension String {
-    var htmlEscaped: String {
-        self
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&#39;")
-    }
-
-    var rtfEscaped: String {
-        self
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "{", with: "\\{")
-            .replacingOccurrences(of: "}", with: "\\}")
-    }
-
-    var texEscaped: String {
-        self
-            .replacingOccurrences(of: "\\", with: "\\textbackslash{}")
-            .replacingOccurrences(of: "&", with: "\\&")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "$", with: "\\$")
-            .replacingOccurrences(of: "#", with: "\\#")
-            .replacingOccurrences(of: "_", with: "\\_")
-            .replacingOccurrences(of: "{", with: "\\{")
-            .replacingOccurrences(of: "}", with: "\\}")
-            .replacingOccurrences(of: "~", with: "\\textasciitilde{}")
-            .replacingOccurrences(of: "^", with: "\\textasciicircum{}")
-    }
-}

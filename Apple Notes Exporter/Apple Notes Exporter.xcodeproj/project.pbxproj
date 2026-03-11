@@ -14,6 +14,9 @@
 		2519EE892E3BD57E00CC5D3C /* FullDiskAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE882E3BD57E00CC5D3C /* FullDiskAccess */; };
 		2519EE8B2E3BDE5E00CC5D3C /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE8A2E3BDE5E00CC5D3C /* HtmlToPdf */; };
 		257242462BF18F7700BD9A67 /* utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242452BF18F7700BD9A67 /* utilities.swift */; };
+		EE000000000000000100SUPP /* ExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000XSUPP /* ExportSupport.swift */; };
+		EE000000000000000101SUPP /* ExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000XSUPP /* ExportSupport.swift */; };
+		EE000000000000000102SUPP /* ExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000XSUPP /* ExportSupport.swift */; };
 		257E911F2BF26FC10052606E /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257E911E2BF26FC10052606E /* ExportView.swift */; };
 		257E91212BF26FD30052606E /* NoteSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257E91202BF26FD30052606E /* NoteSelectorView.swift */; };
 		258D3A9329A7CC2E00858CE1 /* AppleNotesExporterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258D3A9229A7CC2E00858CE1 /* AppleNotesExporterApp.swift */; };
@@ -35,10 +38,54 @@
 		A8F32496C70C760F63A553A8 /* ExportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF86799EAEEA063229FD0106 /* ExportViewModel.swift */; };
 		AAAA000000000002LICENSES /* Licenses in Resources */ = {isa = PBXBuildFile; fileRef = AAAA000000000001LICENSES /* Licenses */; };
 		B2D4E9A1F3C8A7B5D6E0F123 /* SyncManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A3F7B2E4C9D8A6F5B0E234 /* SyncManifest.swift */; };
+		BB000000000000000001MAIN /* NotesExportCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000001MAIN /* NotesExportCLI.swift */; };
+		BB000000000000000002ENGN /* CLIExportEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000002ENGN /* CLIExportEngine.swift */; };
+		BB000000000000000003OUTP /* CLIOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000003OUTP /* CLIOutput.swift */; };
+		BB000000000000000004ERRO /* CLIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000004ERRO /* CLIError.swift */; };
+		BB000000000000000005LACC /* ListAccountsCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000005LACC /* ListAccountsCommand.swift */; };
+		BB000000000000000006LFLD /* ListFoldersCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000006LFLD /* ListFoldersCommand.swift */; };
+		BB000000000000000007LNOT /* ListNotesCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000007LNOT /* ListNotesCommand.swift */; };
+		BB000000000000000008EXPC /* ExportCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000008EXPC /* ExportCommand.swift */; };
+		BB000000000000000009KITC /* AppleNotesKit.c in Sources */ = {isa = PBXBuildFile; fileRef = 2508168E2F527B6400CD5778 /* AppleNotesKit.c */; };
+		BB000000000000000009SYNC /* SyncStatusCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000009SYNC /* SyncStatusCommand.swift */; };
+		BB00000000000000000AMODS /* NotesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 213C2B20532A819D34D10996 /* NotesModels.swift */; };
+		BB00000000000000000BREPO /* NotesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112D188009F1E92C1561588B /* NotesRepository.swift */; };
+		BB00000000000000000CCFGR /* ExportConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83A62FC148D1934031FD191 /* ExportConfiguration.swift */; };
+		BB00000000000000000DSYNC /* SyncManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A3F7B2E4C9D8A6F5B0E234 /* SyncManifest.swift */; };
+		BB00000000000000000EHTMG /* NoteHTMLGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBB000000000001HTMLGEN /* NoteHTMLGenerator.swift */; };
+		BB00000000000000000FDATC /* Data+Compression.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCC000000000001DATCMP /* Data+Compression.swift */; };
+		BB00000000000000000GPBSW /* notestore.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A01F0A2E8F3EEF00C7D9FA /* notestore.pb.swift */; };
+		BB00000000000000000HHTML /* HTMLAttachmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E296FC967ECC48BECE58F68 /* HTMLAttachmentProcessor.swift */; };
+		BB00000000000000000ITABL /* TableParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A703BDEDC79C3484E6F80575 /* TableParser.swift */; };
+		BB00000000000000000JNOTE /* NotesNote+Export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */; };
+		BB00000000000000000KSQLT /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 250816952F527BBB00CD5778 /* libsqlite3.tbd */; };
+		BB00000000000000000LZLIB /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 25A01F112E8F3FBE00C7D9FA /* libz.tbd */; };
+		BB00000000000000000MSPRT /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000002SPDP /* SwiftProtobuf */; };
+		BB00000000000000000NAPAR /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000001APDP /* ArgumentParser */; };
+		BB00000000000000002MSVR /* NotesMCPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000002MSVR /* NotesMCPServer.swift */; };
+		BB00000000000000003MHND /* MCPToolHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000003MHND /* MCPToolHandlers.swift */; };
 		BBBB000000000002HTMLGEN /* NoteHTMLGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBB000000000001HTMLGEN /* NoteHTMLGenerator.swift */; };
 		CCCC000000000002DATCMP /* Data+Compression.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCC000000000001DATCMP /* Data+Compression.swift */; };
 		CD247032451BCF2264B446AC /* FormatOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F873000AF0346FE18B1971CF /* FormatOptionsView.swift */; };
 		F6A42B2B6E8AFF8161AA22CE /* HTMLAttachmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E296FC967ECC48BECE58F68 /* HTMLAttachmentProcessor.swift */; };
+		MC000000000000000001KITC /* AppleNotesKit.c in Sources */ = {isa = PBXBuildFile; fileRef = 2508168E2F527B6400CD5778 /* AppleNotesKit.c */; };
+		MC000000000000000002MODS /* NotesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 213C2B20532A819D34D10996 /* NotesModels.swift */; };
+		MC000000000000000003REPO /* NotesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112D188009F1E92C1561588B /* NotesRepository.swift */; };
+		MC000000000000000004CFGR /* ExportConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83A62FC148D1934031FD191 /* ExportConfiguration.swift */; };
+		MC000000000000000005SYNC /* SyncManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A3F7B2E4C9D8A6F5B0E234 /* SyncManifest.swift */; };
+		MC000000000000000006HTMG /* NoteHTMLGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBB000000000001HTMLGEN /* NoteHTMLGenerator.swift */; };
+		MC000000000000000007DATC /* Data+Compression.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCC000000000001DATCMP /* Data+Compression.swift */; };
+		MC000000000000000008PBSW /* notestore.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A01F0A2E8F3EEF00C7D9FA /* notestore.pb.swift */; };
+		MC000000000000000009HTML /* HTMLAttachmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E296FC967ECC48BECE58F68 /* HTMLAttachmentProcessor.swift */; };
+		MC00000000000000000ATABL /* TableParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A703BDEDC79C3484E6F80575 /* TableParser.swift */; };
+		MC00000000000000000BNOTE /* NotesNote+Export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */; };
+		MC00000000000000000CENGN /* CLIExportEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000002ENGN /* CLIExportEngine.swift */; };
+		MC00000000000000000DOUTP /* CLIOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000003OUTP /* CLIOutput.swift */; };
+		MC00000000000000000EERRO /* CLIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000004ERRO /* CLIError.swift */; };
+		MC00000000000000000FSQLT /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 250816952F527BBB00CD5778 /* libsqlite3.tbd */; };
+		MC00000000000000000GZLIB /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 25A01F112E8F3FBE00C7D9FA /* libz.tbd */; };
+		MC00000000000000000HSPRT /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000006SPDP /* SwiftProtobuf */; };
+		MC00000000000000000IMCPP /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000005APDP /* MCP */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -82,6 +129,7 @@
 		250816952F527BBB00CD5778 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensePermissionsView.swift; sourceTree = "<group>"; };
 		257242452BF18F7700BD9A67 /* utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = utilities.swift; sourceTree = "<group>"; };
+		EE00000000000000000XSUPP /* ExportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSupport.swift; sourceTree = "<group>"; };
 		257E911E2BF26FC10052606E /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
 		257E91202BF26FD30052606E /* NoteSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteSelectorView.swift; sourceTree = "<group>"; };
 		258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Apple Notes Exporter.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -102,6 +150,21 @@
 		4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "NotesNote+Export.swift"; path = "Models/NotesNote+Export.swift"; sourceTree = "<group>"; };
 		5E296FC967ECC48BECE58F68 /* HTMLAttachmentProcessor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HTMLAttachmentProcessor.swift; sourceTree = "<group>"; };
 		A703BDEDC79C3484E6F80575 /* TableParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TableParser.swift; sourceTree = "<group>"; };
+		AA000000000000000001MAIN /* NotesExportCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesExportCLI.swift; sourceTree = "<group>"; };
+		AA000000000000000002ENGN /* CLIExportEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIExportEngine.swift; sourceTree = "<group>"; };
+		AA000000000000000003OUTP /* CLIOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIOutput.swift; sourceTree = "<group>"; };
+		AA000000000000000004ERRO /* CLIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIError.swift; sourceTree = "<group>"; };
+		AA000000000000000005LACC /* ListAccountsCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListAccountsCommand.swift; sourceTree = "<group>"; };
+		AA000000000000000006LFLD /* ListFoldersCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListFoldersCommand.swift; sourceTree = "<group>"; };
+		AA000000000000000007LNOT /* ListNotesCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListNotesCommand.swift; sourceTree = "<group>"; };
+		AA000000000000000008EXPC /* ExportCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportCommand.swift; sourceTree = "<group>"; };
+		AA000000000000000009ENTI /* AppleNotesExporterCLI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppleNotesExporterCLI.entitlements; sourceTree = "<group>"; };
+		AA000000000000000009SYNC /* SyncStatusCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusCommand.swift; sourceTree = "<group>"; };
+		AA00000000000000000APROD /* notes-export */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "notes-export"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA00000000000000001MPROD /* notes-export-mcp */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "notes-export-mcp"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA00000000000000002MSVR /* NotesMCPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesMCPServer.swift; sourceTree = "<group>"; };
+		AA00000000000000003MHND /* MCPToolHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPToolHandlers.swift; sourceTree = "<group>"; };
+		AA00000000000000004MENT /* AppleNotesExporterMCP.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppleNotesExporterMCP.entitlements; sourceTree = "<group>"; };
 		AAAA000000000001LICENSES /* Licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Licenses; sourceTree = "<group>"; };
 		B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotesViewModel.swift; path = ViewModels/NotesViewModel.swift; sourceTree = "<group>"; };
 		BBBB000000000001HTMLGEN /* NoteHTMLGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteHTMLGenerator.swift; sourceTree = "<group>"; };
@@ -139,6 +202,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CC000000000000000002FRMS /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB00000000000000000KSQLT /* libsqlite3.tbd in Frameworks */,
+				BB00000000000000000LZLIB /* libz.tbd in Frameworks */,
+				BB00000000000000000MSPRT /* SwiftProtobuf in Frameworks */,
+				BB00000000000000000NAPAR /* ArgumentParser in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CC000000000000000004FRMS /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				MC00000000000000000FSQLT /* libsqlite3.tbd in Frameworks */,
+				MC00000000000000000GZLIB /* libz.tbd in Frameworks */,
+				MC00000000000000000HSPRT /* SwiftProtobuf in Frameworks */,
+				MC00000000000000000IMCPP /* MCP in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -165,6 +250,8 @@
 			isa = PBXGroup;
 			children = (
 				258D3A9129A7CC2E00858CE1 /* Apple Notes Exporter */,
+				DD000000000000000001CGRP /* Apple Notes Exporter CLI */,
+				DD000000000000000003MCPG /* Apple Notes Exporter MCP */,
 				258D3AA329A7CC2F00858CE1 /* Apple Notes ExporterTests */,
 				258D3AAD29A7CC2F00858CE1 /* Apple Notes ExporterUITests */,
 				258D3A9029A7CC2E00858CE1 /* Products */,
@@ -178,6 +265,8 @@
 				258D3A8F29A7CC2E00858CE1 /* Apple Notes Exporter.app */,
 				258D3AA029A7CC2F00858CE1 /* Apple Notes ExporterTests.xctest */,
 				258D3AAA29A7CC2F00858CE1 /* Apple Notes ExporterUITests.xctest */,
+				AA00000000000000000APROD /* notes-export */,
+				AA00000000000000001MPROD /* notes-export-mcp */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -196,6 +285,7 @@
 				258D3A9829A7CC2F00858CE1 /* Preview Content */,
 				AAAA000000000001LICENSES /* Licenses */,
 				257242452BF18F7700BD9A67 /* utilities.swift */,
+				EE00000000000000000XSUPP /* ExportSupport.swift */,
 				257E911E2BF26FC10052606E /* ExportView.swift */,
 				257E91202BF26FD30052606E /* NoteSelectorView.swift */,
 				2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */,
@@ -273,6 +363,41 @@
 			name = Models;
 			sourceTree = "<group>";
 		};
+		DD000000000000000001CGRP /* Apple Notes Exporter CLI */ = {
+			isa = PBXGroup;
+			children = (
+				AA000000000000000001MAIN /* NotesExportCLI.swift */,
+				AA000000000000000002ENGN /* CLIExportEngine.swift */,
+				AA000000000000000003OUTP /* CLIOutput.swift */,
+				AA000000000000000004ERRO /* CLIError.swift */,
+				AA000000000000000009ENTI /* AppleNotesExporterCLI.entitlements */,
+				DD000000000000000002CMDS /* Commands */,
+			);
+			path = "Apple Notes Exporter CLI";
+			sourceTree = "<group>";
+		};
+		DD000000000000000002CMDS /* Commands */ = {
+			isa = PBXGroup;
+			children = (
+				AA000000000000000005LACC /* ListAccountsCommand.swift */,
+				AA000000000000000006LFLD /* ListFoldersCommand.swift */,
+				AA000000000000000007LNOT /* ListNotesCommand.swift */,
+				AA000000000000000008EXPC /* ExportCommand.swift */,
+				AA000000000000000009SYNC /* SyncStatusCommand.swift */,
+			);
+			path = Commands;
+			sourceTree = "<group>";
+		};
+		DD000000000000000003MCPG /* Apple Notes Exporter MCP */ = {
+			isa = PBXGroup;
+			children = (
+				AA00000000000000002MSVR /* NotesMCPServer.swift */,
+				AA00000000000000003MHND /* MCPToolHandlers.swift */,
+				AA00000000000000004MENT /* AppleNotesExporterMCP.entitlements */,
+			);
+			path = "Apple Notes Exporter MCP";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -335,6 +460,46 @@
 			productReference = 258D3AAA29A7CC2F00858CE1 /* Apple Notes ExporterUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		EE000000000000000001TGTT /* notes-export */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = GG000000000000000001CFGL /* Build configuration list for PBXNativeTarget "notes-export" */;
+			buildPhases = (
+				CC000000000000000001SRCS /* Sources */,
+				CC000000000000000002FRMS /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "notes-export";
+			packageProductDependencies = (
+				II000000000000000001APDP /* ArgumentParser */,
+				II000000000000000002SPDP /* SwiftProtobuf */,
+			);
+			productName = "notes-export";
+			productReference = AA00000000000000000APROD /* notes-export */;
+			productType = "com.apple.product-type.tool";
+		};
+		EE000000000000000002TGTT /* notes-export-mcp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = GG000000000000000002CFGL /* Build configuration list for PBXNativeTarget "notes-export-mcp" */;
+			buildPhases = (
+				CC000000000000000003SRCS /* Sources */,
+				CC000000000000000004FRMS /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "notes-export-mcp";
+			packageProductDependencies = (
+				II000000000000000005APDP /* MCP */,
+				II000000000000000006SPDP /* SwiftProtobuf */,
+			);
+			productName = "notes-export-mcp";
+			productReference = AA00000000000000001MPROD /* notes-export-mcp */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -343,7 +508,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1420;
-				LastUpgradeCheck = 1640;
+				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					258D3A8E29A7CC2E00858CE1 = {
 						CreatedOnToolsVersion = 14.2;
@@ -355,6 +520,12 @@
 					258D3AA929A7CC2F00858CE1 = {
 						CreatedOnToolsVersion = 14.2;
 						TestTargetID = 258D3A8E29A7CC2E00858CE1;
+					};
+					EE000000000000000001TGTT = {
+						CreatedOnToolsVersion = 14.2;
+					};
+					EE000000000000000002TGTT = {
+						CreatedOnToolsVersion = 14.2;
 					};
 				};
 			};
@@ -371,6 +542,8 @@
 				25479E582E1C5D08003E49E6 /* XCRemoteSwiftPackageReference "swift-html-to-pdf" */,
 				2519EE872E3BD57E00CC5D3C /* XCRemoteSwiftPackageReference "FullDiskAccess" */,
 				25A01F0E2E8F3F6600C7D9FA /* XCRemoteSwiftPackageReference "swift-protobuf" */,
+				HH000000000000000001ARGP /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
+				HH000000000000000002SDKP /* XCRemoteSwiftPackageReference "swift-sdk" */,
 			);
 			productRefGroup = 258D3A9029A7CC2E00858CE1 /* Products */;
 			projectDirPath = "";
@@ -379,6 +552,8 @@
 				258D3A8E29A7CC2E00858CE1 /* Apple Notes Exporter */,
 				258D3A9F29A7CC2F00858CE1 /* Apple Notes ExporterTests */,
 				258D3AA929A7CC2F00858CE1 /* Apple Notes ExporterUITests */,
+				EE000000000000000001TGTT /* notes-export */,
+				EE000000000000000002TGTT /* notes-export-mcp */,
 			);
 		};
 /* End PBXProject section */
@@ -416,6 +591,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				257242462BF18F7700BD9A67 /* utilities.swift in Sources */,
+				EE000000000000000100SUPP /* ExportSupport.swift in Sources */,
 				258D3A9529A7CC2E00858CE1 /* AppleNotesExporterView.swift in Sources */,
 				257E91212BF26FD30052606E /* NoteSelectorView.swift in Sources */,
 				25A01F0C2E8F3EEF00C7D9FA /* notestore.pb.swift in Sources */,
@@ -453,6 +629,58 @@
 			files = (
 				258D3AB129A7CC2F00858CE1 /* Apple_Notes_ExporterUITestsLaunchTests.swift in Sources */,
 				258D3AAF29A7CC2F00858CE1 /* Apple_Notes_ExporterUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CC000000000000000001SRCS /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB000000000000000001MAIN /* NotesExportCLI.swift in Sources */,
+				BB000000000000000002ENGN /* CLIExportEngine.swift in Sources */,
+				BB000000000000000003OUTP /* CLIOutput.swift in Sources */,
+				BB000000000000000004ERRO /* CLIError.swift in Sources */,
+				BB000000000000000005LACC /* ListAccountsCommand.swift in Sources */,
+				BB000000000000000006LFLD /* ListFoldersCommand.swift in Sources */,
+				BB000000000000000007LNOT /* ListNotesCommand.swift in Sources */,
+				BB000000000000000008EXPC /* ExportCommand.swift in Sources */,
+				BB000000000000000009SYNC /* SyncStatusCommand.swift in Sources */,
+				BB000000000000000009KITC /* AppleNotesKit.c in Sources */,
+				BB00000000000000000AMODS /* NotesModels.swift in Sources */,
+				BB00000000000000000BREPO /* NotesRepository.swift in Sources */,
+				BB00000000000000000CCFGR /* ExportConfiguration.swift in Sources */,
+				BB00000000000000000DSYNC /* SyncManifest.swift in Sources */,
+				EE000000000000000101SUPP /* ExportSupport.swift in Sources */,
+				BB00000000000000000EHTMG /* NoteHTMLGenerator.swift in Sources */,
+				BB00000000000000000FDATC /* Data+Compression.swift in Sources */,
+				BB00000000000000000GPBSW /* notestore.pb.swift in Sources */,
+				BB00000000000000000HHTML /* HTMLAttachmentProcessor.swift in Sources */,
+				BB00000000000000000ITABL /* TableParser.swift in Sources */,
+				BB00000000000000000JNOTE /* NotesNote+Export.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CC000000000000000003SRCS /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB00000000000000002MSVR /* NotesMCPServer.swift in Sources */,
+				BB00000000000000003MHND /* MCPToolHandlers.swift in Sources */,
+				MC000000000000000001KITC /* AppleNotesKit.c in Sources */,
+				MC000000000000000002MODS /* NotesModels.swift in Sources */,
+				MC000000000000000003REPO /* NotesRepository.swift in Sources */,
+				MC000000000000000004CFGR /* ExportConfiguration.swift in Sources */,
+				MC000000000000000005SYNC /* SyncManifest.swift in Sources */,
+				EE000000000000000102SUPP /* ExportSupport.swift in Sources */,
+				MC000000000000000006HTMG /* NoteHTMLGenerator.swift in Sources */,
+				MC000000000000000007DATC /* Data+Compression.swift in Sources */,
+				MC000000000000000008PBSW /* notestore.pb.swift in Sources */,
+				MC000000000000000009HTML /* HTMLAttachmentProcessor.swift in Sources */,
+				MC00000000000000000ATABL /* TableParser.swift in Sources */,
+				MC00000000000000000BNOTE /* NotesNote+Export.swift in Sources */,
+				MC00000000000000000CENGN /* CLIExportEngine.swift in Sources */,
+				MC00000000000000000DOUTP /* CLIOutput.swift in Sources */,
+				MC00000000000000000EERRO /* CLIError.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -529,6 +757,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -584,6 +813,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
@@ -603,7 +833,7 @@
 				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
-				DEVELOPMENT_TEAM = Q7TB7B38LW;
+				DEVELOPMENT_TEAM = T4J2388378;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -636,14 +866,12 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter/Apple_Notes_Exporter.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = Q7TB7B38LW;
+				DEVELOPMENT_TEAM = T4J2388378;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -675,6 +903,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = T4J2388378;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.1;
 				MARKETING_VERSION = 1.0;
@@ -693,6 +922,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = T4J2388378;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.1;
 				MARKETING_VERSION = 1.0;
@@ -710,6 +940,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = T4J2388378;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zaremski.Apple-Notes-ExporterUITests";
@@ -726,6 +957,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = T4J2388378;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zaremski.Apple-Notes-ExporterUITests";
@@ -733,6 +965,102 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TEST_TARGET_NAME = "Apple Notes Exporter";
+			};
+			name = Release;
+		};
+		FF000000000000000001DBUG /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter CLI/AppleNotesExporterCLI.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = T4J2388378;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.1;
+				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
+				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterCLI;
+				PRODUCT_NAME = "notes-export";
+				SWIFT_OBJC_BRIDGING_HEADER = "Apple Notes Exporter/AppleNotesKit/AppleNotesKit-Bridging-Header.h";
+				SWIFT_PRECOMPILE_BRIDGING_HEADER = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		FF000000000000000002RLSE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter CLI/AppleNotesExporterCLI.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = T4J2388378;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.1;
+				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
+				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterCLI;
+				PRODUCT_NAME = "notes-export";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "Apple Notes Exporter/AppleNotesKit/AppleNotesKit-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_PRECOMPILE_BRIDGING_HEADER = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		FF000000000000000003DBUG /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter MCP/AppleNotesExporterMCP.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = T4J2388378;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.1;
+				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
+				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterMCP;
+				PRODUCT_NAME = "notes-export-mcp";
+				SWIFT_OBJC_BRIDGING_HEADER = "Apple Notes Exporter/AppleNotesKit/AppleNotesKit-Bridging-Header.h";
+				SWIFT_PRECOMPILE_BRIDGING_HEADER = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		FF000000000000000004RLSE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter MCP/AppleNotesExporterMCP.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = T4J2388378;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.1;
+				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
+				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterMCP;
+				PRODUCT_NAME = "notes-export-mcp";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "Apple Notes Exporter/AppleNotesKit/AppleNotesKit-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_PRECOMPILE_BRIDGING_HEADER = NO;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -775,6 +1103,24 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		GG000000000000000001CFGL /* Build configuration list for PBXNativeTarget "notes-export" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FF000000000000000001DBUG /* Debug */,
+				FF000000000000000002RLSE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		GG000000000000000002CFGL /* Build configuration list for PBXNativeTarget "notes-export-mcp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FF000000000000000003DBUG /* Debug */,
+				FF000000000000000004RLSE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -802,6 +1148,22 @@
 				minimumVersion = 1.31.1;
 			};
 		};
+		HH000000000000000001ARGP /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-argument-parser";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.3.0;
+			};
+		};
+		HH000000000000000002SDKP /* XCRemoteSwiftPackageReference "swift-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/modelcontextprotocol/swift-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -816,6 +1178,26 @@
 			productName = HtmlToPdf;
 		};
 		25A01F0F2E8F3F6600C7D9FA /* SwiftProtobuf */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 25A01F0E2E8F3F6600C7D9FA /* XCRemoteSwiftPackageReference "swift-protobuf" */;
+			productName = SwiftProtobuf;
+		};
+		II000000000000000001APDP /* ArgumentParser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = HH000000000000000001ARGP /* XCRemoteSwiftPackageReference "swift-argument-parser" */;
+			productName = ArgumentParser;
+		};
+		II000000000000000002SPDP /* SwiftProtobuf */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 25A01F0E2E8F3F6600C7D9FA /* XCRemoteSwiftPackageReference "swift-protobuf" */;
+			productName = SwiftProtobuf;
+		};
+		II000000000000000005APDP /* MCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = HH000000000000000002SDKP /* XCRemoteSwiftPackageReference "swift-sdk" */;
+			productName = MCP;
+		};
+		II000000000000000006SPDP /* SwiftProtobuf */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 25A01F0E2E8F3F6600C7D9FA /* XCRemoteSwiftPackageReference "swift-protobuf" */;
 			productName = SwiftProtobuf;
