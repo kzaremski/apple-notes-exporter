@@ -19,7 +19,9 @@
 //
 
 import Foundation
+#if !CLI_TARGET
 import HtmlToPdf
+#endif
 
 // MARK: - Base Configuration Protocol
 
@@ -65,6 +67,7 @@ struct HTMLConfiguration: ExportConfigurable {
         }
     }
 
+#if !CLI_TARGET
     /// Convert margin settings to PDF EdgeInsets (in points)
     func toPDFEdgeInsets() -> HtmlToPdf.EdgeInsets {
         // Convert margin to points based on unit
@@ -118,6 +121,7 @@ struct HTMLConfiguration: ExportConfigurable {
             right: marginInPoints
         )
     }
+#endif
 
     static var defaultConfiguration: HTMLConfiguration {
         HTMLConfiguration(
@@ -162,7 +166,7 @@ struct PDFConfiguration: ExportConfigurable {
 
     static var defaultConfiguration: PDFConfiguration {
         // Locale-aware default: Letter for US, A4 for rest of world
-        let defaultPageSize: PageSize = Locale.current.regionCode == "US" ? .letter : .a4
+        let defaultPageSize: PageSize = Locale.current.region?.identifier == "US" ? .letter : .a4
 
         return PDFConfiguration(
             htmlConfiguration: .defaultConfiguration,

@@ -21,7 +21,9 @@
 import Foundation
 import SQLite3
 import OSLog
+#if !CLI_TARGET
 import AppKit
+#endif
 
 /// Processes HTML to replace attachment placeholders with inline content or links
 class HTMLAttachmentProcessor {
@@ -451,6 +453,7 @@ class HTMLAttachmentProcessor {
             Logger.noteQuery.debug("Successfully retrieved \(size) bytes of image data from ZMEDIA for UUID \(uuid)")
 
             // Convert HEIC to JPEG to avoid WebKit rendering issues
+            #if !CLI_TARGET
             if typeUTI.contains("heic") || typeUTI.contains("HEIC") {
                 if let convertedData = convertHEICToJPEG(data) {
                     Logger.noteQuery.debug("Converted HEIC to JPEG for UUID \(uuid), new size: \(convertedData.count) bytes")
@@ -459,6 +462,7 @@ class HTMLAttachmentProcessor {
                     Logger.noteQuery.warning("Failed to convert HEIC to JPEG for UUID \(uuid), using original data")
                 }
             }
+            #endif
 
             return data.base64EncodedString()
         }
@@ -482,6 +486,7 @@ class HTMLAttachmentProcessor {
             Logger.noteQuery.debug("Successfully loaded \(data.count) bytes from external file for UUID \(uuid)")
 
             // Convert HEIC to JPEG to avoid WebKit rendering issues
+            #if !CLI_TARGET
             if typeUTI.contains("heic") || typeUTI.contains("HEIC") || fullPath.hasSuffix(".heic") || fullPath.hasSuffix(".HEIC") {
                 if let convertedData = convertHEICToJPEG(data) {
                     Logger.noteQuery.debug("Converted external HEIC to JPEG for UUID \(uuid), new size: \(convertedData.count) bytes")
@@ -490,6 +495,7 @@ class HTMLAttachmentProcessor {
                     Logger.noteQuery.warning("Failed to convert external HEIC to JPEG for UUID \(uuid), using original data")
                 }
             }
+            #endif
 
             return data.base64EncodedString()
         } catch {
@@ -498,6 +504,7 @@ class HTMLAttachmentProcessor {
         }
     }
 
+#if !CLI_TARGET
     /// Convert HEIC image data to JPEG to avoid WebKit rendering issues
     /// Returns nil if conversion fails
     private func convertHEICToJPEG(_ heicData: Data) -> Data? {
@@ -524,6 +531,7 @@ class HTMLAttachmentProcessor {
 
         return jpegData
     }
+#endif
 
     /// Convert UTI to MIME type
     private func utiToMimeType(_ uti: String) -> String {
