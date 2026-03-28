@@ -24,6 +24,7 @@ import OSLog
 struct ExportView: View {
     @ObservedObject var sharedState: AppleNotesExporterState
     @EnvironmentObject var exportViewModel: ExportViewModel
+    @AppStorage("outputPath") private var outputPath: String = ""
 
     var body: some View {
         VStack(spacing: 10) {
@@ -102,6 +103,18 @@ struct ExportView: View {
                     sharedState.showExportLog()
                 } label: {
                     Text("View Export Log")
+                }
+
+                if case .completed = exportViewModel.exportState {
+                    Button {
+                        if !outputPath.isEmpty {
+                            NSWorkspace.shared.open(URL(fileURLWithPath: outputPath))
+                        }
+                    } label: {
+                        Image(systemName: "folder")
+                        Text("Open Output Folder")
+                    }
+                    .disabled(outputPath.isEmpty)
                 }
 
                 Spacer()

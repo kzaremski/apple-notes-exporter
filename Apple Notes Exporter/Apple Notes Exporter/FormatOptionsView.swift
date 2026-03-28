@@ -45,11 +45,9 @@ struct FormatOptionsView: View {
                             PDFOptionsView(config: $exportViewModel.configurations.pdf)
                         case .rtf:
                             RTFOptionsView(config: $exportViewModel.configurations.rtf)
-                        case .markdown, .txt:
+                        default:
                             Text("No configuration options available for this format.")
                                 .foregroundColor(.secondary)
-                        default:
-                            EmptyView()
                         }
                     }
                     .padding(.trailing, 20)

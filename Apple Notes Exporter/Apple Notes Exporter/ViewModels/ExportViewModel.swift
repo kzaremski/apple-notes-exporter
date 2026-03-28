@@ -202,19 +202,21 @@ class ExportViewModel: ObservableObject {
             }
 
             // Flatten notes with their folder paths for concurrent export
-            var notesWithPaths: [(note: NotesNote, folderURL: URL)] = []
+            var notesWithPaths: [(note: NotesNote, folderURL: URL, folderName: String, accountName: String)] = []
             for (accountName, folders) in hierarchy {
                 let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
                 for (folderPath, folderNotes) in folders {
                     let folderURL = accountURL.appendingPathComponent(folderPath)
                     for note in folderNotes {
-                        notesWithPaths.append((note: note, folderURL: folderURL))
+                        notesWithPaths.append((note: note, folderURL: folderURL, folderName: folderPath, accountName: accountName))
                     }
                 }
             }
 
             // Check if we should concatenate all notes into a single file
-            if configurations.concatenateOutput {
+            // Only MD and TXT support concatenation
+            let canConcatenate = format == .markdown || format == .txt
+            if configurations.concatenateOutput && canConcatenate {
                 try await exportNotesConcatenated(
                     notesWithPaths,
                     format: format,
@@ -271,7 +273,7 @@ class ExportViewModel: ObservableObject {
 
     /// Export notes concurrently using TaskGroup
     private func exportNotesConcurrently(
-        _ notesWithPaths: [(note: NotesNote, folderURL: URL)],
+        _ notesWithPaths: [(note: NotesNote, folderURL: URL, folderName: String, accountName: String)],
         format: ExportFormat,
         includeAttachments: Bool,
         totalNotes: Int,
@@ -298,7 +300,9 @@ class ExportViewModel: ObservableObject {
                         tracker: tracker,
                         syncTracker: syncTracker,
                         overrideRelativePath: overridePath,
-                        outputRootURL: outputRootURL
+                        outputRootURL: outputRootURL,
+                        folderName: noteWithPath.folderName,
+                        accountName: noteWithPath.accountName
                     )
                 }
                 activeTaskCount += 1
@@ -351,7 +355,9 @@ class ExportViewModel: ObservableObject {
                             tracker: tracker,
                             syncTracker: syncTracker,
                             overrideRelativePath: overridePath,
-                            outputRootURL: outputRootURL
+                            outputRootURL: outputRootURL,
+                            folderName: noteWithPath.folderName,
+                            accountName: noteWithPath.accountName
                         )
                     }
                 }
@@ -361,7 +367,7 @@ class ExportViewModel: ObservableObject {
 
     /// Export all notes concatenated into a single file
     private func exportNotesConcatenated(
-        _ notesWithPaths: [(note: NotesNote, folderURL: URL)],
+        _ notesWithPaths: [(note: NotesNote, folderURL: URL, folderName: String, accountName: String)],
         format: ExportFormat,
         includeAttachments: Bool,
         totalNotes: Int,
@@ -409,7 +415,9 @@ class ExportViewModel: ObservableObject {
                     for: note,
                     format: format,
                     attachmentPaths: attachmentPaths,
-                    exportDirectory: outputURL
+                    exportDirectory: outputURL,
+                    folderName: noteWithPath.folderName,
+                    accountName: noteWithPath.accountName
                 )
                 contentParts.append(content)
                 log("✓ Processed note: \(note.title)")
@@ -440,9 +448,38 @@ class ExportViewModel: ObservableObject {
             separator = "\n\\page\n"
         case .tex:
             separator = "\n\n\\newpage\n\n"
+        case .json:
+            separator = ",\n"  // Array elements separated by comma
+        case .jsonl:
+            separator = "\n"   // One object per line
+        case .xml:
+            separator = "\n"
+        case .csv:
+            separator = "\n"   // One row per line
+        case .opml:
+            separator = "\n"
+        case .org:
+            separator = "\n\n" + String(repeating: "-", count: 72) + "\n\n"
+        case .rst:
+            separator = "\n\n" + String(repeating: "=", count: 72) + "\n\n"
+        case .adoc:
+            separator = "\n\n'''\n\n"  // AsciiDoc thematic break
+        case .enex:
+            separator = "\n"
+        case .docx, .odt, .epub:
+            separator = ""  // Binary formats cannot be concatenated
         }
 
-        let concatenated = contentParts.joined(separator: separator)
+        var concatenated = contentParts.joined(separator: separator)
+
+        // Format-specific wrapping for concatenated output
+        if format == .json {
+            // Wrap JSON objects in an array
+            concatenated = "[\n" + concatenated + "\n]"
+        } else if format == .csv {
+            // Prepend CSV header row
+            concatenated = NotesNote.csvHeader() + "\n" + concatenated
+        }
 
         // Write the single concatenated file
         let filename = "Exported Notes.\(format.fileExtension)"
@@ -485,7 +522,9 @@ class ExportViewModel: ObservableObject {
         tracker: ExportProgressTracker,
         syncTracker: SyncManifestTracker? = nil,
         overrideRelativePath: String? = nil,
-        outputRootURL: URL? = nil
+        outputRootURL: URL? = nil,
+        folderName: String? = nil,
+        accountName: String? = nil
     ) async {
         do {
             try await exportNoteSafely(
@@ -496,7 +535,9 @@ class ExportViewModel: ObservableObject {
                 tracker: tracker,
                 syncTracker: syncTracker,
                 overrideRelativePath: overrideRelativePath,
-                outputRootURL: outputRootURL
+                outputRootURL: outputRootURL,
+                folderName: folderName,
+                accountName: accountName
             )
             _ = await tracker.noteCompleted()
         } catch {
@@ -534,7 +575,9 @@ class ExportViewModel: ObservableObject {
         tracker: ExportProgressTracker,
         syncTracker: SyncManifestTracker? = nil,
         overrideRelativePath: String? = nil,
-        outputRootURL: URL? = nil
+        outputRootURL: URL? = nil,
+        folderName: String? = nil,
+        accountName: String? = nil
     ) async throws {
         // Check for cancellation before starting export
         try Task.checkCancellation()
@@ -636,9 +679,15 @@ class ExportViewModel: ObservableObject {
             }
 
             log("✓ Exported PDF: \(note.title)")
+        } else if format.isBinaryFormat {
+            // Binary ZIP-based formats (DOCX, ODT, EPUB)
+            try Task.checkCancellation()
+            let data = try await generateBinaryContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
+            try data.write(to: fileURL)
+            log("✓ Exported \(format.rawValue): \(note.title)")
         } else {
             // Generate content based on format
-            let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
+            let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory, folderName: folderName, accountName: accountName)
 
             // Write to file
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -940,7 +989,7 @@ class ExportViewModel: ObservableObject {
     // MARK: - Content Generation
 
     /// Generate content for a note in the specified format
-    private func generateContent(for note: NotesNote, format: ExportFormat, attachmentPaths: [String: String] = [:], exportDirectory: URL? = nil) async throws -> String {
+    private func generateContent(for note: NotesNote, format: ExportFormat, attachmentPaths: [String: String] = [:], exportDirectory: URL? = nil, folderName: String? = nil, accountName: String? = nil) async throws -> String {
         switch format {
         case .html:
             return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
@@ -1009,7 +1058,78 @@ class ExportViewModel: ObservableObject {
             return noteWithHTML.toLatex(template: configurations.latex.template)
         case .pdf:
             return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+        case .json:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toJSON(folderName: folderName, accountName: accountName)
+        case .jsonl:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toJSONL(folderName: folderName, accountName: accountName)
+        case .xml:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toXML(folderName: folderName, accountName: accountName)
+        case .csv:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toCSV(folderName: folderName, accountName: accountName)
+        case .opml:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toOPML()
+        case .org:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toOrg()
+        case .rst:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toRST()
+        case .adoc:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toAsciiDoc()
+        case .enex:
+            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            let noteWithHTML = noteWithBody(note, html: html)
+            return noteWithHTML.toENEX()
+        case .docx, .odt, .epub:
+            // Binary formats should use generateBinaryContent() instead
+            fatalError("Binary format \(format.rawValue) should not use generateContent(). Use generateBinaryContent() instead.")
         }
+    }
+
+    /// Generate binary content for ZIP-based formats (DOCX, ODT, EPUB)
+    private func generateBinaryContent(for note: NotesNote, format: ExportFormat, attachmentPaths: [String: String] = [:], exportDirectory: URL? = nil) async throws -> Data {
+        let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+        let noteWithHTML = noteWithBody(note, html: html)
+
+        switch format {
+        case .docx:
+            return noteWithHTML.toDOCX()
+        case .odt:
+            return noteWithHTML.toODT()
+        case .epub:
+            return noteWithHTML.toEPUB()
+        default:
+            fatalError("Format \(format.rawValue) is not a binary format")
+        }
+    }
+
+    /// Create a copy of a note with the given HTML body set
+    private func noteWithBody(_ note: NotesNote, html: String) -> NotesNote {
+        return NotesNote(
+            id: note.id,
+            title: note.title,
+            plaintext: note.plaintext,
+            htmlBody: html,
+            creationDate: note.creationDate,
+            modificationDate: note.modificationDate,
+            folderId: note.folderId,
+            accountId: note.accountId,
+            attachments: note.attachments
+        )
     }
 
     // MARK: - Content Generation
@@ -1060,8 +1180,13 @@ class ExportViewModel: ObservableObject {
             }
         }
 
-        // Process HTML to replace attachment markers with actual content
+        // Strip the NoteHTMLGenerator's outer <html><body>...</body></html> wrapper
+        // since we wrap the content in our own full HTML document below.
         var processedHTML = htmlBody
+        if let bodyStart = processedHTML.range(of: "<body>"),
+           let bodyEnd = processedHTML.range(of: "</body>") {
+            processedHTML = String(processedHTML[bodyStart.upperBound..<bodyEnd.lowerBound])
+        }
 
         // Only process attachments if we have a database connection and attachments to process
         if !note.attachments.isEmpty {
@@ -1333,4 +1458,3 @@ class ExportViewModel: ObservableObject {
         }
     }
 }
-

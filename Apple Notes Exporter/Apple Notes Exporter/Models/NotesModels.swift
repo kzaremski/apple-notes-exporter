@@ -162,6 +162,14 @@ struct NotesAttachment: NotesItem {
     }
 }
 
+// MARK: - Sort Options
+
+enum NoteSortOption: String, CaseIterable {
+    case name = "Name"
+    case dateModified = "Date Modified"
+    case dateCreated = "Date Created"
+}
+
 // MARK: - Hierarchical Structure
 
 /// Represents a hierarchical tree structure for displaying accounts/folders/notes
@@ -386,9 +394,31 @@ enum ExportFormat: String, CaseIterable {
     case markdown = "MD"
     case rtf = "RTF"
     case txt = "TXT"
+    case json = "JSON"
+    case jsonl = "JSONL"
+    case xml = "XML"
+    case csv = "CSV"
+    case opml = "OPML"
+    case org = "ORG"
+    case rst = "RST"
+    case adoc = "ADOC"
+    case docx = "DOCX"
+    case odt = "ODT"
+    case epub = "EPUB"
+    case enex = "ENEX"
 
     var fileExtension: String {
         rawValue.lowercased()
+    }
+
+    /// Whether this format produces binary (Data) output instead of text (String)
+    var isBinaryFormat: Bool {
+        switch self {
+        case .pdf, .docx, .odt, .epub:
+            return true
+        default:
+            return false
+        }
     }
 }
 

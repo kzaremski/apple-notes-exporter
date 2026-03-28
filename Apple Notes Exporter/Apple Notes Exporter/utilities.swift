@@ -21,6 +21,51 @@
 import Foundation
 import OSLog
 
+// MARK: - Shared Constants (used by both GUI app and CLI)
+
+let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2"
+let OUTPUT_FORMATS: [String] = [
+    "HTML",
+    "PDF",
+    "TEX",
+    "MD",
+    "RTF",
+    "TXT",
+    "JSON",
+    "JSONL",
+    "XML",
+    "CSV",
+    "OPML",
+    "ORG",
+    "RST",
+    "ADOC",
+    "DOCX",
+    "ODT",
+    "EPUB",
+    "ENEX",
+]
+let OUTPUT_TYPES: [String] = [
+    "Folder",
+    "TAR Archive",
+    "ZIP Archive",
+]
+// Page types
+let PAGE_US_LETTER: (width: Int, height: Int) = (612, 792)
+let PAGE_US_LEGAL: (width: Int, height: Int) = (612, 1008)
+let PAGE_US_TABLOID: (width: Int, height: Int) = (792, 1224)
+let PAGE_A4: (width: Int, height: Int) = (595, 842)
+
+// Logger
+extension Logger {
+    /// Using your bundle identifier is a great way to ensure a unique identifier.
+    private static var subsystem = Bundle.main.bundleIdentifier ?? "com.zaremski.AppleNotesExporter"
+
+    static let noteQuery = Logger(subsystem: subsystem, category: "notequery")
+    static let noteExport = Logger(subsystem: subsystem, category: "noteexport")
+}
+
+// MARK: - Utility Functions
+
 func toFixed(_ number: Double, _ fractionDigits: Int) -> String {
     let formatter = NumberFormatter()
     formatter.numberStyle = .decimal
@@ -44,10 +89,6 @@ func sanitizeFileNameString(_ inputFilename: String) -> String {
         .union(.newlines)
         .union(.illegalCharacters)
         .union(.controlCharacters)
-    // If we are exporting to markdown, then there are even more invalid characters
-    //if outputFormat == "MD" {
-    //    invalidCharacters = invalidCharacters.union(CharacterSet(charactersIn: "[#]^"))
-    //}
     // Filter out the illegal characters
     return inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
 }
@@ -87,6 +128,42 @@ func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
         }
     }
 }
+
+// MARK: - String Extensions for Escaping (shared between GUI and CLI)
+
+extension String {
+    var htmlEscaped: String {
+        self
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
+    }
+
+    var rtfEscaped: String {
+        self
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "{", with: "\\{")
+            .replacingOccurrences(of: "}", with: "\\}")
+    }
+
+    var texEscaped: String {
+        self
+            .replacingOccurrences(of: "\\", with: "\\textbackslash{}")
+            .replacingOccurrences(of: "&", with: "\\&")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "#", with: "\\#")
+            .replacingOccurrences(of: "_", with: "\\_")
+            .replacingOccurrences(of: "{", with: "\\{")
+            .replacingOccurrences(of: "}", with: "\\}")
+            .replacingOccurrences(of: "~", with: "\\textasciitilde{}")
+            .replacingOccurrences(of: "^", with: "\\textasciicircum{}")
+    }
+}
+
+// MARK: - Date Parsing
 
 func appleDateStringToDate(inputString: String) -> Date {
     // Possible date formats used by AppleScript/Apple Notes

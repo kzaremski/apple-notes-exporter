@@ -338,6 +338,7 @@ static const char *_resolve_modification_date_col(const ane_db *db);
 static const char *_resolve_folder_col(const ane_db *db);
 static const char *_resolve_mergeable_data_col(const ane_db *db);
 static const char *_resolve_uti_col(const ane_db *db);
+static const char *_resolve_folder_title_col(const ane_db *db);
 
 /* ── Prepared statement cache ───────────────────────────────── */
 /* Statements are prepared once at open() with schema-specific   */
@@ -348,6 +349,7 @@ static void _prepare_statements(ane_db *db)
     if (db->stmts_ready) return;
 
     const char *title_col = _resolve_title_col(db);
+    const char *folder_title_col = _resolve_folder_title_col(db);
     const char *creation_col = _resolve_creation_date_col(db);
     const char *modification_col = _resolve_modification_date_col(db);
     const char *folder_col = _resolve_folder_col(db);
@@ -434,14 +436,16 @@ static void _prepare_statements(ane_db *db)
         has_account_type ? ", ZACCOUNTTYPE" : "");
     sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_ACCOUNTS], NULL);
 
-    /* STMT_FOLDERS */
+    /* STMT_FOLDERS -- uses folder_title_col which probes ICFolder entities
+     * separately from the note title column, since on macOS 15+ folders use
+     * ZTITLE2 while notes use ZTITLE1. */
     snprintf(sql, sizeof(sql),
         "SELECT  Z_PK, %s AS TITLE, ZPARENT, %s AS ACCOUNT_ID "
         "FROM ZICCLOUDSYNCINGOBJECT "
         "WHERE 1=1 AND Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICFolder') "
         "AND (ZMARKEDFORDELETION IS NULL OR ZMARKEDFORDELETION = 0) "
         "AND %s IS NOT NULL /*ank*/;",
-        title_col, folder_account_col, title_col);
+        folder_title_col, folder_account_col, folder_title_col);
     sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_FOLDERS], NULL);
 
     /* STMT_NOTES -- varies by iOS version */
@@ -821,13 +825,58 @@ static const char *_resolve_folder_account_col(const ane_db *db)
 
 static const char *_resolve_title_col(const ane_db *db)
 {
-    int has2 = _has_column(db, "ZTITLE2");
-    int has1 = _has_column(db, "ZTITLE1");
-    /* Use COALESCE so handwriting-recognized titles stored in ZTITLE1 are picked up
-     * even when the schema also has ZTITLE2 (which is NULL for handwritten notes). */
-    if (has2 && has1) return "COALESCE(ZTITLE2, ZTITLE1, ZTITLE)";
-    if (has2)         return "COALESCE(ZTITLE2, ZTITLE)";
-    if (has1)         return "COALESCE(ZTITLE1, ZTITLE)";
+    /* Check which title column actually has data for notes, not just which
+     * exists in the schema.  Apple adds new columns (ZTITLE2) that may only
+     * be populated for folders (Z_ENT for ICFolder), leaving all note titles
+     * in an older column (ZTITLE1).  We probe the ICNote entity specifically. */
+    if (_has_column(db, "ZTITLE2")) {
+        sqlite3_stmt *probe = NULL;
+        int has_data = 0;
+        if (sqlite3_prepare_v2(db->sqlite,
+            "SELECT  1 FROM ZICCLOUDSYNCINGOBJECT "
+            "WHERE 1=1 AND Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
+            "AND ZTITLE2 IS NOT NULL LIMIT 1 /*ank*/;",
+            -1, &probe, NULL) == SQLITE_OK) {
+            has_data = (sqlite3_step(probe) == SQLITE_ROW);
+            sqlite3_finalize(probe);
+        }
+        if (has_data) return "ZTITLE2";
+    }
+    if (_has_column(db, "ZTITLE1"))    return "ZTITLE1";
+    return "ZTITLE";
+}
+
+static const char *_resolve_folder_title_col(const ane_db *db)
+{
+    /* Folders often use a different title column than notes.  On macOS 15+
+     * (Sequoia), folders store their titles in ZTITLE2 while notes use
+     * ZTITLE1.  Probe the ICFolder entity specifically for each candidate. */
+    if (_has_column(db, "ZTITLE2")) {
+        sqlite3_stmt *probe = NULL;
+        int has_data = 0;
+        if (sqlite3_prepare_v2(db->sqlite,
+            "SELECT  1 FROM ZICCLOUDSYNCINGOBJECT "
+            "WHERE 1=1 AND Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICFolder') "
+            "AND ZTITLE2 IS NOT NULL LIMIT 1 /*ank*/;",
+            -1, &probe, NULL) == SQLITE_OK) {
+            has_data = (sqlite3_step(probe) == SQLITE_ROW);
+            sqlite3_finalize(probe);
+        }
+        if (has_data) return "ZTITLE2";
+    }
+    if (_has_column(db, "ZTITLE1")) {
+        sqlite3_stmt *probe = NULL;
+        int has_data = 0;
+        if (sqlite3_prepare_v2(db->sqlite,
+            "SELECT  1 FROM ZICCLOUDSYNCINGOBJECT "
+            "WHERE 1=1 AND Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICFolder') "
+            "AND ZTITLE1 IS NOT NULL LIMIT 1 /*ank*/;",
+            -1, &probe, NULL) == SQLITE_OK) {
+            has_data = (sqlite3_step(probe) == SQLITE_ROW);
+            sqlite3_finalize(probe);
+        }
+        if (has_data) return "ZTITLE1";
+    }
     return "ZTITLE";
 }
 

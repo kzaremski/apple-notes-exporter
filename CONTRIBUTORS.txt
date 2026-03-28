@@ -1,2 +1,4 @@
 Contributors:
-- Sergey Nikolsky (GitHub: @nikolsky2) — Fixed a crash when the AppleScript returns empty notes.
+- Konstantin Zaremski (GitHub: @kzaremski) — Project author
+- Sergey Nikolsky (GitHub: @nikolsky2) — Fixed a crash when the AppleScript returns empty notes
+- AnotherCoolDude (GitHub: @AnotherCoolDude) — Added CLI and MCP server targets for headless/AI integration, handwritten note title bug fix

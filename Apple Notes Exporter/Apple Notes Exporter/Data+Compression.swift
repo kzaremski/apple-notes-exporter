@@ -20,6 +20,149 @@
 
 import Foundation
 import Compression
+import zlib
+
+// MARK: - Minimal ZIP Archive Writer
+
+/// Builds a ZIP archive in memory from a list of named entries.
+/// Supports STORE (no compression) and DEFLATE methods.
+/// Compatible with PKZIP 2.0 / Info-ZIP format used by DOCX, ODT, and EPUB.
+struct ZIPArchive {
+    struct Entry {
+        let path: String       // Relative path inside the archive (e.g. "word/document.xml")
+        let data: Data         // Uncompressed content
+        let compress: Bool     // true = DEFLATE, false = STORE
+    }
+
+    /// Build a complete ZIP file from the given entries and return the raw bytes.
+    static func build(entries: [Entry]) -> Data {
+        var centralDirectory = Data()
+        var fileData = Data()
+
+        for entry in entries {
+            let localHeaderOffset = UInt32(fileData.count)
+            let pathBytes = Array(entry.path.utf8)
+
+            // Compress if requested
+            let compressedData: Data
+            let method: UInt16
+            if entry.compress && !entry.data.isEmpty {
+                if let deflated = deflate(entry.data) {
+                    compressedData = deflated
+                    method = 8  // DEFLATE
+                } else {
+                    compressedData = entry.data
+                    method = 0  // STORE fallback
+                }
+            } else {
+                compressedData = entry.data
+                method = 0 // STORE
+            }
+
+            let crc = crc32Checksum(entry.data)
+            let uncompressedSize = UInt32(entry.data.count)
+            let compressedSize = UInt32(compressedData.count)
+
+            // -- Local file header --
+            fileData.appendUInt32(0x04034b50)           // Local file header signature
+            fileData.appendUInt16(20)                    // Version needed (2.0)
+            fileData.appendUInt16(0)                     // General purpose bit flag
+            fileData.appendUInt16(method)                // Compression method
+            fileData.appendUInt16(0)                     // Last mod file time
+            fileData.appendUInt16(0)                     // Last mod file date
+            fileData.appendUInt32(crc)                   // CRC-32
+            fileData.appendUInt32(compressedSize)        // Compressed size
+            fileData.appendUInt32(uncompressedSize)      // Uncompressed size
+            fileData.appendUInt16(UInt16(pathBytes.count)) // File name length
+            fileData.appendUInt16(0)                     // Extra field length
+            fileData.append(contentsOf: pathBytes)       // File name
+            fileData.append(compressedData)              // File data
+
+            // -- Central directory header --
+            centralDirectory.appendUInt32(0x02014b50)           // Central directory file header signature
+            centralDirectory.appendUInt16(20)                    // Version made by
+            centralDirectory.appendUInt16(20)                    // Version needed
+            centralDirectory.appendUInt16(0)                     // General purpose bit flag
+            centralDirectory.appendUInt16(method)                // Compression method
+            centralDirectory.appendUInt16(0)                     // Last mod file time
+            centralDirectory.appendUInt16(0)                     // Last mod file date
+            centralDirectory.appendUInt32(crc)                   // CRC-32
+            centralDirectory.appendUInt32(compressedSize)        // Compressed size
+            centralDirectory.appendUInt32(uncompressedSize)      // Uncompressed size
+            centralDirectory.appendUInt16(UInt16(pathBytes.count)) // File name length
+            centralDirectory.appendUInt16(0)                     // Extra field length
+            centralDirectory.appendUInt16(0)                     // File comment length
+            centralDirectory.appendUInt16(0)                     // Disk number start
+            centralDirectory.appendUInt16(0)                     // Internal file attributes
+            centralDirectory.appendUInt32(0)                     // External file attributes
+            centralDirectory.appendUInt32(localHeaderOffset)     // Relative offset of local header
+            centralDirectory.append(contentsOf: pathBytes)       // File name
+        }
+
+        let centralDirOffset = UInt32(fileData.count)
+        let centralDirSize = UInt32(centralDirectory.count)
+        fileData.append(centralDirectory)
+
+        // -- End of central directory record --
+        fileData.appendUInt32(0x06054b50)                // End of central directory signature
+        fileData.appendUInt16(0)                          // Number of this disk
+        fileData.appendUInt16(0)                          // Disk where central directory starts
+        fileData.appendUInt16(UInt16(entries.count))      // Number of central directory records on this disk
+        fileData.appendUInt16(UInt16(entries.count))      // Total number of central directory records
+        fileData.appendUInt32(centralDirSize)             // Size of central directory
+        fileData.appendUInt32(centralDirOffset)           // Offset of start of central directory
+        fileData.appendUInt16(0)                          // ZIP file comment length
+
+        return fileData
+    }
+
+    /// Compute CRC-32 checksum using zlib
+    private static func crc32Checksum(_ data: Data) -> UInt32 {
+        return data.withUnsafeBytes { buffer -> UInt32 in
+            guard let baseAddress = buffer.baseAddress else { return 0 }
+            return UInt32(zlib.crc32(0, baseAddress.assumingMemoryBound(to: Bytef.self), uInt(data.count)))
+        }
+    }
+
+    /// Deflate (raw) compress data using zlib
+    private static func deflate(_ data: Data) -> Data? {
+        var stream = z_stream()
+        // windowBits = -15 for raw deflate (no zlib/gzip header)
+        let initResult = deflateInit2_(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))
+        guard initResult == Z_OK else { return nil }
+
+        let bufferSize = data.count + 512
+        var outputBuffer = Data(count: bufferSize)
+
+        let result: Int32 = data.withUnsafeBytes { srcPtr in
+            outputBuffer.withUnsafeMutableBytes { destPtr in
+                stream.next_in = UnsafeMutablePointer(mutating: srcPtr.baseAddress!.assumingMemoryBound(to: Bytef.self))
+                stream.avail_in = uInt(data.count)
+                stream.next_out = destPtr.baseAddress!.assumingMemoryBound(to: Bytef.self)
+                stream.avail_out = uInt(bufferSize)
+                return zlib.deflate(&stream, Z_FINISH)
+            }
+        }
+
+        deflateEnd(&stream)
+
+        guard result == Z_STREAM_END else { return nil }
+        return outputBuffer.prefix(Int(stream.total_out))
+    }
+}
+
+// MARK: - Data Helpers for ZIP Binary Writing
+
+private extension Data {
+    mutating func appendUInt16(_ value: UInt16) {
+        var le = value.littleEndian
+        append(Data(bytes: &le, count: 2))
+    }
+    mutating func appendUInt32(_ value: UInt32) {
+        var le = value.littleEndian
+        append(Data(bytes: &le, count: 4))
+    }
+}
 
 // MARK: - Data Extension for Gzip
 

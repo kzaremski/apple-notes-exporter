@@ -1,7 +1,7 @@
 # Apple Notes Exporter - Makefile
 # For terminal-based development workflow
 
-.PHONY: help build run clean logs test rebuild install icon
+.PHONY: help build build-cli run clean logs test rebuild install icon
 
 # Configuration
 PROJECT = Apple Notes Exporter/Apple Notes Exporter.xcodeproj
@@ -19,6 +19,7 @@ help:
 	@echo "Apple Notes Exporter - Make targets:"
 	@echo ""
 	@echo "  make build     - Build the app (Debug configuration)"
+	@echo "  make build-cli - Build the CLI tool only"
 	@echo "  make run       - Build and run the app"
 	@echo "  make clean     - Clean build artifacts"
 	@echo "  make rebuild   - Clean and build"
@@ -44,6 +45,24 @@ build:
 		exit 1; \
 	elif grep -q "BUILD SUCCEEDED" build.log 2>/dev/null; then \
 		echo "✅ Build succeeded"; \
+	fi
+
+# Build the CLI tool only
+build-cli:
+	@echo "🔨 Building anecli..."
+	@set -o pipefail && xcodebuild -project "$(PROJECT)" \
+		-scheme "anecli" \
+		-configuration $(CONFIG) \
+		-derivedDataPath "$(BUILD_DIR)" \
+		build 2>&1 | tee build-cli.log | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED|^/" || true
+	@if grep -q "BUILD FAILED" build-cli.log 2>/dev/null; then \
+		echo ""; \
+		echo "❌ CLI build failed! Errors:"; \
+		grep "error:" build-cli.log | head -20; \
+		exit 1; \
+	elif grep -q "BUILD SUCCEEDED" build-cli.log 2>/dev/null; then \
+		echo "✅ CLI build succeeded"; \
+		echo "Binary: $(BUILD_DIR)/Build/Products/$(CONFIG)/anecli"; \
 	fi
 
 # Build and run

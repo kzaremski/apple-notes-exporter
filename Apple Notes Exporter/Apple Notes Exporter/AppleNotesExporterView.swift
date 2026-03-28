@@ -53,6 +53,30 @@ struct AppleNotesExporterView: View {
             return "Rich text format for word processors."
         case "TEX":
             return "For typesetting within LaTeX software."
+        case "JSON":
+            return "Structured note data for APIs and data processing."
+        case "JSONL":
+            return "One JSON object per line for LLM and RAG pipelines."
+        case "XML":
+            return "Structured note data in XML for interoperability."
+        case "CSV":
+            return "Flat table format for spreadsheets and databases."
+        case "OPML":
+            return "Outline format for RSS readers and outliners."
+        case "ORG":
+            return "Emacs Org-mode format for notes and task management."
+        case "RST":
+            return "reStructuredText for Sphinx and Python documentation."
+        case "ADOC":
+            return "AsciiDoc format for technical documentation."
+        case "DOCX":
+            return "Microsoft Word format for Office and Google Docs."
+        case "ODT":
+            return "OpenDocument text for LibreOffice and open-source editors."
+        case "EPUB":
+            return "E-book format for Kindle, Apple Books, and readers."
+        case "ENEX":
+            return "Evernote export format for import into Evernote, Joplin, etc."
         default:
             return ""
         }
@@ -73,6 +97,30 @@ struct AppleNotesExporterView: View {
             return "doc.text"
         case "TXT":
             return "text.alignleft"
+        case "JSON":
+            return "curlybraces"
+        case "JSONL":
+            return "list.dash"
+        case "XML":
+            return "chevron.left.forwardslash.chevron.right"
+        case "CSV":
+            return "rectangle.split.3x3"
+        case "OPML":
+            return "list.bullet.indent"
+        case "ORG":
+            return "leaf"
+        case "RST":
+            return "text.book.closed"
+        case "ADOC":
+            return "doc.plaintext"
+        case "DOCX":
+            return "doc.fill"
+        case "ODT":
+            return "doc.text.fill"
+        case "EPUB":
+            return "book"
+        case "ENEX":
+            return "square.and.arrow.up.on.square"
         default:
             return "doc"
         }
@@ -228,34 +276,50 @@ struct AppleNotesExporterView: View {
                 .padding(.top, 5)
                 .padding(.bottom, titleBottomPadding)
 
-            HStack(spacing: 6) {
-                ForEach(OUTPUT_FORMATS, id: \.self) { format in
-                    let isSelected = outputFormat == format
-                    Button(action: {
-                        outputFormat = format
-                    }) {
-                        VStack(spacing: 3) {
-                            Image(systemName: formatIcon(for: format))
-                                .font(.system(size: 16))
-                                .frame(height: 20)
-                            Text(format)
-                                .font(.system(size: 11, weight: .medium))
+            // Format selector grid: 3 rows of 6
+            let columns = 6
+            let rows = Int(ceil(Double(OUTPUT_FORMATS.count) / Double(columns)))
+            VStack(spacing: 4) {
+                ForEach(0..<rows, id: \.self) { row in
+                    HStack(spacing: 6) {
+                        ForEach(0..<columns, id: \.self) { col in
+                            let index = row * columns + col
+                            if index < OUTPUT_FORMATS.count {
+                                let format = OUTPUT_FORMATS[index]
+                                let isSelected = outputFormat == format
+                                Button(action: {
+                                    outputFormat = format
+                                }) {
+                                    VStack(spacing: 3) {
+                                        Image(systemName: formatIcon(for: format))
+                                            .font(.system(size: 16))
+                                            .frame(height: 20)
+                                        Text(format)
+                                            .font(.system(size: 11, weight: .medium))
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .foregroundColor(isSelected ? .white : .secondary)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(isSelected ? SwiftUI.Color.accentColor : SwiftUI.Color.clear)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(isSelected ? SwiftUI.Color.clear : SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+                                .animation(.easeInOut(duration: 0.15), value: isSelected)
+                            } else {
+                                // Empty placeholder to maintain grid alignment
+                                SwiftUI.Color.clear
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                            }
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .foregroundColor(isSelected ? .white : .secondary)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(isSelected ? SwiftUI.Color.accentColor : SwiftUI.Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(isSelected ? SwiftUI.Color.clear : SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-                    .animation(.easeInOut(duration: 0.15), value: isSelected)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -301,9 +365,10 @@ struct AppleNotesExporterView: View {
             
             HStack() {
                 Image(systemName: "folder")
-                Text(
-                    outputPath != "" ? (outputPath + (exportViewModel.configurations.concatenateOutput ? "/Exported Notes.\(outputFormat.lowercased())" : "")) : "Choose an output folder"
-                ).frame(maxWidth: .infinity, alignment: .leading)
+                Text({
+                    let canConcat = ["MD", "TXT"].contains(outputFormat) && exportViewModel.configurations.concatenateOutput
+                    return outputPath != "" ? (outputPath + (canConcat ? "/Exported Notes.\(outputFormat.lowercased())" : "")) : "Choose an output folder"
+                }()).frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .animation(.easeInOut(duration: 0.15), value: outputPath)
@@ -334,8 +399,9 @@ struct AppleNotesExporterView: View {
                     Spacer()
                 }
                 HStack {
+                    let concatAllowed = ["MD", "TXT"].contains(outputFormat) && !exportViewModel.configurations.incrementalSync
                     Toggle("Concatenate into single file", isOn: $exportViewModel.configurations.concatenateOutput)
-                        .disabled(exportViewModel.configurations.incrementalSync)
+                        .disabled(!concatAllowed)
                     Spacer()
                 }
                 HStack {
@@ -351,6 +417,13 @@ struct AppleNotesExporterView: View {
             .onChange(of: exportViewModel.configurations.incrementalSync) { _ in
                 exportViewModel.saveConfigurations()
                 showSyncWarning = exportViewModel.configurations.incrementalSync
+            }
+            .onChange(of: outputFormat) { newFormat in
+                // Auto-disable concatenation when switching to a format that doesn't support it
+                if !["MD", "TXT"].contains(newFormat) && exportViewModel.configurations.concatenateOutput {
+                    exportViewModel.configurations.concatenateOutput = false
+                    exportViewModel.saveConfigurations()
+                }
             }
 
             // Sync overwrite warning
@@ -402,14 +475,14 @@ struct AppleNotesExporterView: View {
             .buttonStyle(BorderedProminentButtonStyle())
             .onReceive(syncTimer) { now = $0 }
             
-            Text("Apple Notes Exporter v\(APP_VERSION!) - Copyright © 2026 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [GNU GPL v3](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
+            Text("Apple Notes Exporter v\(APP_VERSION) - Copyright © 2026 [Konstantin Zaremski](https://konstantin.zarem.ski) - Licensed under the [GNU GPL v3](https://raw.githubusercontent.com/kzaremski/apple-notes-exporter/main/LICENSE)")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5.0)
                 .pointerOnHover()
         }
         }
-        .frame(width: 500.0, height: showSyncWarning ? 455.0 : 410.0, alignment: .top)
+        .frame(width: 500.0, height: showSyncWarning ? 570.0 : 525.0, alignment: .top)
         .padding(10.0)
         .onAppear {
             // Initialize sync warning state from persisted config

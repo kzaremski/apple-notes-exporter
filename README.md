@@ -7,7 +7,6 @@
 [![GitHub Stars](https://img.shields.io/github/stars/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter/issues)
 [![Last Commit](https://img.shields.io/github/last-commit/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter/commits/main)
-[![Code Size](https://img.shields.io/github/languages/code-size/kzaremski/apple-notes-exporter)](https://github.com/kzaremski/apple-notes-exporter)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](https://swift.org/)
 
 MacOS app written in Swift that bulk exports Apple Notes (including iCloud Notes) to a multitude of formats preserving note folder structure.

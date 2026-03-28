@@ -19,7 +19,6 @@
 //
 
 import Foundation
-import SwiftUI
 import OSLog
 
 // MARK: - Notes ViewModel
