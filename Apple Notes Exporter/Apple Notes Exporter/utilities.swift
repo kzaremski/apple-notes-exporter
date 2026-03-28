@@ -55,15 +55,6 @@ let PAGE_US_LEGAL: (width: Int, height: Int) = (612, 1008)
 let PAGE_US_TABLOID: (width: Int, height: Int) = (792, 1224)
 let PAGE_A4: (width: Int, height: Int) = (595, 842)
 
-// Logger
-extension Logger {
-    /// Using your bundle identifier is a great way to ensure a unique identifier.
-    private static var subsystem = Bundle.main.bundleIdentifier ?? "com.zaremski.AppleNotesExporter"
-
-    static let noteQuery = Logger(subsystem: subsystem, category: "notequery")
-    static let noteExport = Logger(subsystem: subsystem, category: "noteexport")
-}
-
 // MARK: - Utility Functions
 
 func toFixed(_ number: Double, _ fractionDigits: Int) -> String {
@@ -126,40 +117,6 @@ func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
         } catch (let error) {
             Logger.noteExport.error("Failed to copy \(coordinatorOutputFile) to \(outputZipFile): \(error.localizedDescription)")
         }
-    }
-}
-
-// MARK: - String Extensions for Escaping (shared between GUI and CLI)
-
-extension String {
-    var htmlEscaped: String {
-        self
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&#39;")
-    }
-
-    var rtfEscaped: String {
-        self
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "{", with: "\\{")
-            .replacingOccurrences(of: "}", with: "\\}")
-    }
-
-    var texEscaped: String {
-        self
-            .replacingOccurrences(of: "\\", with: "\\textbackslash{}")
-            .replacingOccurrences(of: "&", with: "\\&")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "$", with: "\\$")
-            .replacingOccurrences(of: "#", with: "\\#")
-            .replacingOccurrences(of: "_", with: "\\_")
-            .replacingOccurrences(of: "{", with: "\\{")
-            .replacingOccurrences(of: "}", with: "\\}")
-            .replacingOccurrences(of: "~", with: "\\textasciitilde{}")
-            .replacingOccurrences(of: "^", with: "\\textasciicircum{}")
     }
 }
 

@@ -114,7 +114,7 @@ actor CLIExportEngine {
 
         // Create directory structure
         for (accountName, folders) in hierarchy {
-            let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
+            let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
             try FileManager.default.createDirectory(at: accountURL, withIntermediateDirectories: true)
             for (folderPath, _) in folders {
                 let folderURL = accountURL.appendingPathComponent(folderPath)
@@ -125,7 +125,7 @@ actor CLIExportEngine {
         // Flatten for concurrent export
         var notesWithPaths: [(note: NotesNote, folderURL: URL)] = []
         for (accountName, folders) in hierarchy {
-            let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
+            let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
             for (folderPath, folderNotes) in folders {
                 let folderURL = accountURL.appendingPathComponent(folderPath)
                 for note in folderNotes {
@@ -157,7 +157,7 @@ actor CLIExportEngine {
         }
 
         // Set folder timestamps
-        try await setFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
+        try await setExportFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
 
         // Save sync manifest
         if let syncTracker = syncTracker {
@@ -284,7 +284,7 @@ actor CLIExportEngine {
         case .txt:      separator = "\n\n" + String(repeating: "=", count: 72) + "\n\n"
         case .rtf:      separator = "\n\\page\n"
         case .tex:      separator = "\n\n\\newpage\n\n"
-        case .pdf:      separator = ""  // unreachable — blocked upstream
+        default:        separator = "\n\n---\n\n"
         }
 
         let concatenated = contentParts.joined(separator: separator)
@@ -351,7 +351,7 @@ actor CLIExportEngine {
             } else {
                 baseFilename = note.sanitizedFileName
             }
-            let filename = generateUniqueFilename(baseName: baseFilename, extension: format.fileExtension, inDirectory: directory)
+            let filename = generateUniqueExportFilename(baseName: baseFilename, extension: format.fileExtension, inDirectory: directory)
             fileURL = directory.appendingPathComponent(filename)
             uniqueBaseName = filename.replacingOccurrences(of: ".\(format.fileExtension)", with: "")
         }
@@ -371,7 +371,7 @@ actor CLIExportEngine {
 
         let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
         try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        try setFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
+        try setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
 
         if let syncTracker = syncTracker, let rootURL = outputRootURL {
             let relativePath = fileURL.path.replacingOccurrences(of: rootURL.path + "/", with: "")
@@ -436,7 +436,7 @@ actor CLIExportEngine {
 
                 let finalFilename: String
                 if let count = usedFilenames[baseFilename] {
-                    let (name, ext) = splitFilename(baseFilename)
+                    let (name, ext) = splitExportFilename(baseFilename)
                     finalFilename = "\(name) (\(count + 1)).\(ext)"
                     usedFilenames[baseFilename] = count + 1
                 } else {
@@ -446,7 +446,7 @@ actor CLIExportEngine {
 
                 let fileURL = attachmentsURL.appendingPathComponent(finalFilename)
                 try data.write(to: fileURL)
-                try setFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+                try setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
 
                 let relativePath = "\(noteBaseName) (Attachments)/\(finalFilename)"
                 attachmentPaths[attachment.id] = relativePath
@@ -456,7 +456,7 @@ actor CLIExportEngine {
         }
 
         if !fileAttachments.isEmpty {
-            try setFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+            try setExportFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
         }
 
         return attachmentPaths
@@ -470,37 +470,13 @@ actor CLIExportEngine {
         attachmentPaths: [String: String] = [:],
         exportDirectory: URL? = nil
     ) async throws -> String {
-        switch format {
-        case .html:
-            return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-        case .txt:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            return makeNote(note, html: html).toPlainText()
-        case .markdown:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            return makeNote(note, html: html).toMarkdown()
-        case .rtf:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            return makeNote(note, html: html).toRTF(
-                fontFamily: configurations.rtf.fontFamily.rtfFontName,
-                fontSize: configurations.rtf.fontSizePoints
-            )
-        case .tex:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            return makeNote(note, html: html).toLatex(template: configurations.latex.template)
-        case .pdf:
+        if format == .pdf {
             throw CLIError.unsupportedFormat(format)
         }
-    }
-
-    private func makeNote(_ note: NotesNote, html: String) -> NotesNote {
-        NotesNote(
-            id: note.id, title: note.title, plaintext: note.plaintext,
-            htmlBody: html,
-            creationDate: note.creationDate, modificationDate: note.modificationDate,
-            folderId: note.folderId, accountId: note.accountId,
-            attachments: note.attachments
-        )
+        let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+        if format == .html { return html }
+        let enrichedNote = noteWithHTML(note, html: html)
+        return generateExportTextContent(for: enrichedNote, format: format, folderName: nil, accountName: nil)
     }
 
     private func generateHTML(
@@ -598,81 +574,13 @@ actor CLIExportEngine {
 
         for note in notes {
             let accountName = accountLookup[note.accountId] ?? "Unknown Account"
-            let accountKey = sanitizeFilename(accountName)
-            let folderPath = buildFolderPath(folderId: note.folderId, folderLookup: folderLookup)
+            let accountKey = sanitizeExportFilename(accountName)
+            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup)
 
             result[accountKey, default: [:]][folderPath, default: []].append(note)
         }
 
         return result
-    }
-
-    private func buildFolderPath(folderId: String, folderLookup: [String: NotesFolder]) -> String {
-        guard let folder = folderLookup[folderId] else { return sanitizeFilename("Unknown Folder") }
-
-        var components: [String] = [sanitizeFilename(folder.name)]
-        var currentParentId = folder.parentId
-        while let parentId = currentParentId, let parentFolder = folderLookup[parentId] {
-            components.insert(sanitizeFilename(parentFolder.name), at: 0)
-            currentParentId = parentFolder.parentId
-        }
-        return components.joined(separator: "/")
-    }
-
-    // MARK: - Helpers
-
-    private func setFileTimestamps(_ fileURL: URL, creationDate: Date, modificationDate: Date) throws {
-        let attributes: [FileAttributeKey: Any] = [
-            .creationDate: creationDate,
-            .modificationDate: modificationDate
-        ]
-        try FileManager.default.setAttributes(attributes, ofItemAtPath: fileURL.path)
-    }
-
-    private func setFolderTimestamps(hierarchy: [String: [String: [NotesNote]]], outputURL: URL) async throws {
-        for (accountName, folders) in hierarchy {
-            let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
-            var accountOldest: Date?
-            var accountLatest: Date?
-
-            for (folderPath, notes) in folders {
-                guard !notes.isEmpty else { continue }
-                let folderURL = accountURL.appendingPathComponent(folderPath)
-                let oldest = notes.map { $0.creationDate }.min() ?? Date()
-                let latest = notes.map { $0.modificationDate }.max() ?? Date()
-                try setFileTimestamps(folderURL, creationDate: oldest, modificationDate: latest)
-                if accountOldest == nil || oldest < accountOldest! { accountOldest = oldest }
-                if accountLatest == nil || latest > accountLatest! { accountLatest = latest }
-            }
-            if let o = accountOldest, let l = accountLatest {
-                try setFileTimestamps(accountURL, creationDate: o, modificationDate: l)
-            }
-        }
-    }
-
-    func sanitizeFilename(_ name: String) -> String {
-        let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
-            .union(.newlines).union(.illegalCharacters).union(.controlCharacters)
-        return name.components(separatedBy: invalidCharacters).joined(separator: "_")
-    }
-
-    private func generateUniqueFilename(baseName: String, extension ext: String, inDirectory directory: URL) -> String {
-        let initial = "\(baseName).\(ext)"
-        if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(initial).path) { return initial }
-        var counter = 2
-        while counter <= 10000 {
-            let candidate = "\(baseName) (\(counter)).\(ext)"
-            if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) { return candidate }
-            counter += 1
-        }
-        return "\(baseName)_\(UUID().uuidString).\(ext)"
-    }
-
-    private func splitFilename(_ filename: String) -> (name: String, ext: String) {
-        if let lastDot = filename.lastIndex(of: "."), lastDot != filename.startIndex {
-            return (String(filename[..<lastDot]), String(filename[filename.index(after: lastDot)...]))
-        }
-        return (filename, "")
     }
 
     // MARK: - Repository Access (for list commands)

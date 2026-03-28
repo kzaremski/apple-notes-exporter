@@ -192,7 +192,7 @@ class ExportViewModel: ObservableObject {
 
             // Create all directory structure upfront
             for (accountName, folders) in hierarchy {
-                let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
+                let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
                 try FileManager.default.createDirectory(at: accountURL, withIntermediateDirectories: true)
 
                 for (folderPath, _) in folders {
@@ -204,7 +204,7 @@ class ExportViewModel: ObservableObject {
             // Flatten notes with their folder paths for concurrent export
             var notesWithPaths: [(note: NotesNote, folderURL: URL, folderName: String, accountName: String)] = []
             for (accountName, folders) in hierarchy {
-                let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
+                let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
                 for (folderPath, folderNotes) in folders {
                     let folderURL = accountURL.appendingPathComponent(folderPath)
                     for note in folderNotes {
@@ -246,7 +246,7 @@ class ExportViewModel: ObservableObject {
             }
 
             // Set folder timestamps based on their notes
-            try await setFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
+            try await setExportFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
 
             // Save sync manifest if incremental sync is enabled
             if let syncTracker = syncTracker {
@@ -603,7 +603,7 @@ class ExportViewModel: ObservableObject {
             } else {
                 baseFilename = note.sanitizedFileName
             }
-            let filename = generateUniqueFilename(
+            let filename = generateUniqueExportFilename(
                 baseName: baseFilename,
                 extension: format.fileExtension,
                 inDirectory: directory
@@ -695,7 +695,7 @@ class ExportViewModel: ObservableObject {
         }
 
         // Set file timestamps to match note's creation and modification dates
-        try setFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
+        try setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
 
         // Record in sync manifest if tracking
         if let syncTracker = syncTracker, let rootURL = outputRootURL {
@@ -727,22 +727,7 @@ class ExportViewModel: ObservableObject {
     ) async throws -> [String: String] {
         var attachmentPaths: [String: String] = [:]
 
-        // Filter out non-file attachments (inline content embedded in note)
-        // Note: com.apple.paper, com.apple.drawing, and com.apple.drawing.2 are NOT filtered
-        // because they are drawing/sketch attachments with fallback images that should be exported
-        let nonFileAttachmentPrefixes = [
-            "com.apple.notes.table",                    // Tables
-            "com.apple.notes.inlinetextattachment",     // Hashtags, calculations, etc.
-            "com.apple.notes.inlinehashtagattachment",  // Hashtags (legacy)
-            "com.apple.notes.inlinementionattachment",  // Mentions
-            "public.url"                                // URLs
-        ]
-
-        let fileAttachments = attachments.filter { attachment in
-            !nonFileAttachmentPrefixes.contains { prefix in
-                attachment.typeUTI.hasPrefix(prefix)
-            }
-        }
+        let fileAttachments = filterFileAttachments(attachments)
 
         // Skip if no file attachments to export
         guard !fileAttachments.isEmpty else {
@@ -781,7 +766,7 @@ class ExportViewModel: ObservableObject {
                 let finalFilename: String
                 if let count = usedFilenames[baseFilename] {
                     // This filename has been used before, add a counter
-                    let (name, ext) = splitFilename(baseFilename)
+                    let (name, ext) = splitExportFilename(baseFilename)
                     finalFilename = "\(name) (\(count + 1)).\(ext)"
                     usedFilenames[baseFilename] = count + 1
                 } else {
@@ -796,7 +781,7 @@ class ExportViewModel: ObservableObject {
                 try data.write(to: fileURL)
 
                 // Set attachment timestamps to match note's dates
-                try setFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+                try setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
 
                 log("✓ Exported attachment: \(finalFilename) for note '\(noteTitle)'")
 
@@ -839,7 +824,7 @@ class ExportViewModel: ObservableObject {
 
         // Set attachments folder timestamps to match note's dates
         if !fileAttachments.isEmpty {
-            try setFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+            try setExportFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
         }
 
         return attachmentPaths
@@ -855,22 +840,7 @@ class ExportViewModel: ObservableObject {
         noteModificationDate: Date,
         tracker: ExportProgressTracker
     ) async throws {
-        // Filter out non-file attachments (inline content embedded in note)
-        // Note: com.apple.paper, com.apple.drawing, and com.apple.drawing.2 are NOT filtered
-        // because they are drawing/sketch attachments with fallback images that should be exported
-        let nonFileAttachmentPrefixes = [
-            "com.apple.notes.table",                    // Tables
-            "com.apple.notes.inlinetextattachment",     // Hashtags, calculations, etc.
-            "com.apple.notes.inlinehashtagattachment",  // Hashtags (legacy)
-            "com.apple.notes.inlinementionattachment",  // Mentions
-            "public.url"                                // URLs
-        ]
-
-        let fileAttachments = attachments.filter { attachment in
-            !nonFileAttachmentPrefixes.contains { prefix in
-                attachment.typeUTI.hasPrefix(prefix)
-            }
-        }
+        let fileAttachments = filterFileAttachments(attachments)
 
         // Skip if no file attachments to export
         guard !fileAttachments.isEmpty else {
@@ -909,7 +879,7 @@ class ExportViewModel: ObservableObject {
                 let finalFilename: String
                 if let count = usedFilenames[baseFilename] {
                     // This filename has been used before, add a counter
-                    let (name, ext) = splitFilename(baseFilename)
+                    let (name, ext) = splitExportFilename(baseFilename)
                     finalFilename = "\(name) (\(count + 1)).\(ext)"
                     usedFilenames[baseFilename] = count + 1
                 } else {
@@ -924,7 +894,7 @@ class ExportViewModel: ObservableObject {
                 try data.write(to: fileURL)
 
                 // Set attachment timestamps to match note's dates
-                try setFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+                try setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
 
                 log("✓ Exported attachment: \(finalFilename) for note '\(noteTitle)'")
 
@@ -963,7 +933,7 @@ class ExportViewModel: ObservableObject {
 
         // Set attachments folder timestamps to match note's dates
         if !fileAttachments.isEmpty {
-            try setFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+            try setExportFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
         }
     }
 
@@ -1289,129 +1259,22 @@ class ExportViewModel: ObservableObject {
     private func organizeNotesByHierarchy(_ notes: [NotesNote]) async throws -> [String: [String: [NotesNote]]] {
         var hierarchy: [String: [String: [NotesNote]]] = [:]
 
-        // Fetch all accounts and folders from repository
         let accounts = try await repository.fetchAccounts()
         let folders = try await repository.fetchFolders()
 
-        // Create lookup dictionaries for faster access
         var accountLookup: [String: String] = [:]
-        for account in accounts {
-            accountLookup[account.id] = account.name
-        }
+        for account in accounts { accountLookup[account.id] = account.name }
 
         var folderLookup: [String: NotesFolder] = [:]
-        for folder in folders {
-            folderLookup[folder.id] = folder
-        }
+        for folder in folders { folderLookup[folder.id] = folder }
 
         for note in notes {
-            let accountName = accountLookup[note.accountId] ?? "Unknown Account"
-            let accountKey = sanitizeFilename(accountName)
-
-            // Build folder path by walking up the parent chain
-            let folderPath = buildFolderPath(folderId: note.folderId, folderLookup: folderLookup)
-
-            if hierarchy[accountKey] == nil {
-                hierarchy[accountKey] = [:]
-            }
-
-            if hierarchy[accountKey]![folderPath] == nil {
-                hierarchy[accountKey]![folderPath] = []
-            }
-
-            hierarchy[accountKey]![folderPath]!.append(note)
+            let accountKey = sanitizeExportFilename(accountLookup[note.accountId] ?? "Unknown Account")
+            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup)
+            hierarchy[accountKey, default: [:]][folderPath, default: []].append(note)
         }
 
         return hierarchy
-    }
-
-    /// Build a folder path string by walking up the parent folder chain
-    private func buildFolderPath(folderId: String, folderLookup: [String: NotesFolder]) -> String {
-        guard let folder = folderLookup[folderId] else {
-            return sanitizeFilename("Unknown Folder")
-        }
-
-        var pathComponents: [String] = [sanitizeFilename(folder.name)]
-
-        // Walk up the parent chain
-        var currentParentId = folder.parentId
-        while let parentId = currentParentId, let parentFolder = folderLookup[parentId] {
-            pathComponents.insert(sanitizeFilename(parentFolder.name), at: 0)
-            currentParentId = parentFolder.parentId
-        }
-
-        // Join with "/" to create a relative path
-        return pathComponents.joined(separator: "/")
-    }
-
-    /// Split a filename into name and extension
-    private func splitFilename(_ filename: String) -> (name: String, ext: String) {
-        if let lastDotIndex = filename.lastIndex(of: "."),
-           lastDotIndex != filename.startIndex {
-            let name = String(filename[..<lastDotIndex])
-            let ext = String(filename[filename.index(after: lastDotIndex)...])
-            return (name, ext)
-        } else {
-            // No extension found
-            return (filename, "")
-        }
-    }
-
-    /// Set file creation and modification timestamps
-    private func setFileTimestamps(_ fileURL: URL, creationDate: Date, modificationDate: Date) throws {
-        let attributes: [FileAttributeKey: Any] = [
-            .creationDate: creationDate,
-            .modificationDate: modificationDate
-        ]
-        try FileManager.default.setAttributes(attributes, ofItemAtPath: fileURL.path)
-    }
-
-    /// Set folder timestamps based on the oldest creation date and latest modification date of notes within
-    private func setFolderTimestamps(hierarchy: [String: [String: [NotesNote]]], outputURL: URL) async throws {
-        for (accountName, folders) in hierarchy {
-            let accountURL = outputURL.appendingPathComponent(sanitizeFilename(accountName))
-
-            // Track dates for the account
-            var accountOldestCreation: Date?
-            var accountLatestModification: Date?
-
-            for (folderPath, notes) in folders {
-                guard !notes.isEmpty else { continue }
-
-                let folderURL = accountURL.appendingPathComponent(folderPath)
-
-                // Find oldest creation and latest modification among all notes in this folder
-                let oldestCreation = notes.map { $0.creationDate }.min() ?? Date()
-                let latestModification = notes.map { $0.modificationDate }.max() ?? Date()
-
-                // Set folder timestamps
-                try setFileTimestamps(folderURL, creationDate: oldestCreation, modificationDate: latestModification)
-
-                // Track for account-level timestamps
-                if accountOldestCreation == nil || oldestCreation < accountOldestCreation! {
-                    accountOldestCreation = oldestCreation
-                }
-                if accountLatestModification == nil || latestModification > accountLatestModification! {
-                    accountLatestModification = latestModification
-                }
-            }
-
-            // Set account folder timestamps
-            if let oldestCreation = accountOldestCreation,
-               let latestModification = accountLatestModification {
-                try setFileTimestamps(accountURL, creationDate: oldestCreation, modificationDate: latestModification)
-            }
-        }
-    }
-
-    /// Sanitize filename for filesystem
-    private func sanitizeFilename(_ name: String) -> String {
-        let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
-            .union(.newlines)
-            .union(.illegalCharacters)
-            .union(.controlCharacters)
-
-        return name.components(separatedBy: invalidCharacters).joined(separator: "_")
     }
 
     /// Format time remaining for display
@@ -1428,33 +1291,4 @@ class ExportViewModel: ObservableObject {
         }
     }
 
-    /// Generate unique filename by checking for collisions and appending counter if needed
-    private func generateUniqueFilename(baseName: String, extension: String, inDirectory directory: URL) -> String {
-        let initialFilename = "\(baseName).\(`extension`)"
-        let initialURL = directory.appendingPathComponent(initialFilename)
-
-        // If no collision, use the original name
-        if !FileManager.default.fileExists(atPath: initialURL.path) {
-            return initialFilename
-        }
-
-        // File exists, find unique name by appending counter (starting from 2)
-        var counter = 2
-        while true {
-            let uniqueFilename = "\(baseName) (\(counter)).\(`extension`)"
-            let uniqueURL = directory.appendingPathComponent(uniqueFilename)
-
-            if !FileManager.default.fileExists(atPath: uniqueURL.path) {
-                return uniqueFilename
-            }
-
-            counter += 1
-
-            // Safety limit to prevent infinite loop
-            if counter > 10000 {
-                // Fall back to using UUID if we somehow have 10000 files with same name
-                return "\(baseName)_\(UUID().uuidString).\(`extension`)"
-            }
-        }
-    }
 }

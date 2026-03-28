@@ -162,14 +162,6 @@ struct NotesAttachment: NotesItem {
     }
 }
 
-// MARK: - Sort Options
-
-enum NoteSortOption: String, CaseIterable {
-    case name = "Name"
-    case dateModified = "Date Modified"
-    case dateCreated = "Date Created"
-}
-
 // MARK: - Hierarchical Structure
 
 /// Represents a hierarchical tree structure for displaying accounts/folders/notes

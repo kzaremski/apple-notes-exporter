@@ -166,7 +166,13 @@ struct PDFConfiguration: ExportConfigurable {
 
     static var defaultConfiguration: PDFConfiguration {
         // Locale-aware default: Letter for US, A4 for rest of world
-        let defaultPageSize: PageSize = Locale.current.region?.identifier == "US" ? .letter : .a4
+        let isUS: Bool
+        if #available(macOS 13, *) {
+            isUS = Locale.current.region?.identifier == "US"
+        } else {
+            isUS = Locale.current.regionCode == "US"
+        }
+        let defaultPageSize: PageSize = isUS ? .letter : .a4
 
         return PDFConfiguration(
             htmlConfiguration: .defaultConfiguration,

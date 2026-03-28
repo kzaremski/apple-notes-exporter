@@ -158,7 +158,7 @@ struct ExportNotesIntent: AppIntent {
         var hierarchy: [(accountName: String, folderPath: String, note: NotesNote)] = []
         for note in notes {
             let acctName = sanitizeFileNameString(accountNames[note.accountId] ?? "Unknown Account")
-            let fPath = intentBuildFolderPath(folderId: note.folderId, folderLookup: folderLookup)
+            let fPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup)
             hierarchy.append((accountName: acctName, folderPath: fPath, note: note))
         }
 
@@ -189,7 +189,7 @@ struct ExportNotesIntent: AppIntent {
                     baseFilename = note.sanitizedFileName
                 }
 
-                let filename = intentGenerateUniqueFilename(baseName: baseFilename, ext: exportFormat.fileExtension, inDirectory: folderURL)
+                let filename = generateUniqueExportFilename(baseName: baseFilename, ext: exportFormat.fileExtension, inDirectory: folderURL)
                 let fileURL = folderURL.appendingPathComponent(filename)
                 let uniqueBaseName = filename.replacingOccurrences(of: ".\(exportFormat.fileExtension)", with: "")
 
@@ -230,25 +230,22 @@ struct ExportNotesIntent: AppIntent {
                         group.cancelAll()
                     }
                 } else if exportFormat.isBinaryFormat {
-                    let noteWithHTML = NotesNote(id: note.id, title: note.title, plaintext: note.plaintext, htmlBody: html, creationDate: note.creationDate, modificationDate: note.modificationDate, folderId: note.folderId, accountId: note.accountId, attachments: note.attachments)
+                    let enrichedNote = noteWithHTML(note, html: html)
                     let data: Data
                     switch exportFormat {
-                    case .docx: data = noteWithHTML.toDOCX()
-                    case .odt:  data = noteWithHTML.toODT()
-                    case .epub: data = noteWithHTML.toEPUB()
+                    case .docx: data = enrichedNote.toDOCX()
+                    case .odt:  data = enrichedNote.toODT()
+                    case .epub: data = enrichedNote.toEPUB()
                     default: fatalError()
                     }
                     try data.write(to: fileURL)
                 } else {
-                    let noteWithHTML = NotesNote(id: note.id, title: note.title, plaintext: note.plaintext, htmlBody: html, creationDate: note.creationDate, modificationDate: note.modificationDate, folderId: note.folderId, accountId: note.accountId, attachments: note.attachments)
-                    let content = intentGenerateTextContent(for: noteWithHTML, format: exportFormat, folderName: item.folderPath, accountName: item.accountName)
+                    let enrichedNote = noteWithHTML(note, html: html)
+                    let content = generateExportTextContent(for: enrichedNote, format: exportFormat, folderName: item.folderPath, accountName: item.accountName)
                     try content.write(to: fileURL, atomically: true, encoding: .utf8)
                 }
 
-                try? FileManager.default.setAttributes([
-                    .creationDate: note.creationDate,
-                    .modificationDate: note.modificationDate,
-                ], ofItemAtPath: fileURL.path)
+                try? setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
 
                 successCount += 1
             } catch {
@@ -357,40 +354,7 @@ struct ANEShortcuts: AppShortcutsProvider {
     }
 }
 
-// MARK: - Intent Helper Functions
-// Prefixed with "intent" to avoid collisions with CLI helpers in CLIMain.swift
-// (these are only compiled into the main app target, not the CLI target)
-
-@available(macOS 13.0, *)
-private func intentBuildFolderPath(folderId: String, folderLookup: [String: NotesFolder]) -> String {
-    guard let folder = folderLookup[folderId] else {
-        return sanitizeFileNameString("Unknown Folder")
-    }
-    var pathComponents: [String] = [sanitizeFileNameString(folder.name)]
-    var currentParentId = folder.parentId
-    while let parentId = currentParentId, let parentFolder = folderLookup[parentId] {
-        pathComponents.insert(sanitizeFileNameString(parentFolder.name), at: 0)
-        currentParentId = parentFolder.parentId
-    }
-    return pathComponents.joined(separator: "/")
-}
-
-@available(macOS 13.0, *)
-private func intentGenerateUniqueFilename(baseName: String, ext: String, inDirectory directory: URL) -> String {
-    let initial = "\(baseName).\(ext)"
-    if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(initial).path) {
-        return initial
-    }
-    var counter = 2
-    while counter <= 10000 {
-        let unique = "\(baseName) (\(counter)).\(ext)"
-        if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(unique).path) {
-            return unique
-        }
-        counter += 1
-    }
-    return "\(baseName)_\(UUID().uuidString).\(ext)"
-}
+// MARK: - Intent-specific Helpers
 
 @available(macOS 13.0, *)
 private func intentGenerateHTML(
@@ -469,28 +433,6 @@ private func intentGenerateHTML(
 }
 
 @available(macOS 13.0, *)
-private func intentGenerateTextContent(for note: NotesNote, format: ExportFormat, folderName: String?, accountName: String?) -> String {
-    switch format {
-    case .html:     return note.htmlBody ?? ""
-    case .txt:      return note.toPlainText()
-    case .markdown: return note.toMarkdown()
-    case .rtf:      return note.toRTF(fontFamily: "Helvetica", fontSize: 12)
-    case .tex:      return note.toLatex(template: LaTeXConfiguration.defaultTemplate)
-    case .json:     return note.toJSON(folderName: folderName, accountName: accountName)
-    case .jsonl:    return note.toJSONL(folderName: folderName, accountName: accountName)
-    case .xml:      return note.toXML(folderName: folderName, accountName: accountName)
-    case .csv:      return note.toCSV(folderName: folderName, accountName: accountName)
-    case .opml:     return note.toOPML()
-    case .org:      return note.toOrg()
-    case .rst:      return note.toRST()
-    case .adoc:     return note.toAsciiDoc()
-    case .enex:     return note.toENEX()
-    case .pdf, .docx, .odt, .epub:
-        fatalError("Format \(format.rawValue) should not use intentGenerateTextContent()")
-    }
-}
-
-@available(macOS 13.0, *)
 private func intentExportAttachments(
     note: NotesNote,
     toDirectory directory: URL,
@@ -499,18 +441,7 @@ private func intentExportAttachments(
 ) async throws -> [String: String] {
     var attachmentPaths: [String: String] = [:]
 
-    let nonFileAttachmentPrefixes = [
-        "com.apple.notes.table",
-        "com.apple.notes.inlinetextattachment",
-        "com.apple.notes.inlinehashtagattachment",
-        "com.apple.notes.inlinementionattachment",
-        "public.url"
-    ]
-
-    let fileAttachments = note.attachments.filter { attachment in
-        !nonFileAttachmentPrefixes.contains { prefix in attachment.typeUTI.hasPrefix(prefix) }
-    }
-
+    let fileAttachments = filterFileAttachments(note.attachments)
     guard !fileAttachments.isEmpty else { return [:] }
 
     let attachmentsURL = directory.appendingPathComponent("\(noteBaseName) (Attachments)")
@@ -533,9 +464,8 @@ private func intentExportAttachments(
 
             let finalFilename: String
             if let count = usedFilenames[baseFilename] {
-                let name = baseFilename.components(separatedBy: ".").dropLast().joined(separator: ".")
-                let ext = baseFilename.components(separatedBy: ".").last ?? "bin"
-                finalFilename = "\(name) (\(count + 1)).\(ext)"
+                let (name, ext) = splitExportFilename(baseFilename)
+                finalFilename = "\(name) (\(count + 1)).\(ext.isEmpty ? "bin" : ext)"
                 usedFilenames[baseFilename] = count + 1
             } else {
                 finalFilename = baseFilename
@@ -544,11 +474,7 @@ private func intentExportAttachments(
 
             let fileURL = attachmentsURL.appendingPathComponent(finalFilename)
             try data.write(to: fileURL)
-
-            try? FileManager.default.setAttributes([
-                .creationDate: note.creationDate,
-                .modificationDate: note.modificationDate,
-            ], ofItemAtPath: fileURL.path)
+            try? setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
 
             attachmentPaths[attachment.id] = "\(noteBaseName) (Attachments)/\(finalFilename)"
         } catch {
