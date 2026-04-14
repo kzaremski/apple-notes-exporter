@@ -2284,23 +2284,33 @@ ane_gallery_child *ane_fetch_gallery_children(ane_db *db,
                                               const char *account_id,
                                               size_t *count)
 {
-    (void)account_id;  /* reserved for future media file resolution */
     if (!db || !gallery_id || !count) return NULL;
     *count = 0;
 
+    /* Resolve account_id from gallery metadata if caller passed NULL */
+    const char *effective_acct = account_id;
+    char *resolved_acct = NULL;
+    if (!effective_acct) {
+        const ane_attachment_meta *meta = ane_lookup_attachment(db, gallery_id);
+        if (meta && meta->account_id) {
+            resolved_acct = strdup(meta->account_id);
+            effective_acct = resolved_acct;
+        }
+    }
+
     /* Step 1: Resolve gallery Z_PK */
     sqlite3_stmt *pk_stmt = db->stmts[STMT_GALLERY_PK];
-    if (!pk_stmt) return NULL;
+    if (!pk_stmt) { free(resolved_acct); return NULL; }
 
     sqlite3_reset(pk_stmt);
     sqlite3_bind_text(pk_stmt, 1, gallery_id, -1, SQLITE_STATIC);
 
-    if (sqlite3_step(pk_stmt) != SQLITE_ROW) return NULL;
+    if (sqlite3_step(pk_stmt) != SQLITE_ROW) { free(resolved_acct); return NULL; }
     int64_t gallery_pk = sqlite3_column_int64(pk_stmt, 0);
 
     /* Step 2: Fetch children */
     sqlite3_stmt *child_stmt = db->stmts[STMT_GALLERY_CHILDREN];
-    if (!child_stmt) return NULL;
+    if (!child_stmt) { free(resolved_acct); return NULL; }
 
     sqlite3_reset(child_stmt);
     sqlite3_bind_int64(child_stmt, 1, gallery_pk);
@@ -2308,7 +2318,7 @@ ane_gallery_child *ane_fetch_gallery_children(ane_db *db,
     size_t capacity = 16;
     ane_gallery_child *children = (ane_gallery_child *)calloc(capacity,
         sizeof(ane_gallery_child));
-    if (!children) return NULL;
+    if (!children) { free(resolved_acct); return NULL; }
 
     while (sqlite3_step(child_stmt) == SQLITE_ROW) {
         if (*count >= capacity) {
@@ -2336,14 +2346,50 @@ ane_gallery_child *ane_fetch_gallery_children(ane_db *db,
             if (child_data) {
                 c->data = child_data->data;
                 c->data_len = child_data->len;
-                child_data->data = NULL;  /* transfer ownership */
+                if (child_data->filename) {
+                    free(c->filename);
+                    c->filename = child_data->filename;
+                    child_data->filename = NULL;
+                }
+                child_data->data = NULL;
                 ane_free_attachment_data(child_data);
+            }
+        }
+
+        /* Fallback for NULL ZMEDIA (On My Mac, moved notes) */
+        if (!c->data || c->data_len == 0) {
+            ane_attachment_data *fb = ane_fetch_fallback_image(
+                db, c->identifier, effective_acct);
+
+            /* Avoid recursive gallery resolution */
+            if (!fb && c->type_uti
+                && strcmp(c->type_uti, "com.apple.notes.gallery") != 0
+                && strcmp(c->type_uti, "com.apple.notes.table") != 0) {
+                fb = ane_fetch_attachment(db, c->identifier, effective_acct);
+            }
+
+            if (fb) {
+                c->data = fb->data;
+                c->data_len = fb->len;
+                fb->data = NULL;
+                if (fb->filename) {
+                    free(c->filename);
+                    c->filename = fb->filename;
+                    fb->filename = NULL;
+                }
+                if (fb->uti) {
+                    free(c->type_uti);
+                    c->type_uti = fb->uti;
+                    fb->uti = NULL;
+                }
+                ane_free_attachment_data(fb);
             }
         }
 
         (*count)++;
     }
 
+    free(resolved_acct);
     return children;
 }
 

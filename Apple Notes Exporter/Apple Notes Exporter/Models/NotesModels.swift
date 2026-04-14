@@ -138,27 +138,41 @@ struct NotesAttachment: NotesItem {
             return ext
         }
 
-        // Common UTI mappings
         let utiExtensions: [String: String] = [
             "public.jpeg": "jpg",
             "public.png": "png",
             "public.pdf": "pdf",
             "public.heic": "heic",
-            "com.apple.quicktime-movie": "mov",
+            "public.heif": "heif",
+            "public.tiff": "tiff",
+            "public.image": "jpg",
             "public.mpeg-4": "mp4",
+            "public.mp3": "mp3",
+            "public.mpeg-4-audio": "m4a",
             "public.plain-text": "txt",
             "public.text": "txt",
             "public.shell-script": "sh",
-            "com.adobe.encapsulated-postscript": "eps",
-            "com.compuserve.gif": "gif",
+            "public.zip-archive": "zip",
+            "com.apple.quicktime-movie": "mov",
+            "com.apple.m4a-audio": "m4a",
             "com.apple.paper": "jpg",
             "com.apple.drawing": "jpg",
             "com.apple.drawing.2": "jpg",
             "com.apple.paper.doc.pdf": "pdf",
-            "com.apple.notes.gallery": "jpg"
+            "com.apple.paper.doc.scan": "pdf",
+            "com.apple.notes.gallery": "jpg",
+            "com.adobe.pdf": "pdf",
+            "com.adobe.encapsulated-postscript": "eps",
+            "com.compuserve.gif": "gif",
+            "com.microsoft.word.doc": "doc",
+            "org.openxmlformats.wordprocessingml.document": "docx",
+            "com.microsoft.excel.xls": "xls",
+            "org.openxmlformats.spreadsheetml.sheet": "xlsx",
+            "com.microsoft.powerpoint.ppt": "ppt",
+            "org.openxmlformats.presentationml.presentation": "pptx",
         ]
 
-        return utiExtensions[typeUTI] ?? "bin"
+        return utiExtensions[typeUTI]
     }
 }
 

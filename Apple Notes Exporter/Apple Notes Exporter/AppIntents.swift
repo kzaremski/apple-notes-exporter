@@ -450,6 +450,45 @@ private func intentExportAttachments(
     var usedFilenames: [String: Int] = [:]
 
     for attachment in fileAttachments {
+        // Expand gallery containers into child attachments
+        if attachment.typeUTI == "com.apple.notes.gallery" {
+            do {
+                let children = try await repo.fetchGalleryChildren(
+                    galleryId: attachment.id, accountId: nil)
+                for child in children {
+                    let ext = child.filename.flatMap { fn in
+                        fn.components(separatedBy: ".").last.flatMap { e in e.count <= 5 && e != fn ? e : nil }
+                    } ?? child.uti.flatMap { NotesAttachment(id: child.id, typeUTI: $0, filename: nil).fileExtension }
+                      ?? detectFileExtension(from: child.data)
+                      ?? "jpg"
+                    let childBase = child.filename ?? "\(child.id).\(ext)"
+
+                    let childFinal: String
+                    if let count = usedFilenames[childBase] {
+                        let (name, e) = splitExportFilename(childBase)
+                        childFinal = "\(name) (\(count + 1)).\(e)"
+                        usedFilenames[childBase] = count + 1
+                    } else {
+                        childFinal = childBase
+                        usedFilenames[childBase] = 1
+                    }
+
+                    let fileURL = attachmentsURL.appendingPathComponent(childFinal)
+                    try child.data.write(to: fileURL)
+                    try? setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
+
+                    let relativePath = "\(noteBaseName) (Attachments)/\(childFinal)"
+                    attachmentPaths[child.id] = relativePath
+                    if attachmentPaths[attachment.id] == nil {
+                        attachmentPaths[attachment.id] = relativePath
+                    }
+                }
+            } catch {
+                Logger.noteExport.warning("Gallery expansion failed for \(attachment.id): \(error.localizedDescription)")
+            }
+            continue
+        }
+
         do {
             let data = try await repo.fetchAttachment(id: attachment.id)
 
@@ -459,7 +498,10 @@ private func intentExportAttachments(
             } else if let fetchedFilename = await repo.fetchAttachmentFilename(id: attachment.id) {
                 baseFilename = fetchedFilename
             } else {
-                baseFilename = "\(attachment.id).\(attachment.fileExtension ?? "bin")"
+                let ext = attachment.fileExtension
+                    ?? detectFileExtension(from: data)
+                    ?? "bin"
+                baseFilename = "\(attachment.id).\(ext)"
             }
 
             let finalFilename: String

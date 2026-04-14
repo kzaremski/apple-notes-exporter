@@ -743,34 +743,69 @@ class ExportViewModel: ObservableObject {
 
         // Export each attachment
         for attachment in fileAttachments {
-            // Check for cancellation before processing each attachment
             try Task.checkCancellation()
 
+            // Expand gallery containers into child attachments
+            if attachment.typeUTI == "com.apple.notes.gallery" {
+                do {
+                    let children = try await repository.fetchGalleryChildren(
+                        galleryId: attachment.id, accountId: nil)
+                    for child in children {
+                        let ext = child.filename.flatMap { fn in
+                            fn.components(separatedBy: ".").last.flatMap { e in e.count <= 5 && e != fn ? e : nil }
+                        } ?? child.uti.flatMap { NotesAttachment(id: child.id, typeUTI: $0, filename: nil).fileExtension }
+                          ?? detectFileExtension(from: child.data)
+                          ?? "jpg"
+                        let childBase = child.filename ?? "\(child.id).\(ext)"
+
+                        let childFinal: String
+                        if let count = usedFilenames[childBase] {
+                            let (name, e) = splitExportFilename(childBase)
+                            childFinal = "\(name) (\(count + 1)).\(e)"
+                            usedFilenames[childBase] = count + 1
+                        } else {
+                            childFinal = childBase
+                            usedFilenames[childBase] = 1
+                        }
+
+                        let fileURL = attachmentsURL.appendingPathComponent(childFinal)
+                        try child.data.write(to: fileURL)
+                        try? setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+
+                        let relativePath = "\(noteBaseName) (Attachments)/\(childFinal)"
+                        attachmentPaths[child.id] = relativePath
+                        if attachmentPaths[attachment.id] == nil {
+                            attachmentPaths[attachment.id] = relativePath
+                        }
+                    }
+                } catch {
+                    log("Gallery expansion failed for \(attachment.id): \(error.localizedDescription)")
+                    await tracker.attachmentFailed()
+                }
+                continue
+            }
+
             do {
-                // Fetch attachment data from repository
                 let data = try await repository.fetchAttachment(id: attachment.id)
 
-                // Determine base filename
-                // If attachment.filename is not available, try to get it from the database
                 let baseFilename: String
                 if let filename = attachment.filename {
                     baseFilename = filename
                 } else if let fetchedFilename = await repository.fetchAttachmentFilename(id: attachment.id) {
                     baseFilename = fetchedFilename
                 } else {
-                    // Final fallback to UUID with extension
-                    baseFilename = "\(attachment.id).\(attachment.fileExtension ?? "bin")"
+                    let ext = attachment.fileExtension
+                        ?? detectFileExtension(from: data)
+                        ?? "bin"
+                    baseFilename = "\(attachment.id).\(ext)"
                 }
 
-                // Handle filename collisions by adding a counter suffix
                 let finalFilename: String
                 if let count = usedFilenames[baseFilename] {
-                    // This filename has been used before, add a counter
                     let (name, ext) = splitExportFilename(baseFilename)
                     finalFilename = "\(name) (\(count + 1)).\(ext)"
                     usedFilenames[baseFilename] = count + 1
                 } else {
-                    // First time using this filename
                     finalFilename = baseFilename
                     usedFilenames[baseFilename] = 1
                 }
@@ -856,34 +891,64 @@ class ExportViewModel: ObservableObject {
 
         // Export each attachment
         for attachment in fileAttachments {
-            // Check for cancellation before processing each attachment
             try Task.checkCancellation()
 
+            // Expand gallery containers into child attachments
+            if attachment.typeUTI == "com.apple.notes.gallery" {
+                do {
+                    let children = try await repository.fetchGalleryChildren(
+                        galleryId: attachment.id, accountId: nil)
+                    for child in children {
+                        let ext = child.filename.flatMap { fn in
+                            fn.components(separatedBy: ".").last.flatMap { e in e.count <= 5 && e != fn ? e : nil }
+                        } ?? child.uti.flatMap { NotesAttachment(id: child.id, typeUTI: $0, filename: nil).fileExtension }
+                          ?? detectFileExtension(from: child.data)
+                          ?? "jpg"
+                        let childBase = child.filename ?? "\(child.id).\(ext)"
+
+                        let childFinal: String
+                        if let count = usedFilenames[childBase] {
+                            let (name, e) = splitExportFilename(childBase)
+                            childFinal = "\(name) (\(count + 1)).\(e)"
+                            usedFilenames[childBase] = count + 1
+                        } else {
+                            childFinal = childBase
+                            usedFilenames[childBase] = 1
+                        }
+
+                        let fileURL = attachmentsURL.appendingPathComponent(childFinal)
+                        try child.data.write(to: fileURL)
+                        try? setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+
+                    }
+                } catch {
+                    log("Gallery expansion failed for \(attachment.id): \(error.localizedDescription)")
+                    await tracker.attachmentFailed()
+                }
+                continue
+            }
+
             do {
-                // Fetch attachment data from repository
                 let data = try await repository.fetchAttachment(id: attachment.id)
 
-                // Determine base filename
-                // If attachment.filename is not available, try to get it from the database
                 let baseFilename: String
                 if let filename = attachment.filename {
                     baseFilename = filename
                 } else if let fetchedFilename = await repository.fetchAttachmentFilename(id: attachment.id) {
                     baseFilename = fetchedFilename
                 } else {
-                    // Final fallback to UUID with extension
-                    baseFilename = "\(attachment.id).\(attachment.fileExtension ?? "bin")"
+                    let ext = attachment.fileExtension
+                        ?? detectFileExtension(from: data)
+                        ?? "bin"
+                    baseFilename = "\(attachment.id).\(ext)"
                 }
 
-                // Handle filename collisions by adding a counter suffix
                 let finalFilename: String
                 if let count = usedFilenames[baseFilename] {
-                    // This filename has been used before, add a counter
                     let (name, ext) = splitExportFilename(baseFilename)
                     finalFilename = "\(name) (\(count + 1)).\(ext)"
                     usedFilenames[baseFilename] = count + 1
                 } else {
-                    // First time using this filename
                     finalFilename = baseFilename
                     usedFilenames[baseFilename] = 1
                 }
