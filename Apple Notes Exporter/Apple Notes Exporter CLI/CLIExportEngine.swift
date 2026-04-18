@@ -48,6 +48,10 @@ actor CLIExportEngine {
     let configurations: ExportConfigurations
     private let databasePath: String
 
+    /// Map of note ID to relative file path (from output root), populated at the start of each export
+    /// and used to rewrite applenotes:note/UUID links in generated HTML.
+    private var internalLinkMap: [String: String] = [:]
+
     private var maxConcurrentExports: Int {
         let coreCount = ProcessInfo.processInfo.processorCount
         let totalMemory = ProcessInfo.processInfo.physicalMemory
@@ -90,8 +94,21 @@ actor CLIExportEngine {
             notesToExport = manifest.notesNeedingExport(from: notes)
             syncTracker = SyncManifestTracker(manifest: manifest)
             if notesToExport.isEmpty {
-                if verbose { CLIOutput.writeStderr("All notes are up to date, nothing to export.") }
-                var updatedManifest = manifest
+                // Nothing to re-export, but we still need to prune notes that
+                // have been deleted from Apple Notes since the last sync.
+                let presentIds = Set(notes.map { $0.id })
+                let removed = await syncTracker!.pruneDeleted(presentNoteIds: presentIds)
+                for entry in removed {
+                    deleteExportedNoteFiles(outputRoot: outputURL, entry: entry)
+                    if verbose { CLIOutput.writeStderr("Deleted (no longer in Notes): \(entry.exportedPath)") }
+                }
+                if verbose {
+                    let msg = removed.isEmpty
+                        ? "All notes are up to date, nothing to export."
+                        : "All present notes are up to date; pruned \(removed.count) deleted note(s)."
+                    CLIOutput.writeStderr(msg)
+                }
+                var updatedManifest = await syncTracker!.getManifest()
                 updatedManifest.lastSync = Date()
                 try updatedManifest.save(to: outputURL)
                 return ExportResult(
@@ -131,6 +148,19 @@ actor CLIExportEngine {
             }
         }
 
+        // Pre-allocate filenames so applenotes:note/UUID links can be rewritten
+        // to real relative paths during rendering.
+        self.internalLinkMap = buildInternalLinkPathMap(
+            allNotes: notes,
+            notesWithPaths: notesWithPaths,
+            outputRoot: outputURL,
+            format: format,
+            addDatePrefix: configurations.addDateToFilename,
+            dateFormat: configurations.filenameDateFormat.rawValue,
+            existingManifest: existingManifest
+        )
+        defer { self.internalLinkMap = [:] }
+
         let tracker = ExportProgressTracker()
 
         if configurations.concatenateOutput {
@@ -156,8 +186,14 @@ actor CLIExportEngine {
         // Set folder timestamps
         try await setExportFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
 
-        // Save sync manifest
+        // Prune deleted notes from the manifest, remove their files, then save.
         if let syncTracker = syncTracker {
+            let presentIds = Set(notes.map { $0.id })
+            let removed = await syncTracker.pruneDeleted(presentNoteIds: presentIds)
+            for entry in removed {
+                deleteExportedNoteFiles(outputRoot: outputURL, entry: entry)
+                if verbose { CLIOutput.writeStderr("Deleted (no longer in Notes): \(entry.exportedPath)") }
+            }
             let finalManifest = await syncTracker.getManifest()
             try finalManifest.save(to: outputURL)
         }
@@ -338,6 +374,12 @@ actor CLIExportEngine {
             fileURL = rootURL.appendingPathComponent(relativePath)
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             uniqueBaseName = fileURL.deletingPathExtension().lastPathComponent
+        } else if let preAllocated = internalLinkMap[note.id] {
+            // Use the pre-allocated filename so applenotes:note/UUID links
+            // we're rewriting in other notes resolve to this actual file.
+            let filename = (preAllocated as NSString).lastPathComponent
+            fileURL = directory.appendingPathComponent(filename)
+            uniqueBaseName = filename.replacingOccurrences(of: ".\(format.fileExtension)", with: "")
         } else {
             let baseFilename: String
             if configurations.addDateToFilename {
@@ -546,7 +588,17 @@ actor CLIExportEngine {
             }
         }
 
-        var processedHTML = htmlBody
+        // Rewrite Apple Notes internal links (applenotes:note/UUID?...) to relative paths.
+        var bodyAfterLinkRewrite = htmlBody
+        if let currentPath = internalLinkMap[note.id], !internalLinkMap.isEmpty {
+            bodyAfterLinkRewrite = rewriteInternalLinks(
+                html: htmlBody,
+                currentNoteRelativePath: currentPath,
+                noteIdToRelativePath: internalLinkMap
+            )
+        }
+
+        var processedHTML = bodyAfterLinkRewrite
         if !note.attachments.isEmpty {
             if let parserHandle = ane_open(databasePath) {
                 defer { ane_close(parserHandle) }
@@ -554,7 +606,7 @@ actor CLIExportEngine {
                     let database = OpaquePointer(rawHandle)
                     let processor = HTMLAttachmentProcessor(database: database)
                     processedHTML = processor.processHTML(
-                        html: htmlBody,
+                        html: bodyAfterLinkRewrite,
                         attachments: note.attachments,
                         attachmentPaths: attachmentPaths,
                         exportDirectory: exportDirectory?.path,

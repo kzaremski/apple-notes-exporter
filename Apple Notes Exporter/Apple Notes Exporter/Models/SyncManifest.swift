@@ -96,4 +96,17 @@ struct SyncManifest: Codable {
         )
         lastSync = Date()
     }
+
+    /// Remove manifest entries whose note ID is not in the given set, and return
+    /// the removed entries so the caller can delete the corresponding files.
+    mutating func pruneDeleted(presentNoteIds: Set<String>) -> [SyncedNoteEntry] {
+        let deletedIds = Set(notes.keys).subtracting(presentNoteIds)
+        var removed: [SyncedNoteEntry] = []
+        for id in deletedIds {
+            if let entry = notes.removeValue(forKey: id) {
+                removed.append(entry)
+            }
+        }
+        return removed
+    }
 }

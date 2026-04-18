@@ -207,7 +207,9 @@ struct ExportCommand: AsyncParsableCommand {
             filtered = filtered.filter { $0.modificationDate < date }
         }
 
-        if filtered.isEmpty {
+        // Incremental mode still needs to run even with zero matching notes,
+        // so the engine can prune entries for notes that have been deleted.
+        if filtered.isEmpty && !incremental {
             CLIOutput.writeJSON(
                 CLIExportEngine.ExportResult(
                     success: true,

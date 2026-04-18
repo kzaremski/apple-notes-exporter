@@ -89,6 +89,39 @@ An MCP server exposing five tools (`list_accounts`, `list_folders`, `list_notes`
 
 All three require Full Disk Access (same as the GUI app) to read the local Notes database.
 
+## Incremental Sync
+
+Re-exporting an entire Notes library on every backup is wasteful when only a handful of notes have changed. Incremental sync tracks which notes have already been exported and, on subsequent runs, writes only notes that are new or have been modified since the last export.
+
+On first run with `--incremental`, the CLI writes a `AppleNotesExportSyncWatermark.json` manifest to the output directory recording each note's ID, modification date, and exported path. On subsequent runs against the same directory, notes whose modification date has not changed are skipped, and existing files are left in place.
+
+```sh
+# First run: full export
+notes-export export --output ~/backups/notes --format markdown --incremental
+
+# Second run: only new/changed notes get re-written
+notes-export export --output ~/backups/notes --format markdown --incremental
+
+# Force a full re-export, wiping the manifest
+notes-export export --output ~/backups/notes --format markdown --incremental --reset-sync
+
+# Inspect manifest state without touching the database
+notes-export sync-status --output ~/backups/notes
+```
+
+The GUI also exposes incremental sync as a toggle in the export options. Incremental sync and concatenation are mutually exclusive (see below); incremental requires per-note files.
+
+## Concatenation
+
+For quick dumps of many notes into one file, the `--concatenate` flag joins every exported note into a single `Exported Notes.<ext>` in the output directory, with format-appropriate separators between notes (page breaks in HTML/TEX, `---` rules in Markdown, row of equals signs in TXT).
+
+```sh
+notes-export export --output ~/Desktop --format markdown --concatenate
+# Produces: ~/Desktop/Exported Notes.md
+```
+
+Concatenation is only supported for Markdown and plain text in the GUI; the CLI additionally supports HTML, RTF, and TeX. Concatenation is not compatible with `--incremental` (it would rewrite the whole concatenated file every time regardless) and is not available for the packaged binary formats (DOCX, ODT, EPUB, PDF).
+
 ## Compatibility & System Requirements
 * MacOS Big Sur 11.0 or higher
     * Some of the features used are not available in earlier MacOS versions.

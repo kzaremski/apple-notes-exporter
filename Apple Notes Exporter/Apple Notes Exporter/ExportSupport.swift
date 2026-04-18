@@ -77,8 +77,56 @@ actor SyncManifestTracker {
         manifest.recordExport(noteId: noteId, modificationDate: modificationDate, exportedPath: exportedPath, attachmentPaths: attachmentPaths)
     }
 
+    func pruneDeleted(presentNoteIds: Set<String>) -> [SyncManifest.SyncedNoteEntry] {
+        manifest.pruneDeleted(presentNoteIds: presentNoteIds)
+    }
+
     func getManifest() -> SyncManifest {
         return manifest
+    }
+}
+
+// MARK: - Shared Deletion Helper
+
+/// Delete a previously-exported note file and its attachment files.
+/// Also deletes any resulting empty `(Attachments)` or ancestor folders up to (but not including) the output root.
+func deleteExportedNoteFiles(
+    outputRoot: URL,
+    entry: SyncManifest.SyncedNoteEntry
+) {
+    let fm = FileManager.default
+
+    // Collect all files to delete: the note plus its attachments
+    var allPaths: [String] = [entry.exportedPath]
+    allPaths.append(contentsOf: entry.attachmentPaths)
+
+    // Track parent directories for cleanup pass
+    var touchedDirs: Set<URL> = []
+
+    for relPath in allPaths {
+        let fileURL = outputRoot.appendingPathComponent(relPath)
+        try? fm.removeItem(at: fileURL)
+        touchedDirs.insert(fileURL.deletingLastPathComponent())
+    }
+
+    // Bottom-up cleanup: remove now-empty folders (Attachments, then account/folder hierarchy),
+    // stopping at outputRoot.
+    let rootPath = outputRoot.standardizedFileURL.path
+    // Sort by depth descending so children are processed before parents.
+    let sortedDirs = touchedDirs.sorted { $0.path.count > $1.path.count }
+    var dirsToCheck = Set(sortedDirs)
+    for dir in sortedDirs {
+        var current = dir.standardizedFileURL
+        while current.path.count > rootPath.count && current.path.hasPrefix(rootPath) {
+            let contents = (try? fm.contentsOfDirectory(atPath: current.path)) ?? []
+            if contents.isEmpty {
+                try? fm.removeItem(at: current)
+                dirsToCheck.insert(current.deletingLastPathComponent())
+            } else {
+                break
+            }
+            current = current.deletingLastPathComponent()
+        }
     }
 }
 
@@ -105,6 +153,138 @@ actor ExportProgressTracker {
     func getStats() -> (completed: Int, failedNotes: Int, failedAttachments: Int) {
         return (completedCount, failedNotesCount, failedAttachmentsCount)
     }
+}
+
+// MARK: - Internal Link Rewriting
+
+/// Pre-allocate a unique filename for each note, honoring the sync manifest's existing paths.
+/// Returns `[note.id: <relative path from output root, including extension>]`.
+///
+/// Output filenames match what exportNote will produce later, so we can rewrite
+/// applenotes:note/UUID links to real file paths before the notes are rendered.
+func buildInternalLinkPathMap(
+    allNotes: [NotesNote],
+    notesWithPaths: [(note: NotesNote, folderURL: URL)],
+    outputRoot: URL,
+    format: ExportFormat,
+    addDatePrefix: Bool,
+    dateFormat: String,
+    existingManifest: SyncManifest?
+) -> [String: String] {
+    var map: [String: String] = [:]
+
+    // Start with any paths already recorded from previous sync runs.
+    if let manifest = existingManifest {
+        for (id, entry) in manifest.notes {
+            map[id] = entry.exportedPath
+        }
+    }
+
+    // Pre-allocate filenames for notes being exported this run.
+    var reservedByFolder: [String: Set<String>] = [:]
+    let rootPath = outputRoot.standardizedFileURL.path
+
+    for pair in notesWithPaths {
+        let note = pair.note
+        let folderURL = pair.folderURL
+
+        let baseName: String
+        if addDatePrefix {
+            let formatter = DateFormatter()
+            formatter.dateFormat = dateFormat
+            baseName = "\(formatter.string(from: note.creationDate)) \(note.sanitizedFileName)"
+        } else {
+            baseName = note.sanitizedFileName
+        }
+
+        let folderKey = folderURL.standardizedFileURL.path
+        var used = reservedByFolder[folderKey] ?? []
+
+        var filename = "\(baseName).\(format.fileExtension)"
+        var counter = 2
+        while used.contains(filename) && counter <= 10000 {
+            filename = "\(baseName) (\(counter)).\(format.fileExtension)"
+            counter += 1
+        }
+        used.insert(filename)
+        reservedByFolder[folderKey] = used
+
+        let fullPath = folderURL.appendingPathComponent(filename).standardizedFileURL.path
+        if fullPath.hasPrefix(rootPath + "/") {
+            map[note.id] = String(fullPath.dropFirst(rootPath.count + 1))
+        } else if fullPath == rootPath {
+            map[note.id] = filename
+        } else {
+            map[note.id] = folderURL.appendingPathComponent(filename).path
+        }
+    }
+
+    return map
+}
+
+/// Rewrite `applenotes:note/UUID?...` links in HTML to relative paths to the target note's exported file.
+/// - currentNoteRelativePath: path of the note whose HTML we are rewriting, relative to the output root.
+/// - noteIdToRelativePath: map from note ID to target file path, relative to the output root.
+func rewriteInternalLinks(
+    html: String,
+    currentNoteRelativePath: String,
+    noteIdToRelativePath: [String: String]
+) -> String {
+    guard !noteIdToRelativePath.isEmpty,
+          html.contains("applenotes:note/") else { return html }
+
+    // Match applenotes:note/UUID, stopping at the first non-UUID character (?, ", ', >, space, etc.)
+    let pattern = #"applenotes:note/([A-Fa-f0-9][A-Fa-f0-9\-]{7,})(\?[^"'<>\s]*)?"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return html }
+
+    let nsHtml = html as NSString
+    let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+
+    guard !matches.isEmpty else { return html }
+
+    var result = html
+    // Process matches in reverse so NSRange offsets stay valid.
+    for match in matches.reversed() {
+        let fullRange = match.range
+        let uuidRange = match.range(at: 1)
+        guard uuidRange.location != NSNotFound else { continue }
+
+        let uuid = nsHtml.substring(with: uuidRange)
+        guard let targetRelPath = noteIdToRelativePath[uuid] else { continue }
+
+        let relativeLink = relativePathFromSource(currentNoteRelativePath, toTarget: targetRelPath)
+        let encoded = relativeLink.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativeLink
+
+        // Replace the matched substring using Range<String.Index>
+        if let range = Range(fullRange, in: result) {
+            result.replaceSubrange(range, with: encoded)
+        }
+    }
+
+    return result
+}
+
+/// Compute a relative file path from `source` to `target`, both relative to a common root.
+/// Example: source="iCloud/Work/A.md", target="iCloud/Personal/B.md" -> "../Personal/B.md".
+func relativePathFromSource(_ source: String, toTarget target: String) -> String {
+    let sourceComponents = source.split(separator: "/").map(String.init)
+    let targetComponents = target.split(separator: "/").map(String.init)
+    guard !sourceComponents.isEmpty else { return target }
+
+    // Source's directory is sourceComponents without the last element (filename).
+    let sourceDir = Array(sourceComponents.dropLast())
+
+    // Find common prefix length
+    var common = 0
+    while common < sourceDir.count && common < targetComponents.count
+          && sourceDir[common] == targetComponents[common] {
+        common += 1
+    }
+
+    var parts: [String] = []
+    parts.append(contentsOf: Array(repeating: "..", count: sourceDir.count - common))
+    parts.append(contentsOf: targetComponents.dropFirst(common))
+    return parts.isEmpty ? targetComponents.last ?? "" : parts.joined(separator: "/")
 }
 
 // MARK: - Shared Export Helpers

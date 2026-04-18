@@ -88,6 +88,10 @@ class ExportViewModel: ObservableObject {
     private var failedNotesCount: Int = 0
     private var failedAttachmentsCount: Int = 0
 
+    /// Pre-allocated note-id -> relative file path map, set at the start of each export.
+    /// Used by generateHTML to rewrite applenotes:note/UUID links to real paths.
+    private var internalLinkMap: [String: String] = [:]
+
     // MARK: - Concurrency Settings
 
     /// Calculate optimal number of concurrent exports based on system resources
@@ -213,6 +217,20 @@ class ExportViewModel: ObservableObject {
                 }
             }
 
+            // Pre-allocate filenames so applenotes:note/UUID internal links can be
+            // rewritten to actual relative file paths during rendering.
+            let simplifiedPairs = notesWithPaths.map { (note: $0.note, folderURL: $0.folderURL) }
+            self.internalLinkMap = buildInternalLinkPathMap(
+                allNotes: notes,
+                notesWithPaths: simplifiedPairs,
+                outputRoot: outputURL,
+                format: format,
+                addDatePrefix: configurations.addDateToFilename,
+                dateFormat: configurations.filenameDateFormat.rawValue,
+                existingManifest: existingManifest
+            )
+            defer { self.internalLinkMap = [:] }
+
             // Check if we should concatenate all notes into a single file
             // Only MD and TXT support concatenation
             let canConcatenate = format == .markdown || format == .txt
@@ -248,8 +266,14 @@ class ExportViewModel: ObservableObject {
             // Set folder timestamps based on their notes
             try await setExportFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
 
-            // Save sync manifest if incremental sync is enabled
+            // Prune deleted notes from manifest, remove their files, then save.
             if let syncTracker = syncTracker {
+                let presentIds = Set(notes.map { $0.id })
+                let removed = await syncTracker.pruneDeleted(presentNoteIds: presentIds)
+                for entry in removed {
+                    deleteExportedNoteFiles(outputRoot: outputURL, entry: entry)
+                    log("✓ Pruned deleted note: \(entry.exportedPath)")
+                }
                 let finalManifest = await syncTracker.getManifest()
                 try finalManifest.save(to: outputURL)
                 log("✓ Sync manifest saved")
@@ -592,8 +616,14 @@ class ExportViewModel: ObservableObject {
             // Ensure parent directory exists (in case folder structure was deleted)
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             uniqueBaseName = fileURL.deletingPathExtension().lastPathComponent
+        } else if let preAllocated = internalLinkMap[note.id] {
+            // Use the pre-allocated filename so applenotes:note/UUID links
+            // rewritten in other notes resolve to this actual file.
+            let filename = (preAllocated as NSString).lastPathComponent
+            fileURL = directory.appendingPathComponent(filename)
+            uniqueBaseName = filename.replacingOccurrences(of: ".\(format.fileExtension)", with: "")
         } else {
-            // Normal mode: generate unique filename
+            // Fallback: generate unique filename by hitting the filesystem
             let baseFilename: String
             if configurations.addDateToFilename {
                 let formatter = DateFormatter()
@@ -1215,9 +1245,19 @@ class ExportViewModel: ObservableObject {
             }
         }
 
+        // Rewrite applenotes:note/UUID internal links to real relative paths.
+        var linkRewrittenBody = htmlBody
+        if let currentPath = internalLinkMap[note.id], !internalLinkMap.isEmpty {
+            linkRewrittenBody = rewriteInternalLinks(
+                html: htmlBody,
+                currentNoteRelativePath: currentPath,
+                noteIdToRelativePath: internalLinkMap
+            )
+        }
+
         // Strip the NoteHTMLGenerator's outer <html><body>...</body></html> wrapper
         // since we wrap the content in our own full HTML document below.
-        var processedHTML = htmlBody
+        var processedHTML = linkRewrittenBody
         if let bodyStart = processedHTML.range(of: "<body>"),
            let bodyEnd = processedHTML.range(of: "</body>") {
             processedHTML = String(processedHTML[bodyStart.upperBound..<bodyEnd.lowerBound])
@@ -1232,7 +1272,7 @@ class ExportViewModel: ObservableObject {
                     let database = OpaquePointer(rawHandle)
                     let processor = HTMLAttachmentProcessor(database: database)
                     processedHTML = processor.processHTML(
-                        html: htmlBody,
+                        html: linkRewrittenBody,
                         attachments: note.attachments,
                         attachmentPaths: attachmentPaths,
                         exportDirectory: exportDirectory?.path,
