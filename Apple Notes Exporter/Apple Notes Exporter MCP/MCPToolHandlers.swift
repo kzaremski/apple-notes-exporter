@@ -77,7 +77,7 @@ enum MCPToolHandlers {
         ),
         Tool(
             name: "export_notes",
-            description: "Export notes to files. PDF is not supported; use html and convert if needed.",
+            description: "Export notes to files. Supports 18 formats including html, pdf, markdown, docx, epub, json. PDF uses headless WebKit.",
             inputSchema: .object([
                 "type": .string("object"),
                 "properties": .object([
@@ -86,7 +86,7 @@ enum MCPToolHandlers {
                     "format": .object([
                         "type": .string("string"),
                         "description": .string("Export format."),
-                        "enum": .array([.string("html"), .string("markdown"), .string("rtf"), .string("txt"), .string("tex")])
+                        "enum": .array([.string("html"), .string("pdf"), .string("markdown"), .string("rtf"), .string("txt"), .string("tex"), .string("json"), .string("jsonl"), .string("xml"), .string("csv"), .string("opml"), .string("org"), .string("rst"), .string("adoc"), .string("docx"), .string("odt"), .string("epub"), .string("enex")])
                     ]),
                     "notes": .object(["type": .string("string"),
                         "description": .string("Comma-separated note IDs to export (omit to export all matching).")]),
@@ -282,10 +282,7 @@ enum MCPToolHandlers {
         }
         guard let formatStr = args["format"]?.stringValue,
               let exportFormat = ExportFormat(cliString: formatStr) else {
-            return errorText("Missing or invalid 'format'. Valid values: html, markdown, rtf, txt, tex.")
-        }
-        guard exportFormat != .pdf else {
-            return errorText("PDF is not supported. Export as HTML and convert with a PDF printer or pandoc.")
+            return errorText("Missing or invalid 'format'. Valid values: html, pdf, markdown, rtf, txt, tex, json, jsonl, xml, csv, opml, org, rst, adoc, docx, odt, epub, enex.")
         }
 
         let outputURL = URL(fileURLWithPath: (outputStr as NSString).expandingTildeInPath).standardizedFileURL

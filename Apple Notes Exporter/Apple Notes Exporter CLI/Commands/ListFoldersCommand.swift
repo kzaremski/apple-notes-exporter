@@ -26,7 +26,7 @@ import Foundation
 struct ListFoldersCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list-folders",
-        abstract: "List all Notes folders."
+        abstract: "List folders across all accounts, or within a specific account."
     )
 
     @Option(name: .long, help: "Filter folders by account name (partial match, case-insensitive).")

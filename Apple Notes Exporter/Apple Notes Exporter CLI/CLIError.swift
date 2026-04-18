@@ -55,17 +55,17 @@ enum CLIError: Error {
     var message: String {
         switch self {
         case .databaseUnavailable:
-            return "Cannot read the Notes database. Grant Full Disk Access to Terminal in System Settings → Privacy & Security → Full Disk Access."
+            return "Can't open the Notes database. This usually means Full Disk Access isn't granted to your terminal. Open System Settings > Privacy & Security > Full Disk Access, add Terminal (or iTerm), restart it, and try again."
         case .noNotesFound:
-            return "No notes found matching the specified criteria."
+            return "No notes matched the given filters. Try 'notes-export list-notes' without filters to see what's available."
         case .invalidOutputDirectory(let path):
-            return "Invalid or inaccessible output directory: \(path)"
+            return "Could not create or write to output directory: \(path). Check the path exists and you have write permission."
         case .unsupportedFormat(let format):
-            return "Format '\(format.rawValue)' is not supported in the CLI. Supported formats: html, markdown, rtf, txt, tex. For PDF, export as HTML and convert using a PDF printer or pandoc."
+            return "Format '\(format.rawValue)' can't be exported in this context. This usually means the format was requested in a code path that doesn't handle it; file a bug if you see this."
         case .repositoryError(let detail):
-            return "Repository error: \(detail)"
+            return "Failed while reading Notes: \(detail)"
         case .fileSystemError(let detail):
-            return "File system error: \(detail)"
+            return "Failed while writing to disk: \(detail)"
         }
     }
 }

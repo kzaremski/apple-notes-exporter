@@ -43,6 +43,8 @@ build/
 xcuserdata/
 
 build.log
+build-cli.log
+build-mcp.log
 
 ### Scratchpad ###
 .scratchpad/

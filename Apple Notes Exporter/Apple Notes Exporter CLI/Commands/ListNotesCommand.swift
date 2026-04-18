@@ -26,7 +26,7 @@ import Foundation
 struct ListNotesCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list-notes",
-        abstract: "List Notes with optional filtering."
+        abstract: "List notes, with filters for account, folder, title, and modification date."
     )
 
     @Option(name: .long, help: "Filter by account name (partial match, case-insensitive).")

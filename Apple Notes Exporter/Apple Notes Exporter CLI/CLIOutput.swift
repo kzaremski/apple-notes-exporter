@@ -74,13 +74,25 @@ extension ExportFormat {
     /// Initialize from a CLI string (case-insensitive, accepts aliases).
     init?(cliString: String) {
         switch cliString.lowercased() {
-        case "html":             self = .html
-        case "md", "markdown":   self = .markdown
-        case "rtf":              self = .rtf
-        case "txt", "text":      self = .txt
-        case "tex", "latex":     self = .tex
-        case "pdf":              self = .pdf
-        default:                 return nil
+        case "html":                 self = .html
+        case "md", "markdown":       self = .markdown
+        case "rtf":                  self = .rtf
+        case "txt", "text":          self = .txt
+        case "tex", "latex":         self = .tex
+        case "pdf":                  self = .pdf
+        case "json":                 self = .json
+        case "jsonl", "ndjson":      self = .jsonl
+        case "xml":                  self = .xml
+        case "csv":                  self = .csv
+        case "opml":                 self = .opml
+        case "org":                  self = .org
+        case "rst":                  self = .rst
+        case "adoc", "asciidoc":     self = .adoc
+        case "docx", "word":         self = .docx
+        case "odt":                  self = .odt
+        case "epub":                 self = .epub
+        case "enex", "evernote":     self = .enex
+        default:                     return nil
         }
     }
 }

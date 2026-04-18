@@ -13,6 +13,8 @@
 		2519EE842E3AEA7200CC5D3C /* LicensePermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2519EE832E3AEA7200CC5D3C /* LicensePermissionsView.swift */; };
 		2519EE892E3BD57E00CC5D3C /* FullDiskAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE882E3BD57E00CC5D3C /* FullDiskAccess */; };
 		2519EE8B2E3BDE5E00CC5D3C /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = 2519EE8A2E3BDE5E00CC5D3C /* HtmlToPdf */; };
+		BB00000000000000000OHTDP /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000003HTDP /* HtmlToPdf */; };
+		MC00000000000000000JHTDP /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000007HTDP /* HtmlToPdf */; };
 		257242462BF18F7700BD9A67 /* utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 257242452BF18F7700BD9A67 /* utilities.swift */; };
 		EE000000000000000100SUPP /* ExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000XSUPP /* ExportSupport.swift */; };
 		EE000000000000000101SUPP /* ExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000XSUPP /* ExportSupport.swift */; };
@@ -210,6 +212,7 @@
 				BB00000000000000000LZLIB /* libz.tbd in Frameworks */,
 				BB00000000000000000MSPRT /* SwiftProtobuf in Frameworks */,
 				BB00000000000000000NAPAR /* ArgumentParser in Frameworks */,
+				BB00000000000000000OHTDP /* HtmlToPdf in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -221,6 +224,7 @@
 				MC00000000000000000GZLIB /* libz.tbd in Frameworks */,
 				MC00000000000000000HSPRT /* SwiftProtobuf in Frameworks */,
 				MC00000000000000000IMCPP /* MCP in Frameworks */,
+				MC00000000000000000JHTDP /* HtmlToPdf in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -475,6 +479,7 @@
 			packageProductDependencies = (
 				II000000000000000001APDP /* ArgumentParser */,
 				II000000000000000002SPDP /* SwiftProtobuf */,
+				II000000000000000003HTDP /* HtmlToPdf */,
 			);
 			productName = "notes-export";
 			productReference = AA00000000000000000APROD /* notes-export */;
@@ -495,6 +500,7 @@
 			packageProductDependencies = (
 				II000000000000000005APDP /* MCP */,
 				II000000000000000006SPDP /* SwiftProtobuf */,
+				II000000000000000007HTDP /* HtmlToPdf */,
 			);
 			productName = "notes-export-mcp";
 			productReference = AA00000000000000001MPROD /* notes-export-mcp */;
@@ -830,7 +836,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = T4J2388378;
@@ -847,7 +853,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -868,7 +874,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				DEVELOPMENT_TEAM = T4J2388378;
@@ -885,7 +891,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -981,7 +987,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 2.0;
 				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterCLI;
 				PRODUCT_NAME = "notes-export";
@@ -1003,7 +1009,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 2.0;
 				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterCLI;
 				PRODUCT_NAME = "notes-export";
@@ -1029,7 +1035,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 2.0;
 				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterMCP;
 				PRODUCT_NAME = "notes-export-mcp";
@@ -1051,7 +1057,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 2.0;
 				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterMCP;
 				PRODUCT_NAME = "notes-export-mcp";
@@ -1201,6 +1207,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 25A01F0E2E8F3F6600C7D9FA /* XCRemoteSwiftPackageReference "swift-protobuf" */;
 			productName = SwiftProtobuf;
+		};
+		II000000000000000003HTDP /* HtmlToPdf */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 25479E582E1C5D08003E49E6 /* XCRemoteSwiftPackageReference "swift-html-to-pdf" */;
+			productName = HtmlToPdf;
+		};
+		II000000000000000007HTDP /* HtmlToPdf */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 25479E582E1C5D08003E49E6 /* XCRemoteSwiftPackageReference "swift-html-to-pdf" */;
+			productName = HtmlToPdf;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -19,42 +19,80 @@ Built by [Konstantin Zaremski](https://konstantin.zarem.ski)
 
 Many choose to do all of their note taking and planning through Apple Notes because of the simplicity and convenience that it offers. Unfortunately, there is no good workflow or mechanism built into Apple Notes that allows you to export all your notes or a group of your notes at once.  This app provides a fast, efficient way to export your entire notes library while maintaining the folder hierarchy and preserving formatting.
 
+## What's New in v2.0
+
+* **Command-line interface** (`notes-export`) with subcommands for listing accounts, folders, and notes, plus full export support. JSON output for scripting.
+* **Model Context Protocol server** (`notes-export-mcp`) exposes the exporter as MCP tools for AI assistants like Claude Desktop.
+* **Apple Shortcuts support** via App Intents: Export Notes, List Accounts, and List Folders actions.
+* **12 new export formats** in addition to the original 6 (18 total).
+* **New app icon** designed by [Sascha Schneppmuller](https://github.com/Schneppi).
+* **Gallery attachment fixes** for On My Mac notes, handwritten note title resolution on macOS 15+, and correct file extensions for attachments without a database filename.
+
 ## Export Formats
-* **HTML**
-    * Native format returned by the Apple Notes database.
-    * HTML format can be used to publish to the web or store locally.
-    * Images are included inline using the HTML base64 embed syntax.
-    * Portable between browsers and formats well when printed.
-    * **Configurable:** Font family, font size, and margins
-* **PDF**
-    * Portable document format generated from HTML.
-    * Preserves all formatting and images.
-    * Perfect for sharing and archiving.
-    * **Configurable:** Font family, font size, margins, and page size (Letter, A4, A5, Legal, Tabloid)
-* **TEX**
-    * LaTeX format for typesetting.
-    * Can be compiled using the LaTeX typesetting software.
-    * Notes can be compiled individually or many can be included within a single document.
-    * **Configurable:** Custom template with placeholders for title, dates, author, and content
-* **MD**
-    * Markdown format.
-    * Useful if moving to other Markdown-based note taking apps like Obsidian.
-    * Images are included inline using the HTML base64 embed syntax.
-* **RTF**
-    * Rich text format.
-    * Can be opened with WordPad on Windows or TextEdit on MacOS.
-    * Preserves formatting however there are no inline attachments or images.
-    * **Configurable:** Font family and font size
-* **TXT**
-    * Plain text format.
-    * No images or formatting.
+
+### Rich / document formats
+* **HTML** - Native format returned by the Apple Notes database. Images included inline via base64 embed syntax. **Configurable:** font family, font size, margins.
+* **PDF** - Generated from HTML, preserves all formatting and images. **Configurable:** font family, font size, margins, page size (Letter, A4, A5, Legal, Tabloid).
+* **TEX** - LaTeX format for typesetting. Notes can be compiled individually or combined. **Configurable:** custom template with placeholders for title, dates, author, and content.
+* **MD** - Markdown format. Useful for moving to other Markdown-based apps like Obsidian. Images included inline via base64 embed syntax.
+* **RTF** - Rich text format. Opens in WordPad (Windows) or TextEdit (macOS). **Configurable:** font family and font size.
+* **TXT** - Plain text, no formatting or images.
+* **DOCX** - Microsoft Word format for Office and Google Docs.
+* **ODT** - OpenDocument text for LibreOffice and other open-source editors.
+* **EPUB** - E-book format for Kindle, Apple Books, and other e-readers.
+
+### Structured / data formats
+* **JSON** - Structured note data for APIs and data processing.
+* **JSONL** - One JSON object per line; ideal for LLM and RAG pipelines.
+* **XML** - Structured note data in XML for interoperability.
+* **CSV** - Flat table format for spreadsheets and databases.
+
+### Outline / documentation formats
+* **OPML** - Outline format for RSS readers and outliners.
+* **ORG** - Emacs Org-mode format for notes and task management.
+* **RST** - reStructuredText for Sphinx and Python documentation.
+* **ADOC** - AsciiDoc format for technical documentation.
+
+### Interchange formats
+* **ENEX** - Evernote export format for import into Evernote, Joplin, and similar apps.
 
 Attachments are always saved in a folder corresponding to the name/title of the note that they are associated with.
 
+## Scripting & Automation
+
+In addition to the GUI app, v2.0 ships three ways to drive the exporter from other tools:
+
+### Command-line interface (`notes-export`)
+
+```sh
+notes-export list-accounts
+notes-export list-folders --account iCloud
+notes-export list-notes --folder Work
+notes-export export --output ~/Desktop/notes --format markdown --account iCloud
+```
+
+Built with Swift ArgumentParser. JSON output on stdout for piping into other tools, progress and errors on stderr. Supports filtering by account, folder, title, and modification date, plus incremental sync.
+
+### Apple Shortcuts (App Intents)
+
+Three actions are available in the Shortcuts app under "Apple Notes Exporter":
+
+* **Export Notes** - Export selected notes to a chosen format and folder.
+* **List Accounts** - Returns a list of available note accounts.
+* **List Folders** - Returns a list of folders, optionally filtered by account.
+
+Run them from Siri, automations, or any Shortcuts flow.
+
+### Model Context Protocol server (`notes-export-mcp`)
+
+An MCP server exposing five tools (`list_accounts`, `list_folders`, `list_notes`, `get_note`, `export_note`) so AI assistants like Claude Desktop can read and export your notes directly. See [PR #30](https://github.com/kzaremski/apple-notes-exporter/pull/30) for details.
+
+All three require Full Disk Access (same as the GUI app) to read the local Notes database.
+
 ## Compatibility & System Requirements
 * MacOS Big Sur 11.0 or higher
-    * Some of the features that I am using are not available in earlier MacOS versions.
-    * I was able to backport from Ventura back to Big Sur, but any further would have required rewrites of the UI because of the changes made to the MacOS UI at that time.
+    * Some of the features used are not available in earlier MacOS versions.
+    * Backported from Ventura to Big Sur; earlier versions would require UI rewrites.
 * Intel or Apple Silicon Mac
 * 4GB RAM minimum
     * Optimized database-driven approach uses approximately 200MB of RAM regardless of Notes library size
@@ -106,6 +144,43 @@ Make sure that you have "App Store and Identified Developers" set as your app in
 ## Acknowledgements
 
 This project benefited from the groundwork and research done by [threeplanetssoftware](https://github.com/threeplanetssoftware) on Apple Notes protobuf formats and database parsing in their [apple_cloud_notes_parser](https://github.com/threeplanetssoftware/apple_cloud_notes_parser) project. Their work was instrumental in understanding the Apple Notes database structure, enabling the transition from AppleScript-based export to the more efficient database-driven approach used in version 1.0.
+
+Thanks to everyone who has contributed to this project:
+
+* [Christian Hovenbitzer (@AnotherCoolDude)](https://github.com/AnotherCoolDude) - CLI and MCP server targets for v2.0
+* [Sascha Schneppmuller (@Schneppi)](https://github.com/Schneppi) - Redesigned app icon for v2.0
+* [Sergey Nikolsky (@nikolsky2)](https://github.com/nikolsky2) - Fixed a crash when AppleScript returned empty notes
+
+See [CONTRIBUTORS.txt](CONTRIBUTORS.txt) for the full list.
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/kzaremski">
+        <img src="https://github.com/kzaremski.png?size=80" width="80" height="80" alt="@kzaremski" /><br />
+        <sub><b>@kzaremski</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/AnotherCoolDude">
+        <img src="https://github.com/AnotherCoolDude.png?size=80" width="80" height="80" alt="@AnotherCoolDude" /><br />
+        <sub><b>@AnotherCoolDude</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Schneppi">
+        <img src="https://github.com/Schneppi.png?size=80" width="80" height="80" alt="@Schneppi" /><br />
+        <sub><b>@Schneppi</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/nikolsky2">
+        <img src="https://github.com/nikolsky2.png?size=80" width="80" height="80" alt="@nikolsky2" /><br />
+        <sub><b>@nikolsky2</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
 
 ## License
 

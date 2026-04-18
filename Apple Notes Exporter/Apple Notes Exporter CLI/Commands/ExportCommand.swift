@@ -26,15 +26,30 @@ import Foundation
 struct ExportCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "export",
-        abstract: "Export notes to files.",
-        discussion: "PDF is not supported in the CLI. Export as HTML and convert with a PDF printer or pandoc."
+        abstract: "Export notes to files, preserving the account/folder hierarchy.",
+        discussion: """
+        Creates one file per note under <output>/<account>/<folder>/, plus
+        an optional "<note> (Attachments)/" folder for any images, PDFs,
+        drawings, and other attachments.
+
+        Supported formats (18):
+          Documents:  html, pdf, markdown, rtf, txt, tex, docx, odt, epub
+          Data:       json, jsonl, xml, csv
+          Outlines:   opml, org, rst, adoc
+          Interchange: enex
+        PDF uses headless WebKit and may take a few seconds per note.
+
+        Incremental sync (--incremental) writes a sync manifest to the
+        output directory so subsequent runs only re-export changed notes.
+        Use --reset-sync to force a full re-export.
+        """
     )
 
     // Required
     @Option(name: .shortAndLong, help: "Output directory (will be created if it does not exist).")
     var output: String
 
-    @Option(name: .shortAndLong, help: "Export format: html, markdown (md), rtf, txt, tex.")
+    @Option(name: .shortAndLong, help: "Export format: html, markdown (md), rtf, txt, tex, json, jsonl, xml, csv, opml, org, rst, adoc, docx, odt, epub, enex.")
     var format: String = "markdown"
 
     // Note selection filters
@@ -91,12 +106,7 @@ struct ExportCommand: AsyncParsableCommand {
     func run() async throws {
         // Validate format
         guard let exportFormat = ExportFormat(cliString: format) else {
-            CLIOutput.writeError(.repositoryError("Unknown format '\(format)'. Valid formats: html, markdown, rtf, txt, tex."))
-            throw ExitCode(2)
-        }
-
-        guard exportFormat != .pdf else {
-            CLIOutput.writeError(.unsupportedFormat(.pdf))
+            CLIOutput.writeError(.repositoryError("Unknown format '\(format)'. Valid formats: html, markdown, rtf, txt, tex, json, jsonl, xml, csv, opml, org, rst, adoc, docx, odt, epub, enex."))
             throw ExitCode(2)
         }
 
@@ -213,7 +223,10 @@ struct ExportCommand: AsyncParsableCommand {
             return
         }
 
-        if verbose { CLIOutput.writeStderr("Exporting \(filtered.count) notes as \(exportFormat.rawValue) to \(outputURL.path)") }
+        if verbose {
+            let plural = filtered.count == 1 ? "note" : "notes"
+            CLIOutput.writeStderr("Exporting \(filtered.count) \(plural) as .\(exportFormat.fileExtension) -> \(outputURL.path)")
+        }
 
         do {
             let result = try await engine.exportNotes(

@@ -20,6 +20,7 @@
 
 import Foundation
 import OSLog
+import HtmlToPdf
 
 // MARK: - CLI Export Engine
 
@@ -77,10 +78,6 @@ actor CLIExportEngine {
         verbose: Bool,
         progressHandler: @Sendable @escaping (Int, Int) -> Void
     ) async throws -> ExportResult {
-        guard format != .pdf else {
-            throw CLIError.unsupportedFormat(format)
-        }
-
         let startTime = Date()
 
         // Incremental sync
@@ -369,8 +366,15 @@ actor CLIExportEngine {
             )
         }
 
-        let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
-        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        if format == .pdf {
+            try await renderPDF(for: note, to: fileURL, attachmentPaths: attachmentPaths, exportDirectory: directory)
+        } else if format.isBinaryFormat {
+            let data = try await generateBinaryContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
+            try data.write(to: fileURL)
+        } else {
+            let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
         try setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
 
         if let syncTracker = syncTracker, let rootURL = outputRootURL {
@@ -464,6 +468,49 @@ actor CLIExportEngine {
 
     // MARK: - Content Generation
 
+    private func renderPDF(
+        for note: NotesNote,
+        to fileURL: URL,
+        attachmentPaths: [String: String] = [:],
+        exportDirectory: URL? = nil
+    ) async throws {
+        let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory, forPDF: true)
+
+        let dims = configurations.pdf.pageSize.dimensions
+        let paperSize = CGSize(width: dims.width, height: dims.height)
+        let margins = configurations.pdf.htmlConfiguration.toPDFEdgeInsets()
+        let config = HtmlToPdf.PDFConfiguration(margins: margins, paperSize: paperSize)
+
+        // PDF rendering has a hard timeout to protect against WebKit hangs
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await html.print(to: fileURL, configuration: config)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+                throw CLIError.fileSystemError("PDF generation timed out after 60 seconds for note '\(note.title)'")
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+    }
+
+    private func generateBinaryContent(
+        for note: NotesNote,
+        format: ExportFormat,
+        attachmentPaths: [String: String] = [:],
+        exportDirectory: URL? = nil
+    ) async throws -> Data {
+        let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+        let enrichedNote = noteWithHTML(note, html: html)
+        switch format {
+        case .docx: return enrichedNote.toDOCX()
+        case .odt:  return enrichedNote.toODT()
+        case .epub: return enrichedNote.toEPUB()
+        default:    throw CLIError.unsupportedFormat(format)
+        }
+    }
+
     private func generateContent(
         for note: NotesNote,
         format: ExportFormat,
@@ -482,7 +529,8 @@ actor CLIExportEngine {
     private func generateHTML(
         for note: NotesNote,
         attachmentPaths: [String: String] = [:],
-        exportDirectory: URL? = nil
+        exportDirectory: URL? = nil,
+        forPDF: Bool = false
     ) async throws -> String {
         let htmlConfig = configurations.html
 
@@ -523,7 +571,18 @@ actor CLIExportEngine {
 
         let fontFamily = htmlConfig.fontFamily.cssFontStack
         let fontSize = "\(htmlConfig.fontSizePoints)pt"
-        let marginValue = "\(htmlConfig.marginSize)\(htmlConfig.marginUnit.displayName)"
+        let marginValue = forPDF ? "0" : "\(htmlConfig.marginSize)\(htmlConfig.marginUnit.displayName) auto"
+
+        // For PDF, constrain image height to stay within the safe print area
+        let imageConstraint: String
+        if forPDF {
+            // Conservative: assume a default 36pt top+bottom margin, then 20pt padding.
+            let dims = configurations.pdf.pageSize.dimensions
+            let safe = max(100, dims.height - 72 - 20)
+            imageConstraint = "max-height: \(Int(safe))pt; height: auto;"
+        } else {
+            imageConstraint = ""
+        }
 
         return """
         <!DOCTYPE html>
@@ -539,14 +598,14 @@ actor CLIExportEngine {
                     font-family: \(fontFamily);
                     font-size: \(fontSize);
                     max-width: 800px;
-                    margin: \(marginValue) auto;
+                    margin: \(marginValue);
                     padding: 0 20px;
                     line-height: 1.0;
                 }
                 h1, h2, h3, h4, h5, h6, p { margin: 0; padding: 0; line-height: 1.0; }
                 ul, ol { margin: 0; margin-left: 1.5em; padding: 0; padding-left: 0.5em; }
                 li { margin: 0; padding: 0; line-height: 1.0; }
-                img { max-width: 100%; }
+                img { max-width: 100%; \(imageConstraint) }
             </style>
         </head>
         <body>

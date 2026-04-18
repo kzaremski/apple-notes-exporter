@@ -26,7 +26,7 @@ import Foundation
 struct ListAccountsCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list-accounts",
-        abstract: "List all Notes accounts."
+        abstract: "List accounts (iCloud, On My Mac, Exchange) visible in Apple Notes."
     )
 
     @OptionGroup var dbOptions: DatabaseOptions

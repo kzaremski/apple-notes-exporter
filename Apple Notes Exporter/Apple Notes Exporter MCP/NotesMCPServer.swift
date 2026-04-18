@@ -22,22 +22,40 @@ import Foundation
 import MCP
 
 // MARK: - MCP Server Entry Point
+//
+// Server work runs on a detached Task while the main thread stays on
+// RunLoop.main.run(), so WebKit callbacks used for PDF rendering are
+// delivered on the main run loop.
 
 @main
 struct NotesMCPServer {
-    static func main() async throws {
+    static func main() {
+        Task { @MainActor in
+            do {
+                try await runServer()
+                exit(0)
+            } catch {
+                fputs("MCP server error: \(error)\n", stderr)
+                exit(1)
+            }
+        }
+        RunLoop.main.run()
+    }
+
+    static func runServer() async throws {
+        let marketingVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0"
+        let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+
         let server = Server(
             name: "apple-notes-exporter",
-            version: "1.1.0",
+            version: "\(marketingVersion).\(buildNumber)",
             capabilities: .init(tools: .init(listChanged: false))
         )
 
-        // Register tool list handler
         await server.withMethodHandler(ListTools.self) { _ in
             ListTools.Result(tools: MCPToolHandlers.allTools)
         }
 
-        // Register tool call handler — all routing is in MCPToolHandlers
         await server.withMethodHandler(CallTool.self) { params in
             await MCPToolHandlers.dispatch(params: params)
         }

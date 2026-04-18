@@ -21,20 +21,66 @@
 import ArgumentParser
 import Foundation
 
-// MARK: - Root Command
+// MARK: - Entry Point
+//
+// We run ArgumentParser inside a detached Task and keep the main thread on
+// RunLoop.main.run() so WebKit (used for PDF generation) can deliver its
+// callbacks on the main run loop. AsyncParsableCommand's own @main would
+// block the main thread on a dispatch semaphore, which deadlocks WKWebView.
 
 @main
+struct Main {
+    static func main() {
+        Task { @MainActor in
+            do {
+                var command = try NotesExportCLI.parseAsRoot()
+                if var asyncCommand = command as? AsyncParsableCommand {
+                    try await asyncCommand.run()
+                } else {
+                    try command.run()
+                }
+                exit(0)
+            } catch {
+                NotesExportCLI.exit(withError: error)
+            }
+        }
+        RunLoop.main.run()
+    }
+}
+
+// MARK: - Root Command
+
 struct NotesExportCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "notes-export",
-        abstract: "Export and query Apple Notes from the terminal.",
+        abstract: "Bulk export Apple Notes to 18 formats, from the terminal.",
         discussion: """
-        Requires Full Disk Access for the terminal process.
-        Grant it in System Settings → Privacy & Security → Full Disk Access.
+        Headless companion to the Apple Notes Exporter macOS app. Reads the
+        local Notes database directly (no AppleScript, no UI), and supports
+        filtering by account, folder, title, and modification date.
 
-        All output is JSON on stdout; progress and errors go to stderr.
+        Full Disk Access is required. In System Settings > Privacy & Security
+        > Full Disk Access, add your Terminal app (Terminal.app, iTerm, etc.)
+        and restart it.
+
+        Conventions:
+          - Structured data is written to stdout as JSON
+          - Progress and errors go to stderr
+          - Exit code 0 on success, 1 on partial failure, 2 on usage errors
+
+        Examples:
+          notes-export list-accounts
+          notes-export list-folders --account iCloud
+          notes-export list-notes --folder Recipes --title-contains soup
+          notes-export export -o ~/Desktop/notes -f markdown --account iCloud
+          notes-export export -o ~/backups/notes -f html --incremental
+          notes-export sync-status -o ~/backups/notes
         """,
-        version: "1.1.0",
+        version: {
+            let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0"
+            let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+            return "\(marketing).\(build)"
+        }(),
         subcommands: [
             ListAccountsCommand.self,
             ListFoldersCommand.self,
