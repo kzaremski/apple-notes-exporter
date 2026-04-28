@@ -1,0 +1,17 @@
+// Signing.xcconfig — committed base config for code signing.
+//
+// The DEVELOPMENT_TEAM should be overridden per-developer via a local
+// Signing.local.xcconfig file (gitignored). If no local override is
+// present, the build falls through with an empty team, which will fail
+// signed builds but won't leak one developer's team into the repo.
+//
+// To set up your local team:
+//   1. Copy Signing.local.xcconfig.example to Signing.local.xcconfig
+//   2. Fill in your DEVELOPMENT_TEAM ID (find it at developer.apple.com)
+//
+// The local file is gitignored, so it won't be committed by mistake.
+
+#include? "Signing.local.xcconfig"
+
+// Default: empty. Local override above provides the real value.
+DEVELOPMENT_TEAM = $(LOCAL_DEVELOPMENT_TEAM)

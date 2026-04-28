@@ -36,8 +36,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// MARK: - App State (Legacy Compatibility Layer)
-// This class provides compatibility with the old UI while we migrate to ViewModels
+// MARK: - Shared App State
+// Bridge for @main and menu commands that can't directly observe MainViewModel.
 @MainActor
 class AppleNotesExporterState: ObservableObject {
     @Published var showProgressWindow: Bool = false
@@ -141,8 +141,17 @@ struct Apple_Notes_ExporterApp: App {
     @StateObject private var notesViewModel = NotesViewModel()
     @StateObject private var exportViewModel = ExportViewModel()
 
-    // Legacy compatibility state
     @ObservedObject var sharedState: AppleNotesExporterState
+
+    /// True when the app process was launched as a host for an XCTest run.
+    /// In that case we render an empty scene so the FDA / license dialog
+    /// never opens; the unit-test bundle loads into the same process and
+    /// runs against the imported types directly.
+    private static var isRunningUnderXCTest: Bool {
+        return NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+            || ProcessInfo.processInfo.environment["XCTestSessionIdentifier"] != nil
+    }
 
     init() {
         // Initialize ViewModels first
@@ -162,12 +171,18 @@ struct Apple_Notes_ExporterApp: App {
 
     var body: some Scene {
         WindowGroup(id: "main") {
-            AppleNotesExporterView(sharedState: sharedState)
-                .environmentObject(notesViewModel)
-                .environmentObject(exportViewModel)
-                .onAppear {
-                    NSWindow.allowsAutomaticWindowTabbing = false
-                }
+            if Self.isRunningUnderXCTest {
+                // Tests run inside this host process; do not bring up the UI
+                // or trigger Notes-DB / FDA work.
+                EmptyView()
+            } else {
+                AppleNotesExporterView(sharedState: sharedState)
+                    .environmentObject(notesViewModel)
+                    .environmentObject(exportViewModel)
+                    .onAppear {
+                        NSWindow.allowsAutomaticWindowTabbing = false
+                    }
+            }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -212,42 +227,56 @@ struct Apple_Notes_ExporterApp: App {
             CommandGroup(after: .newItem) {
                 let canInteract = sharedState.licenseAccepted && !sharedState.exporting
 
-                // Format selection: Cmd+1 through Cmd+6
-                Button("HTML Format") {
-                    UserDefaults.standard.set("HTML", forKey: "outputFormat")
-                }
-                .keyboardShortcut("1", modifiers: [.command])
-                .disabled(!canInteract)
+                // Format selection shortcuts follow the 3-row grid in the UI.
+                // Row 1 (rich docs):   Cmd+1-6
+                // Row 2 (data):        Cmd+Opt+1-6
+                // Row 3 (outline/bin): Cmd+Ctrl+1-6
 
-                Button("PDF Format") {
-                    UserDefaults.standard.set("PDF", forKey: "outputFormat")
-                }
-                .keyboardShortcut("2", modifiers: [.command])
-                .disabled(!canInteract)
+                // Row 1: HTML, PDF, TEX, MD, RTF, TXT
+                Button("HTML") { UserDefaults.standard.set("HTML", forKey: "outputFormat") }
+                    .keyboardShortcut("1", modifiers: [.command]).disabled(!canInteract)
+                Button("PDF") { UserDefaults.standard.set("PDF", forKey: "outputFormat") }
+                    .keyboardShortcut("2", modifiers: [.command]).disabled(!canInteract)
+                Button("LaTeX (TEX)") { UserDefaults.standard.set("TEX", forKey: "outputFormat") }
+                    .keyboardShortcut("3", modifiers: [.command]).disabled(!canInteract)
+                Button("Markdown (MD)") { UserDefaults.standard.set("MD", forKey: "outputFormat") }
+                    .keyboardShortcut("4", modifiers: [.command]).disabled(!canInteract)
+                Button("Rich Text (RTF)") { UserDefaults.standard.set("RTF", forKey: "outputFormat") }
+                    .keyboardShortcut("5", modifiers: [.command]).disabled(!canInteract)
+                Button("Plain Text (TXT)") { UserDefaults.standard.set("TXT", forKey: "outputFormat") }
+                    .keyboardShortcut("6", modifiers: [.command]).disabled(!canInteract)
 
-                Button("LaTeX Format") {
-                    UserDefaults.standard.set("TEX", forKey: "outputFormat")
-                }
-                .keyboardShortcut("3", modifiers: [.command])
-                .disabled(!canInteract)
+                Divider()
 
-                Button("Markdown Format") {
-                    UserDefaults.standard.set("MD", forKey: "outputFormat")
-                }
-                .keyboardShortcut("4", modifiers: [.command])
-                .disabled(!canInteract)
+                // Row 2: JSON, JSONL, XML, CSV, OPML, ORG
+                Button("JSON") { UserDefaults.standard.set("JSON", forKey: "outputFormat") }
+                    .keyboardShortcut("1", modifiers: [.command, .option]).disabled(!canInteract)
+                Button("JSON Lines (JSONL)") { UserDefaults.standard.set("JSONL", forKey: "outputFormat") }
+                    .keyboardShortcut("2", modifiers: [.command, .option]).disabled(!canInteract)
+                Button("XML") { UserDefaults.standard.set("XML", forKey: "outputFormat") }
+                    .keyboardShortcut("3", modifiers: [.command, .option]).disabled(!canInteract)
+                Button("CSV") { UserDefaults.standard.set("CSV", forKey: "outputFormat") }
+                    .keyboardShortcut("4", modifiers: [.command, .option]).disabled(!canInteract)
+                Button("OPML") { UserDefaults.standard.set("OPML", forKey: "outputFormat") }
+                    .keyboardShortcut("5", modifiers: [.command, .option]).disabled(!canInteract)
+                Button("Org Mode") { UserDefaults.standard.set("ORG", forKey: "outputFormat") }
+                    .keyboardShortcut("6", modifiers: [.command, .option]).disabled(!canInteract)
 
-                Button("RTF Format") {
-                    UserDefaults.standard.set("RTF", forKey: "outputFormat")
-                }
-                .keyboardShortcut("5", modifiers: [.command])
-                .disabled(!canInteract)
+                Divider()
 
-                Button("Plain Text Format") {
-                    UserDefaults.standard.set("TXT", forKey: "outputFormat")
-                }
-                .keyboardShortcut("6", modifiers: [.command])
-                .disabled(!canInteract)
+                // Row 3: RST, ADOC, DOCX, ODT, EPUB, ENEX
+                Button("reStructuredText (RST)") { UserDefaults.standard.set("RST", forKey: "outputFormat") }
+                    .keyboardShortcut("1", modifiers: [.command, .control]).disabled(!canInteract)
+                Button("AsciiDoc (ADOC)") { UserDefaults.standard.set("ADOC", forKey: "outputFormat") }
+                    .keyboardShortcut("2", modifiers: [.command, .control]).disabled(!canInteract)
+                Button("Word (DOCX)") { UserDefaults.standard.set("DOCX", forKey: "outputFormat") }
+                    .keyboardShortcut("3", modifiers: [.command, .control]).disabled(!canInteract)
+                Button("OpenDocument (ODT)") { UserDefaults.standard.set("ODT", forKey: "outputFormat") }
+                    .keyboardShortcut("4", modifiers: [.command, .control]).disabled(!canInteract)
+                Button("EPUB") { UserDefaults.standard.set("EPUB", forKey: "outputFormat") }
+                    .keyboardShortcut("5", modifiers: [.command, .control]).disabled(!canInteract)
+                Button("Evernote (ENEX)") { UserDefaults.standard.set("ENEX", forKey: "outputFormat") }
+                    .keyboardShortcut("6", modifiers: [.command, .control]).disabled(!canInteract)
 
                 Divider()
 

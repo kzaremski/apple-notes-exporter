@@ -1,7 +1,8 @@
 # Apple Notes Exporter - Makefile
 # For terminal-based development workflow
 
-.PHONY: help build build-cli build-mcp run clean logs test test-formats rebuild install icon
+.PHONY: help build run clean logs test test-formats rebuild install icon \
+        release release-archive release-export release-notarize release-zip release-clean
 
 # Configuration
 PROJECT = Apple Notes Exporter/Apple Notes Exporter.xcodeproj
@@ -14,32 +15,63 @@ ICON_SVG = icon/icon.svg
 ICON_DIR = icon
 ICONSET_DIR = Apple Notes Exporter/Apple Notes Exporter/Assets.xcassets/AppIcon.appiconset
 
+# Code signing flags for local dev builds without a valid cert.
+UNSIGNED = CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+# Release configuration. The notary profile must be set up once on this
+# machine via:
+#   xcrun notarytool store-credentials "$(NOTARY_PROFILE)" \
+#     --apple-id <your-apple-id> --team-id Q7TB7B38LW --password <app-specific-password>
+RELEASE_DIR     = release
+RELEASE_TEAM_ID = Q7TB7B38LW
+NOTARY_PROFILE  = ANE-NOTARYTOOL
+
+# Read versions from the Release build settings so the zip name stays in sync
+# with whatever the .xcconfig / project says. Slow (one xcodebuild call), so
+# only invoke when the variables are actually used (=).
+RELEASE_VERSION  = $(shell xcodebuild -project "$(PROJECT)" -scheme "$(SCHEME)" -configuration Release -showBuildSettings 2>/dev/null | awk '/^ +MARKETING_VERSION = /{print $$3}' | head -1)
+RELEASE_BUILD    = $(shell xcodebuild -project "$(PROJECT)" -scheme "$(SCHEME)" -configuration Release -showBuildSettings 2>/dev/null | awk '/^ +CURRENT_PROJECT_VERSION = /{print $$3}' | head -1)
+# Naming convention from past releases:
+#   build 1  -> AppleNotesExporter_v<VERSION>.zip
+#   build N  -> AppleNotesExporter_v<VERSION>-<N>.zip
+RELEASE_SUFFIX   = $(if $(filter 1,$(RELEASE_BUILD)),,-$(RELEASE_BUILD))
+RELEASE_ZIP_NAME = AppleNotesExporter_v$(RELEASE_VERSION)$(RELEASE_SUFFIX)
+
 # Default target
 help:
 	@echo "Apple Notes Exporter - Make targets:"
 	@echo ""
-	@echo "  make build        - Build the app (Debug configuration)"
-	@echo "  make build-cli    - Build notes-export CLI only"
-	@echo "  make build-mcp    - Build notes-export-mcp server only"
+	@echo "  make build        - Build the app (Debug; CLI + MCP embedded in SharedSupport)"
 	@echo "  make run          - Build and run the app"
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make rebuild      - Clean and build"
 	@echo "  make logs         - Stream app logs (run in separate terminal)"
 	@echo "  make test         - Run unit tests"
-	@echo "  make test-formats - Export a sample note via CLI to every format"
+	@echo "  make test-formats - Export a sample note via the embedded CLI to every format"
 	@echo "                      OUTPUT=/path FILTER=title FORMATS=\"pdf html\""
-	@echo "  make release      - Build Release configuration"
 	@echo "  make install      - Build and install to /Applications"
 	@echo "  make icon         - Generate app icon from icon/icon.svg"
 	@echo ""
+	@echo "Release flow:"
+	@echo "  make release         - Archive, export, notarize, staple, and produce a"
+	@echo "                          downloadable .zip in release/."
+	@echo "  make release-archive - Just the .xcarchive step."
+	@echo "  make release-export  - Export the .app from the archive (Developer ID)."
+	@echo "  make release-notarize- Submit to Apple notary, wait, staple."
+	@echo "  make release-zip     - Produce AppleNotesExporter_v<VERSION>[-<BUILD>].zip"
+	@echo "  make release-clean   - Remove the release/ output directory."
+	@echo ""
+	@echo "The notes-export CLI and notes-export-mcp server are built as dependencies"
+	@echo "of the main app target and embedded into Contents/SharedSupport/ of the .app."
 
-# Build the project
+# Build the project. UNSIGNED flags let local dev builds work without a dev cert.
 build:
 	@echo "🔨 Building $(SCHEME)..."
 	@set -o pipefail && xcodebuild -project "$(PROJECT)" \
 		-scheme "$(SCHEME)" \
 		-configuration $(CONFIG) \
 		-derivedDataPath "$(BUILD_DIR)" \
+		$(UNSIGNED) \
 		build 2>&1 | tee build.log | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED|^/" || true
 	@if grep -q "BUILD FAILED" build.log 2>/dev/null; then \
 		echo ""; \
@@ -48,48 +80,6 @@ build:
 		exit 1; \
 	elif grep -q "BUILD SUCCEEDED" build.log 2>/dev/null; then \
 		echo "✅ Build succeeded"; \
-	fi
-
-# Code signing flags for non-distributable local builds (CLI + MCP).
-# These binaries don't need signing for development use.
-UNSIGNED = CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
-
-# Build the CLI tool only
-build-cli:
-	@echo "🔨 Building notes-export..."
-	@set -o pipefail && xcodebuild -project "$(PROJECT)" \
-		-scheme "notes-export" \
-		-configuration $(CONFIG) \
-		-derivedDataPath "$(BUILD_DIR)" \
-		$(UNSIGNED) \
-		build 2>&1 | tee build-cli.log | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED|^/" || true
-	@if grep -q "BUILD FAILED" build-cli.log 2>/dev/null; then \
-		echo ""; \
-		echo "❌ CLI build failed! Errors:"; \
-		grep "error:" build-cli.log | head -20; \
-		exit 1; \
-	elif grep -q "BUILD SUCCEEDED" build-cli.log 2>/dev/null; then \
-		echo "✅ CLI build succeeded"; \
-		echo "Binary: $(BUILD_DIR)/Build/Products/$(CONFIG)/notes-export"; \
-	fi
-
-# Build the MCP server only
-build-mcp:
-	@echo "🔨 Building notes-export-mcp..."
-	@set -o pipefail && xcodebuild -project "$(PROJECT)" \
-		-scheme "notes-export-mcp" \
-		-configuration $(CONFIG) \
-		-derivedDataPath "$(BUILD_DIR)" \
-		$(UNSIGNED) \
-		build 2>&1 | tee build-mcp.log | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED|^/" || true
-	@if grep -q "BUILD FAILED" build-mcp.log 2>/dev/null; then \
-		echo ""; \
-		echo "❌ MCP build failed! Errors:"; \
-		grep "error:" build-mcp.log | head -20; \
-		exit 1; \
-	elif grep -q "BUILD SUCCEEDED" build-mcp.log 2>/dev/null; then \
-		echo "✅ MCP build succeeded"; \
-		echo "Binary: $(BUILD_DIR)/Build/Products/$(CONFIG)/notes-export-mcp"; \
 	fi
 
 # Export a note (or matching subset) to every supported format under OUTPUT.
@@ -101,9 +91,9 @@ OUTPUT ?= $(HOME)/Downloads/ane-format-test
 FILTER ?=
 FORMATS ?= html pdf markdown rtf txt tex json jsonl xml csv opml org rst adoc docx odt epub enex
 
-test-formats: build-cli
-	@CLI="$(BUILD_DIR)/Build/Products/$(CONFIG)/notes-export"; \
-	if [ ! -x "$$CLI" ]; then echo "❌ CLI binary not found at $$CLI"; exit 1; fi; \
+test-formats: build
+	@CLI="$(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export"; \
+	if [ ! -x "$$CLI" ]; then echo "❌ Embedded CLI not found at $$CLI"; exit 1; fi; \
 	mkdir -p "$(OUTPUT)"; \
 	FILTER_ARG=""; \
 	if [ -n "$(FILTER)" ]; then FILTER_ARG="--title-contains $(FILTER)"; fi; \
@@ -166,8 +156,8 @@ test:
 		-scheme "$(SCHEME)" \
 		-derivedDataPath "$(BUILD_DIR)"
 
-# Build release version
-release:
+# Build release version (used by `install`; not a distributable artifact).
+release-build:
 	@echo "🔨 Building Release configuration..."
 	xcodebuild -project "$(PROJECT)" \
 		-scheme "$(SCHEME)" \
@@ -176,10 +166,102 @@ release:
 		build
 
 # Install to /Applications
-install: release
+install: release-build
 	@echo "📦 Installing to /Applications..."
 	@cp -R "$(BUILD_DIR)/Build/Products/Release/$(APP_NAME)" /Applications/
 	@echo "✅ Installed to /Applications/$(APP_NAME)"
+
+# ─────────────────────────────────────────────────────────────────────────
+# Release pipeline: archive → export → notarize → staple → zip
+# Final artifact: release/AppleNotesExporter_v<MARKETING>[-<BUILD>].zip
+# ─────────────────────────────────────────────────────────────────────────
+
+release: release-archive release-export release-notarize release-zip
+	@echo ""
+	@echo "✅ Release complete."
+	@echo "    Artifact: $(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip"
+	@echo "    Upload to GitHub Releases via:"
+	@echo "      gh release create v$(RELEASE_VERSION)$(RELEASE_SUFFIX) \\"
+	@echo "        $(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip"
+
+release-archive:
+	@echo "📦 Archiving Release configuration..."
+	@mkdir -p "$(RELEASE_DIR)"
+	@rm -rf "$(RELEASE_DIR)/Apple Notes Exporter.xcarchive"
+	xcodebuild -project "$(PROJECT)" \
+		-scheme "$(SCHEME)" \
+		-configuration Release \
+		-archivePath "$(RELEASE_DIR)/Apple Notes Exporter.xcarchive" \
+		archive
+	@echo "✅ Archive created at $(RELEASE_DIR)/Apple Notes Exporter.xcarchive"
+
+release-export:
+	@echo "📤 Exporting .app from archive (Developer ID)..."
+	@if [ ! -d "$(RELEASE_DIR)/Apple Notes Exporter.xcarchive" ]; then \
+		echo "❌ Archive not found. Run 'make release-archive' first."; exit 1; \
+	fi
+	@printf '%s\n' \
+		'<?xml version="1.0" encoding="UTF-8"?>' \
+		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+		'<plist version="1.0">' \
+		'<dict>' \
+		'    <key>method</key>' \
+		'    <string>developer-id</string>' \
+		'    <key>teamID</key>' \
+		'    <string>$(RELEASE_TEAM_ID)</string>' \
+		'    <key>signingStyle</key>' \
+		'    <string>automatic</string>' \
+		'</dict>' \
+		'</plist>' \
+		> "$(RELEASE_DIR)/ExportOptions.plist"
+	@rm -rf "$(RELEASE_DIR)/Export"
+	xcodebuild -exportArchive \
+		-archivePath "$(RELEASE_DIR)/Apple Notes Exporter.xcarchive" \
+		-exportPath "$(RELEASE_DIR)/Export" \
+		-exportOptionsPlist "$(RELEASE_DIR)/ExportOptions.plist"
+	@echo "✅ Exported to $(RELEASE_DIR)/Export/$(APP_NAME)"
+
+release-notarize:
+	@echo "🍎 Submitting to Apple notary service..."
+	@if [ ! -d "$(RELEASE_DIR)/Export/$(APP_NAME)" ]; then \
+		echo "❌ Exported app not found. Run 'make release-export' first."; exit 1; \
+	fi
+	@if ! xcrun notarytool history --keychain-profile "$(NOTARY_PROFILE)" >/dev/null 2>&1; then \
+		echo ""; \
+		echo "❌ Notary credential profile '$(NOTARY_PROFILE)' is not set up."; \
+		echo "   First-time setup:"; \
+		echo "     xcrun notarytool store-credentials \"$(NOTARY_PROFILE)\" \\"; \
+		echo "       --apple-id <your-apple-id> \\"; \
+		echo "       --team-id $(RELEASE_TEAM_ID) \\"; \
+		echo "       --password <app-specific-password>"; \
+		echo "   App-specific passwords: https://account.apple.com → Sign-In and Security → App-Specific Passwords"; \
+		exit 1; \
+	fi
+	@rm -f "$(RELEASE_DIR)/notarize.zip"
+	ditto -c -k --keepParent "$(RELEASE_DIR)/Export/$(APP_NAME)" "$(RELEASE_DIR)/notarize.zip"
+	xcrun notarytool submit "$(RELEASE_DIR)/notarize.zip" \
+		--keychain-profile "$(NOTARY_PROFILE)" \
+		--wait
+	@rm -f "$(RELEASE_DIR)/notarize.zip"
+	@echo "📎 Stapling notarization ticket to .app..."
+	xcrun stapler staple "$(RELEASE_DIR)/Export/$(APP_NAME)"
+	xcrun stapler validate "$(RELEASE_DIR)/Export/$(APP_NAME)"
+	@echo "✅ Notarized and stapled."
+
+release-zip:
+	@echo "🗜  Creating distribution zip..."
+	@if [ ! -d "$(RELEASE_DIR)/Export/$(APP_NAME)" ]; then \
+		echo "❌ Stapled app not found. Run 'make release-notarize' first."; exit 1; \
+	fi
+	@rm -f "$(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip"
+	ditto -c -k --keepParent "$(RELEASE_DIR)/Export/$(APP_NAME)" "$(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip"
+	@SIZE=$$(du -h "$(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip" | cut -f1); \
+		echo "✅ Created $(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip ($$SIZE)"
+
+release-clean:
+	@echo "🧹 Removing $(RELEASE_DIR)/..."
+	@rm -rf "$(RELEASE_DIR)"
+	@echo "✅ Release artifacts cleaned"
 
 # Quick debug (build + run + logs)
 # Run this in tmux with multiple panes:

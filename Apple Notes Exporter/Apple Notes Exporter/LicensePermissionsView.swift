@@ -27,7 +27,11 @@ struct LicensePermissionsView: View {
     @ObservedObject var sharedState: AppleNotesExporterState
     @Binding var showLicensePermissionsView: Bool
     
-    @State private var agreedToLicense = false
+    // Preserve license agreement across re-entry. If the user previously accepted
+    // (e.g. dialog re-opens because Full Disk Access was revoked), we don't force
+    // them to re-check the agreement toggle.
+    @State private var agreedToLicense = UserDefaults.standard.bool(forKey: "licenseAcceptedGPLv3")
+    @State private var gplTextExpanded = false
     @State private var fullDiskPermissionGranted = false
     @State private var checkingFullDiskPermission = false
     
@@ -49,7 +53,6 @@ struct LicensePermissionsView: View {
     func hasFullDiskAccess() -> Bool {
         let path = NSHomeDirectory() + "/Library/Group Containers/group.com.apple.notes/"
         return FileManager.default.isReadableFile(atPath: path)
-        //return FullDiskAccess.isGranted
     }
     
     func checkPermission() {
@@ -126,8 +129,40 @@ struct LicensePermissionsView: View {
                         Text("You should have received a copy of the GNU General Public License along with this program. If not, see https://www.gnu.org/licenses/.")
                             .padding(.bottom, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        
+
+                        // Expandable full GPLv3 license text
+                        Button(action: { gplTextExpanded.toggle() }) {
+                            HStack(spacing: 6) {
+                                Text(gplTextExpanded ? "▼" : "▶").font(.caption).frame(width: 12)
+                                Text(gplTextExpanded ? "Hide full license text" : "View full license text")
+                                    .font(.callout)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .pointerOnHover()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, 5)
+
+                        if gplTextExpanded {
+                            if let path = Bundle.main.path(forResource: "GPLv3-LICENSE", ofType: "txt", inDirectory: "Licenses"),
+                               let text = try? String(contentsOfFile: path, encoding: .utf8) {
+                                Text(text)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(8)
+                                    .background(SwiftUI.Color.gray.opacity(0.15))
+                                    .cornerRadius(4)
+                                    .padding(.bottom, 5)
+                            } else {
+                                Text("Full license text unavailable. See https://www.gnu.org/licenses/gpl-3.0.txt")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.bottom, 5)
+                            }
+                        }
+
                         Divider()
                         Text("Third-Party Licenses").font(.title2).multilineTextAlignment(.leading).lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)

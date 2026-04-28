@@ -1,0 +1,26 @@
+# CODEOWNERS for apple-notes-exporter
+#
+# Lines matching these patterns in a PR will automatically request
+# review from the listed owners. When branch protection is set to
+# "Require review from Code Owners", no PR can merge without at
+# least one owner approving.
+
+# Default owner (fallback for any file not matched below)
+*                                   @kzaremski
+
+# Xcode project structure and signing config — must be reviewed by owner.
+# Past experience: PR merges silently overwrote DEVELOPMENT_TEAM.
+*.pbxproj                           @kzaremski
+*.xcconfig                          @kzaremski
+*.entitlements                      @kzaremski
+*.xcscheme                          @kzaremski
+*.xcworkspace/**                    @kzaremski
+
+# CI/CD and repository infrastructure
+.github/**                          @kzaremski
+Makefile                            @kzaremski
+.gitignore                          @kzaremski
+
+# Licensing
+LICENSE                             @kzaremski
+CONTRIBUTORS.txt                    @kzaremski

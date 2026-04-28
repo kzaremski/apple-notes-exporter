@@ -203,8 +203,15 @@ struct AppleNotesExporterView: View {
     @AppStorage("outputFormat") private var outputFormat = "HTML"
     @AppStorage("outputPath") private var outputPath: String = ""
     @State private var outputURL: URL? = nil
-    // Show/hide different views
-    @State private var showLicensePermissionsView: Bool = !UserDefaults.standard.bool(forKey: "licenseAcceptedGPLv3")
+    // Show/hide different views.
+    // Show license/permissions view on first launch OR when Full Disk Access has been
+    // revoked since the last launch (e.g. user toggled it off in System Settings).
+    @State private var showLicensePermissionsView: Bool = {
+        let licenseAccepted = UserDefaults.standard.bool(forKey: "licenseAcceptedGPLv3")
+        let notesDBDir = NSHomeDirectory() + "/Library/Group Containers/group.com.apple.notes/"
+        let hasFDA = FileManager.default.isReadableFile(atPath: notesDBDir)
+        return !licenseAccepted || !hasFDA
+    }()
     @State private var showNoteSelectorView: Bool = false
     @State private var showFormatOptionsView: Bool = false
     @State private var showProgressWindow: Bool = false

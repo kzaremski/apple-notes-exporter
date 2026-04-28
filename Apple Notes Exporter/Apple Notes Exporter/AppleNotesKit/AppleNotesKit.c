@@ -4,6 +4,18 @@
  *
  *  Copyright (C) 2026 Konstantin Zaremski
  *
+ *  The Notes database schema knowledge baked into this file --
+ *  ZICCLOUDSYNCINGOBJECT column names and their iOS/macOS version
+ *  variants, the FallbackImages/ and FallbackPDFs/ directory layout,
+ *  ZMERGEABLEDATA gzip+protobuf decoding, UTI classifications for
+ *  embedded objects, and the account-folder path resolution rules --
+ *  was informed by the research in threeplanetssoftware's Ruby
+ *  apple_cloud_notes_parser (https://github.com/threeplanetssoftware/
+ *  apple_cloud_notes_parser), licensed under the MIT License.
+ *  See Licenses/threeplanetssoftware-LICENSE.txt. The implementation
+ *  below is an independent C port; modifications (C) 2026 Konstantin
+ *  Zaremski, licensed under GPLv3.
+ *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or

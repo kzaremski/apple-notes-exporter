@@ -1,0 +1,13 @@
+// Copy this file to Signing.local.xcconfig and fill in your Apple Developer
+// team ID. The real Signing.local.xcconfig is gitignored.
+//
+// Find your team ID at https://developer.apple.com/account under
+// "Membership details" or by running in Terminal:
+//   security find-identity -v -p codesigning
+// (team ID appears in parens at the end of each identity name).
+//
+// If you're just building locally without a paid Apple Developer account,
+// leave this empty. The build will use ad-hoc signing or fail, depending
+// on your Xcode settings.
+
+LOCAL_DEVELOPMENT_TEAM = YOUR_TEAM_ID_HERE

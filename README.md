@@ -13,7 +13,7 @@ MacOS app written in Swift that bulk exports Apple Notes (including iCloud Notes
 
 Built by [Konstantin Zaremski](https://konstantin.zarem.ski)
 
-![Screenshot of version 1.1 of the Apple Notes Exporter](screenshots/v1.1.png)
+![Screenshot of version 2.0 of the Apple Notes Exporter](screenshots/v2.0.png)
 
 ## Purpose & Rationale
 
@@ -25,7 +25,7 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 * **Model Context Protocol server** (`notes-export-mcp`) exposes the exporter as MCP tools for AI assistants like Claude Desktop.
 * **Apple Shortcuts support** via App Intents: Export Notes, List Accounts, and List Folders actions.
 * **12 new export formats** in addition to the original 6 (18 total).
-* **New app icon** designed by [Sascha Schneppmuller](https://github.com/Schneppi).
+* **New app icon** designed by [Sascha Schneppmüller](https://github.com/Schneppi).
 * **Gallery attachment fixes** for On My Mac notes, handwritten note title resolution on macOS 15+, and correct file extensions for attachments without a database filename.
 
 ## Export Formats
@@ -150,22 +150,22 @@ This limitation is due to the database-driven approach used in version 1.0, whic
 ## Additional Screenshots
 
 **Note Selection**
-![Note Selection](screenshots/v1.0_selection.png)
+![Note Selection](screenshots/v2.0_note_selection.png)
 
 **Export Progress**
-![Export Progress](screenshots/v1.1_export_progress.png)
+![Export Progress](screenshots/v2.0_export_progress.png)
 
 **Export Complete**
-![Export Complete](screenshots/v1.1_export_done.png)
+![Export Complete](screenshots/v2.0_export_done.png)
 
 **Detailed Export Log**
-![Export Log](screenshots/v1.0_export_log.png)
+![Export Log](screenshots/v2.0_export_log.png)
 
 **PDF Export Options**
-![PDF Options](screenshots/v1.0_pdf_options.png)
+![PDF Options](screenshots/v2.0_pdf_options.png)
 
 **LaTeX Template Editor**
-![LaTeX Options](screenshots/v1.0_tex_options.png)
+![LaTeX Options](screenshots/v2.0_tex_options.png)
 
 ## Installation
 The latest download is available from the Github "Releases" tab.
@@ -181,7 +181,7 @@ This project benefited from the groundwork and research done by [threeplanetssof
 Thanks to everyone who has contributed to this project:
 
 * [Christian Hovenbitzer (@AnotherCoolDude)](https://github.com/AnotherCoolDude) - CLI and MCP server targets for v2.0
-* [Sascha Schneppmuller (@Schneppi)](https://github.com/Schneppi) - Redesigned app icon for v2.0
+* [Sascha Schneppmüller (@Schneppi)](https://github.com/Schneppi) - Redesigned app icon for v2.0
 * [Sergey Nikolsky (@nikolsky2)](https://github.com/nikolsky2) - Fixed a crash when AppleScript returned empty notes
 
 See [CONTRIBUTORS.txt](CONTRIBUTORS.txt) for the full list.

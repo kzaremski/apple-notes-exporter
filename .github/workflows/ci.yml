@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve Swift Package dependencies
+        run: >
+          xcodebuild -project "Apple Notes Exporter/Apple Notes Exporter.xcodeproj"
+          -scheme "Apple Notes Exporter"
+          -resolvePackageDependencies
+
+      - name: Build Debug (unsigned)
+        run: >
+          xcodebuild -project "Apple Notes Exporter/Apple Notes Exporter.xcodeproj"
+          -scheme "Apple Notes Exporter"
+          -configuration Debug
+          -derivedDataPath "build"
+          CODE_SIGN_IDENTITY=""
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+      - name: Verify embedded tools
+        run: |
+          APP="build/Build/Products/Debug/Apple Notes Exporter.app"
+          for tool in notes-export notes-export-mcp; do
+            if [ ! -x "$APP/Contents/SharedSupport/$tool" ]; then
+              echo "::error::Embedded tool missing: $tool"
+              exit 1
+            fi
+            echo "✓ $tool embedded"
+          done
+
+      - name: Verify CLI help runs
+        run: |
+          "build/Build/Products/Debug/Apple Notes Exporter.app/Contents/SharedSupport/notes-export" --help > /dev/null

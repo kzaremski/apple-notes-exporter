@@ -4,6 +4,13 @@
  *
  *  Copyright (C) 2026 Konstantin Zaremski
  *
+ *  The Notes database schema surfaced through this API -- column names,
+ *  UTI classifications, fallback-path structure -- was informed by the
+ *  research in threeplanetssoftware's Ruby apple_cloud_notes_parser
+ *  (https://github.com/threeplanetssoftware/apple_cloud_notes_parser),
+ *  licensed under the MIT License. See Licenses/threeplanetssoftware-LICENSE.txt.
+ *  Modifications (C) 2026 Konstantin Zaremski, licensed under GPLv3.
+ *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or

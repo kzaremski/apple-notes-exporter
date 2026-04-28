@@ -4,6 +4,14 @@
 //
 //  Copyright (C) 2026 Konstantin Zaremski
 //
+//  The approach for walking AttributeRun / ParagraphStyle protobuf fields
+//  to produce HTML mirrors the generate_html logic in AppleNote.rb from
+//  threeplanetssoftware's apple_cloud_notes_parser
+//  (https://github.com/threeplanetssoftware/apple_cloud_notes_parser),
+//  licensed under the MIT License. See Licenses/threeplanetssoftware-LICENSE.txt.
+//  Independently reimplemented in Swift. Modifications (C) 2026 Konstantin
+//  Zaremski, licensed under GPLv3.
+//
 //  This program is free software: you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
 //  the Free Software Foundation, either version 3 of the License, or
@@ -216,7 +224,9 @@ class NoteHTMLGenerator {
 
             // Handle list items
             if isListItem {
-                var styledText = segment
+                // segment is raw plaintext from the note; escape it unless we're
+                // about to replace it with attachment HTML below.
+                var styledText = run.hasAttachmentInfo ? segment : segment.htmlEscaped
                 var openTags: [String] = []
                 var closeTags: [String] = []
 
@@ -224,7 +234,7 @@ class NoteHTMLGenerator {
                 if run.fontWeight == 2 || run.fontWeight == 3 { openTags.append("<i>"); closeTags.insert("</i>", at: 0) }
                 if run.underlined != 0 { openTags.append("<u>"); closeTags.insert("</u>", at: 0) }
                 if run.strikethrough != 0 { openTags.append("<s>"); closeTags.insert("</s>", at: 0) }
-                if !run.link.isEmpty { openTags.append("<a href='\(run.link)'>"); closeTags.insert("</a>", at: 0) }
+                if !run.link.isEmpty { openTags.append("<a href='\(sanitizeLinkHref(run.link))'>"); closeTags.insert("</a>", at: 0) }
 
                 if run.hasAttachmentInfo {
                     styledText = processAttachmentRun(run: run)
@@ -278,13 +288,16 @@ class NoteHTMLGenerator {
                 if run.fontWeight == 2 || run.fontWeight == 3 { openTags.append("<i>"); closeTags.insert("</i>", at: 0) }
                 if run.underlined != 0 { openTags.append("<u>"); closeTags.insert("</u>", at: 0) }
                 if run.strikethrough != 0 { openTags.append("<s>"); closeTags.insert("</s>", at: 0) }
-                if !run.link.isEmpty { openTags.append("<a href='\(run.link)'>"); closeTags.insert("</a>", at: 0) }
+                if !run.link.isEmpty { openTags.append("<a href='\(sanitizeLinkHref(run.link))'>"); closeTags.insert("</a>", at: 0) }
 
+                let renderedSegment: String
                 if run.hasAttachmentInfo {
-                    segment = processAttachmentRun(run: run)
+                    renderedSegment = processAttachmentRun(run: run)
+                } else {
+                    renderedSegment = segment.htmlEscaped
                 }
 
-                html += openTags.joined() + segment.replacingOccurrences(of: "\n", with: "<br>") + closeTags.joined()
+                html += openTags.joined() + renderedSegment.replacingOccurrences(of: "\n", with: "<br>") + closeTags.joined()
             }
 
             currentPos = endPos
@@ -310,15 +323,17 @@ class NoteHTMLGenerator {
     private func processAttachmentRun(run: AttributeRun) -> String {
         let typeUti = run.attachmentInfo.typeUti
         let attachmentId = run.attachmentInfo.attachmentIdentifier
+        let safeId = attachmentId.htmlEscaped
+        let safeUti = typeUti.htmlEscaped
 
         // Table marker
         if typeUti == "com.apple.notes.table" {
-            return "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">&#xFFFC;</span>"
+            return "<span data-attachment-id=\"\(safeId)\" data-attachment-type=\"\(safeUti)\">&#xFFFC;</span>"
         }
         // Image marker
         if typeUti.hasPrefix("public.image") || typeUti.hasPrefix("public.jpeg") ||
            typeUti.hasPrefix("public.png") || typeUti.hasPrefix("public.heic") {
-            return "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">&#xFFFC;</span>"
+            return "<span data-attachment-id=\"\(safeId)\" data-attachment-type=\"\(safeUti)\">&#xFFFC;</span>"
         }
         // Inline text attachments (hashtags, mentions, links, etc.)
         if typeUti.hasPrefix("com.apple.notes.inlinetextattachment") {
@@ -328,7 +343,20 @@ class NoteHTMLGenerator {
             return ""
         }
         // All other file attachments
-        return "<span data-attachment-id=\"\(attachmentId)\" data-attachment-type=\"\(typeUti)\">[File: \(typeUti)]</span>"
+        return "<span data-attachment-id=\"\(safeId)\" data-attachment-type=\"\(safeUti)\">[File: \(safeUti)]</span>"
+    }
+
+    /// Sanitize a link href to block XSS via javascript:/data:/vbscript: URIs.
+    /// Allows http(s), mailto, tel, ftp, sms, and Apple Notes internal links;
+    /// everything else is replaced with "#". Also HTML-escapes the allowed URL.
+    private func sanitizeLinkHref(_ link: String) -> String {
+        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        let allowedSchemes = ["http://", "https://", "mailto:", "applenotes:", "tel:", "sms:", "ftp://"]
+        if allowedSchemes.contains(where: { lower.hasPrefix($0) }) {
+            return trimmed.htmlEscaped
+        }
+        return "#"
     }
 
     /// Query inline attachment text using the C parser API

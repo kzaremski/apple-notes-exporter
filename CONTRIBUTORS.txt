@@ -2,4 +2,4 @@ Contributors:
 - Konstantin Zaremski (GitHub: @kzaremski) - Project author
 - Sergey Nikolsky (GitHub: @nikolsky2) - Fixed a crash when the AppleScript returns empty notes
 - Christian Hovenbitzer (GitHub: @AnotherCoolDude) - Added CLI and MCP server targets for headless/AI integration, handwritten note title bug fix
-- Sascha Schneppmuller (GitHub: @Schneppi) - Redesigned app icon
+- Sascha Schneppmüller (GitHub: @Schneppi) - Redesigned app icon

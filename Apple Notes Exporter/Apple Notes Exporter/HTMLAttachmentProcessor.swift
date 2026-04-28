@@ -196,18 +196,21 @@ class HTMLAttachmentProcessor {
         embedInline: Bool,
         wrapInLink: Bool
     ) -> String {
+        let altText = (attachment.filename ?? "image").htmlEscaped
+        let safePath = relativePath?.htmlEscaped
+
         // Try to get base64-encoded image data first (works for both embedded and external images)
         if let base64 = getImageBase64(uuid: uuid, typeUTI: attachment.typeUTI, relativePath: relativePath) {
             let mimeType = utiToMimeType(attachment.typeUTI)
-            let imgTag = "<img src=\"data:\(mimeType);base64,\(base64)\" alt=\"\(attachment.filename ?? "image")\" />"
+            let imgTag = "<img src=\"data:\(mimeType);base64,\(base64)\" alt=\"\(altText)\" />"
 
             // If embedInline is false but we have a relativePath, use the path instead
-            if !embedInline, let path = relativePath {
-                return "<img src=\"\(path)\" alt=\"\(attachment.filename ?? "image")\" />"
+            if !embedInline, let path = safePath {
+                return "<img src=\"\(path)\" alt=\"\(altText)\" />"
             }
 
             // Optionally wrap embedded image in link to file
-            if embedInline && wrapInLink, let path = relativePath {
+            if embedInline && wrapInLink, let path = safePath {
                 return "<a href=\"\(path)\">\(imgTag)</a>"
             }
 
@@ -215,13 +218,13 @@ class HTMLAttachmentProcessor {
         }
 
         // Fall back to linking to the file if base64 failed
-        if let path = relativePath {
-            return "<img src=\"\(path)\" alt=\"\(attachment.filename ?? "image")\" />"
+        if let path = safePath {
+            return "<img src=\"\(path)\" alt=\"\(altText)\" />"
         }
 
         // Last resort: show placeholder
         Logger.noteQuery.warning("Could not embed or link to image \(uuid) - no base64 data or file path available")
-        return "[Image: \(attachment.filename ?? uuid)]"
+        return "[Image: \((attachment.filename ?? uuid).htmlEscaped)]"
     }
 
     /// Generate HTML for table attachments by parsing protobuf

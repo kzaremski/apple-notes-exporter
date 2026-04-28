@@ -1,0 +1,39 @@
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  dco:
+    name: Verify Signed-off-by
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR commits
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check each commit has Signed-off-by
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          for sha in $(git rev-list "$BASE_SHA".."$HEAD_SHA"); do
+            author_name=$(git show -s --format='%an' "$sha")
+            author_email=$(git show -s --format='%ae' "$sha")
+            expected="Signed-off-by: $author_name <$author_email>"
+            msg=$(git show -s --format='%B' "$sha")
+            if ! echo "$msg" | grep -Fq "$expected"; then
+              echo "::error::Commit $sha is missing or has a mismatched Signed-off-by trailer."
+              echo "  Expected:  $expected"
+              echo "  See CONTRIBUTING.md for how to sign off commits (git commit -s)."
+              missing=1
+            else
+              echo "✓ $sha — $expected"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi

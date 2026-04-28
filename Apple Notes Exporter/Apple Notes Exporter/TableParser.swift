@@ -2,7 +2,11 @@
 //  TableParser.swift
 //  Apple Notes Exporter
 //
-//  Copyright (C) 2026 Konstantin Zaremski
+//  Ported to Swift from AppleNotesEmbeddedTable.rb in
+//  apple_cloud_notes_parser by Three Planets Software
+//  (https://github.com/threeplanetssoftware/apple_cloud_notes_parser),
+//  licensed under the MIT License. See Licenses/threeplanetssoftware-LICENSE.txt.
+//  Modifications (C) 2026 Konstantin Zaremski, licensed under GPLv3.
 //
 //  This program is free software: you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
@@ -212,7 +216,6 @@ class TableParser {
 
         Logger.noteQuery.debug("TableParser.buildTable: Found \(objects.count) objects, \(keyItems.count) keys, \(typeItems.count) types in protobuf")
 
-        // Debug: Find all objects with OrderedSets
         var orderedSetIndices: [Int] = []
         for (index, obj) in objects.enumerated() {
             if obj.hasOrderedSet {
