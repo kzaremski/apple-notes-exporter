@@ -489,7 +489,8 @@ struct AppleNotesExporterView: View {
                 .pointerOnHover()
         }
         }
-        .frame(width: 500.0, height: showSyncWarning ? 570.0 : 525.0, alignment: .top)
+        .frame(width: 500.0, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(10.0)
         .onAppear {
             // Initialize sync warning state from persisted config

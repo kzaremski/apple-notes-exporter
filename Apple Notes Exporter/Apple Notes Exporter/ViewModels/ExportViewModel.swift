@@ -1167,7 +1167,19 @@ class ExportViewModel: ObservableObject {
 
     /// Generate binary content for ZIP-based formats (DOCX, ODT, EPUB)
     private func generateBinaryContent(for note: NotesNote, format: ExportFormat, attachmentPaths: [String: String] = [:], exportDirectory: URL? = nil) async throws -> Data {
-        let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+        // Force inline base64 image embedding so the DOCX/ODT converters
+        // can extract image bytes from the HTML and package them inside
+        // the ZIP regardless of the user's HTML preferences.
+        var binaryHTMLConfig = configurations.html
+        binaryHTMLConfig.embedImagesInline = true
+        binaryHTMLConfig.linkEmbeddedImages = false
+
+        let html = try await generateHTML(
+            for: note,
+            config: binaryHTMLConfig,
+            attachmentPaths: attachmentPaths,
+            exportDirectory: exportDirectory
+        )
         let noteWithHTML = noteWithBody(note, html: html)
 
         switch format {

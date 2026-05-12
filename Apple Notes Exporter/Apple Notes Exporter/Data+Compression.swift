@@ -35,9 +35,13 @@ struct ZIPArchive {
     }
 
     /// Build a complete ZIP file from the given entries and return the raw bytes.
+    /// Microsoft Word rejects entries with epoch-zero timestamps; we always emit a
+    /// real MS-DOS date/time computed from `now` so Word accepts the archive.
     static func build(entries: [Entry]) -> Data {
         var centralDirectory = Data()
         var fileData = Data()
+
+        let (dosTime, dosDate) = currentDOSDateTime()
 
         for entry in entries {
             let localHeaderOffset = UInt32(fileData.count)
@@ -68,8 +72,8 @@ struct ZIPArchive {
             fileData.appendUInt16(20)                    // Version needed (2.0)
             fileData.appendUInt16(0)                     // General purpose bit flag
             fileData.appendUInt16(method)                // Compression method
-            fileData.appendUInt16(0)                     // Last mod file time
-            fileData.appendUInt16(0)                     // Last mod file date
+            fileData.appendUInt16(dosTime)               // Last mod file time
+            fileData.appendUInt16(dosDate)               // Last mod file date
             fileData.appendUInt32(crc)                   // CRC-32
             fileData.appendUInt32(compressedSize)        // Compressed size
             fileData.appendUInt32(uncompressedSize)      // Uncompressed size
@@ -84,8 +88,8 @@ struct ZIPArchive {
             centralDirectory.appendUInt16(20)                    // Version needed
             centralDirectory.appendUInt16(0)                     // General purpose bit flag
             centralDirectory.appendUInt16(method)                // Compression method
-            centralDirectory.appendUInt16(0)                     // Last mod file time
-            centralDirectory.appendUInt16(0)                     // Last mod file date
+            centralDirectory.appendUInt16(dosTime)               // Last mod file time
+            centralDirectory.appendUInt16(dosDate)               // Last mod file date
             centralDirectory.appendUInt32(crc)                   // CRC-32
             centralDirectory.appendUInt32(compressedSize)        // Compressed size
             centralDirectory.appendUInt32(uncompressedSize)      // Uncompressed size
@@ -114,6 +118,25 @@ struct ZIPArchive {
         fileData.appendUInt16(0)                          // ZIP file comment length
 
         return fileData
+    }
+
+    /// Encode "now" as an (MS-DOS time, MS-DOS date) pair.
+    /// DOS time: hours<<11 | minutes<<5 | (seconds/2)
+    /// DOS date: (year-1980)<<9 | month<<5 | day
+    /// Used so DOCX/ODT/EPUB archives don't carry epoch-zero timestamps,
+    /// which some consumers (notably Microsoft Word) treat as corruption.
+    private static func currentDOSDateTime() -> (time: UInt16, date: UInt16) {
+        let cal = Calendar(identifier: .gregorian)
+        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date())
+        let year = max(1980, comps.year ?? 1980)
+        let month = comps.month ?? 1
+        let day = comps.day ?? 1
+        let hour = comps.hour ?? 0
+        let minute = comps.minute ?? 0
+        let second = comps.second ?? 0
+        let date = UInt16(((year - 1980) & 0x7F) << 9 | (month & 0x0F) << 5 | (day & 0x1F))
+        let time = UInt16((hour & 0x1F) << 11 | (minute & 0x3F) << 5 | ((second / 2) & 0x1F))
+        return (time, date)
     }
 
     /// Compute CRC-32 checksum using zlib

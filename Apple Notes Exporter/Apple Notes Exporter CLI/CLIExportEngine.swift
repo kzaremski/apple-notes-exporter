@@ -543,7 +543,16 @@ actor CLIExportEngine {
         attachmentPaths: [String: String] = [:],
         exportDirectory: URL? = nil
     ) async throws -> Data {
-        let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+        // DOCX/ODT image embedding pulls bytes out of base64 data URIs
+        // in the HTML body, so we must force inline-embed regardless of
+        // the user's HTML config.
+        let needInlineImages = format == .docx || format == .odt
+        let html = try await generateHTML(
+            for: note,
+            attachmentPaths: attachmentPaths,
+            exportDirectory: exportDirectory,
+            embedImagesInlineOverride: needInlineImages ? true : nil
+        )
         let enrichedNote = noteWithHTML(note, html: html)
         switch format {
         case .docx: return enrichedNote.toDOCX()
@@ -572,9 +581,14 @@ actor CLIExportEngine {
         for note: NotesNote,
         attachmentPaths: [String: String] = [:],
         exportDirectory: URL? = nil,
-        forPDF: Bool = false
+        forPDF: Bool = false,
+        embedImagesInlineOverride: Bool? = nil
     ) async throws -> String {
-        let htmlConfig = configurations.html
+        var htmlConfig = configurations.html
+        if let override = embedImagesInlineOverride {
+            htmlConfig.embedImagesInline = override
+            if override { htmlConfig.linkEmbeddedImages = false }
+        }
 
         let htmlBody: String
         if let existingHTML = note.htmlBody {

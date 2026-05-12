@@ -1338,9 +1338,24 @@ private struct HTMLToDOCXConverter {
     static func convert(_ note: NotesNote) -> Data {
         // Parse HTML body and convert to WordprocessingML with formatting
         let html = note.htmlBody ?? "<p>\(HTMLToXMLConverter.escapeXML(note.plaintext))</p>"
-        let wordMLBody = HTMLToWordMLParser.parse(html: html)
 
-        // Build the required XML files for a minimal valid DOCX
+        // Pull <a href> hyperlinks first so the image extractor can run on
+        // the already-marker-ified text without confusion. Hyperlinks
+        // become <hrefopen id="rId500+"/>…<hrefclose/> marker pairs; the
+        // parser emits <w:hyperlink r:id="…"> referencing the rels.
+        let (afterLinks, links) = HyperlinkExtractor.extract(html: html, startingRId: 500)
+
+        // Extract base64-embedded <img> tags into rId-tagged markers so the
+        // image bytes can be packaged at word/media/imageN.ext and the
+        // parser can emit a <w:drawing> referencing the relationship.
+        let (cleanedHTML, images) = EmbeddedImageExtractor.extract(html: afterLinks, startingRId: 100)
+        var imagesById: [String: EmbeddedImageRef] = [:]
+        for img in images { imagesById[img.rId] = img }
+        let wordMLBody = HTMLToWordMLParser.parse(html: cleanedHTML, embeddedImages: imagesById)
+
+        // Build the required XML files for a minimal valid DOCX. Namespace
+        // declarations for DrawingML are inline on each <w:drawing> so we
+        // don't need to mutate the root element when images are absent.
         let documentXML = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -1353,23 +1368,40 @@ private struct HTMLToDOCXConverter {
         </w:document>
         """
 
+        // Note: Word and LibreOffice require a Normal style and docDefaults to
+        // render the document without "file is corrupt, recover?" warnings.
         let stylesXML = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-        <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:spacing w:before="240" w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style>
-        <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:spacing w:before="200" w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="36"/><w:szCs w:val="36"/></w:rPr></w:style>
-        <w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:pPr><w:spacing w:before="160" w:after="40"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr></w:style>
-        <w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:pPr><w:ind w:left="720"/></w:pPr></w:style>
+        <w:docDefaults>
+        <w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:rPrDefault>
+        <w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="259" w:lineRule="auto"/></w:pPr></w:pPrDefault>
+        </w:docDefaults>
+        <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="240" w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="200" w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="36"/><w:szCs w:val="36"/></w:rPr></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="160" w:after="40"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr></w:style>
+        <w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="720"/></w:pPr></w:style>
         </w:styles>
         """
+
+        // Default Extension entries for any image types we embedded.
+        let usedExts = Set(images.map { $0.ext })
+        let imageDefaults = usedExts.map { ext -> String in
+            let mime = mimeTypeForImageExtension(ext)
+            return "<Default Extension=\"\(ext)\" ContentType=\"\(mime)\"/>"
+        }.joined(separator: "\n")
 
         let contentTypesXML = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
         <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
         <Default Extension="xml" ContentType="application/xml"/>
+        \(imageDefaults)
         <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
         <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+        <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+        <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
         </Types>
         """
 
@@ -1377,25 +1409,94 @@ private struct HTMLToDOCXConverter {
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
         <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+        <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+        <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
         </Relationships>
         """
+
+        // One Relationship per embedded image, plus the existing styles ref.
+        let imageRels = images.enumerated().map { (idx, img) -> String in
+            let target = "media/image\(idx + 1).\(img.ext)"
+            return "<Relationship Id=\"\(img.rId)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"\(target)\"/>"
+        }.joined(separator: "\n")
+
+        // External hyperlink relationships.
+        let linkRels = links.map { link -> String in
+            let escaped = HTMLToXMLConverter.escapeXML(link.href)
+            return "<Relationship Id=\"\(link.rId)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"\(escaped)\" TargetMode=\"External\"/>"
+        }.joined(separator: "\n")
 
         let wordRelsXML = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
         <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+        \(imageRels)
+        \(linkRels)
         </Relationships>
         """
 
-        let entries: [ZIPArchive.Entry] = [
+        // docProps: Word 2010+ in strict mode rejects files without them.
+        let isoFormatter = DateFormatter()
+        isoFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        isoFormatter.timeZone = TimeZone(identifier: "UTC")
+        let created = isoFormatter.string(from: note.creationDate)
+        let modified = isoFormatter.string(from: note.modificationDate)
+        let escTitle = HTMLToXMLConverter.escapeXML(note.title)
+
+        let coreXML = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <dc:title>\(escTitle)</dc:title>
+        <dc:creator>Apple Notes Exporter</dc:creator>
+        <cp:lastModifiedBy>Apple Notes Exporter</cp:lastModifiedBy>
+        <dcterms:created xsi:type="dcterms:W3CDTF">\(created)</dcterms:created>
+        <dcterms:modified xsi:type="dcterms:W3CDTF">\(modified)</dcterms:modified>
+        </cp:coreProperties>
+        """
+
+        let appXML = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+        <Application>Apple Notes Exporter</Application>
+        </Properties>
+        """
+
+        var entries: [ZIPArchive.Entry] = [
             .init(path: "[Content_Types].xml", data: Data(contentTypesXML.utf8), compress: true),
             .init(path: "_rels/.rels", data: Data(relsXML.utf8), compress: true),
             .init(path: "word/_rels/document.xml.rels", data: Data(wordRelsXML.utf8), compress: true),
             .init(path: "word/document.xml", data: Data(documentXML.utf8), compress: true),
             .init(path: "word/styles.xml", data: Data(stylesXML.utf8), compress: true),
+            .init(path: "docProps/core.xml", data: Data(coreXML.utf8), compress: true),
+            .init(path: "docProps/app.xml", data: Data(appXML.utf8), compress: true),
         ]
 
+        // Image payloads: STORE rather than DEFLATE (JPEG/PNG are already
+        // compressed; re-deflating wastes CPU and yields no shrinkage).
+        for (idx, img) in images.enumerated() {
+            entries.append(.init(
+                path: "word/media/image\(idx + 1).\(img.ext)",
+                data: img.data,
+                compress: false
+            ))
+        }
+
         return ZIPArchive.build(entries: entries)
+    }
+
+    /// Map an image extension to the Content-Type used in `[Content_Types].xml`.
+    static func mimeTypeForImageExtension(_ ext: String) -> String {
+        switch ext.lowercased() {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png":  return "image/png"
+        case "gif":  return "image/gif"
+        case "heic": return "image/heic"
+        case "heif": return "image/heif"
+        case "tiff", "tif": return "image/tiff"
+        case "webp": return "image/webp"
+        case "bmp":  return "image/bmp"
+        default:     return "application/octet-stream"
+        }
     }
 }
 
@@ -1411,10 +1512,14 @@ private struct HTMLToWordMLParser {
         var italic = false
         var underline = false
         var strikethrough = false
+        var hyperlinkActive = false
     }
 
-    /// Parse HTML and return WordprocessingML paragraph elements
-    static func parse(html: String) -> String {
+    /// Parse HTML and return WordprocessingML paragraph elements.
+    /// If `embeddedImages` is non-empty, `<imgref id="rIdN"/>` markers
+    /// in the HTML (produced by EmbeddedImageExtractor) are emitted as
+    /// inline `<w:drawing>` runs referencing the corresponding rId.
+    static func parse(html: String, embeddedImages: [String: EmbeddedImageRef] = [:]) -> String {
         // Extract body content if wrapped in full HTML document
         var content = html
         if let bodyStart = content.range(of: "<body>", options: .caseInsensitive),
@@ -1447,7 +1552,14 @@ private struct HTMLToWordMLParser {
             var rpr = ""
             if style.bold { rpr += "<w:b/>" }
             if style.italic { rpr += "<w:i/>" }
-            if style.underline { rpr += "<w:u w:val=\"single\"/>" }
+            // Apply blue+underline inside a hyperlink so the link is visually
+            // distinct in Word/LibreOffice. Explicit underline still wins
+            // outside a link.
+            if style.hyperlinkActive {
+                rpr += "<w:color w:val=\"0563C1\"/><w:u w:val=\"single\"/>"
+            } else if style.underline {
+                rpr += "<w:u w:val=\"single\"/>"
+            }
             if style.strikethrough { rpr += "<w:strike/>" }
             let rprXML = rpr.isEmpty ? "" : "<w:rPr>\(rpr)</w:rPr>"
             result += "<w:r>\(rprXML)<w:t xml:space=\"preserve\">\(escaped)</w:t></w:r>"
@@ -1502,6 +1614,28 @@ private struct HTMLToWordMLParser {
                 else if tagLower == "/u" { flushRun(); style.underline = false }
                 else if tagLower == "s" || tagLower == "strike" || tagLower == "del" { flushRun(); style.strikethrough = true }
                 else if tagLower == "/s" || tagLower == "/strike" || tagLower == "/del" { flushRun(); style.strikethrough = false }
+                else if tagLower.hasPrefix("hrefopen") {
+                    // Hyperlink marker emitted by HyperlinkExtractor.
+                    var refId: String? = nil
+                    if let r = tagStr.range(of: "id=\""),
+                       let e = tagStr[r.upperBound...].firstIndex(of: "\"") {
+                        refId = String(tagStr[r.upperBound..<e])
+                    }
+                    if let id = refId {
+                        flushRun()
+                        ensureParagraph()
+                        result += "<w:hyperlink r:id=\"\(id)\" w:history=\"1\">"
+                        style.hyperlinkActive = true
+                    }
+                }
+                else if tagLower.hasPrefix("hrefclose") {
+                    if style.hyperlinkActive {
+                        flushRun()
+                        result += "</w:hyperlink>"
+                        style.hyperlinkActive = false
+                    }
+                }
+                // Bare <a> without href (extractor leaves these alone). Fall back to underline.
                 else if tagLower.hasPrefix("a ") || tagLower == "a" { flushRun(); style.underline = true }
                 else if tagLower == "/a" { flushRun(); style.underline = false }
 
@@ -1515,7 +1649,7 @@ private struct HTMLToWordMLParser {
                 }
                 else if tagLower == "/h1" || tagLower == "/h2" || tagLower == "/h3" {
                     flushRun(); headingLevel = 0
-                    result += "</w:p>\n"; inParagraph = false
+                    if inParagraph { result += "</w:p>\n"; inParagraph = false }
                 }
 
                 // Paragraphs
@@ -1583,14 +1717,46 @@ private struct HTMLToWordMLParser {
                 }
                 else if tagLower == "/pre" { flushRun(); result += "</w:p>\n"; inParagraph = false }
 
-                // Structural: ignore
-                else if tagLower.hasPrefix("div") || tagLower == "/div" { /* skip */ }
+                // <div>: usually ignored, but Apple Notes wraps attachment
+                // cards in a heading element. When we see a <div> inside a
+                // heading paragraph, treat it as the end of the heading so
+                // the card renders in body style, not 24pt bold.
+                else if tagLower.hasPrefix("div") {
+                    if inParagraph && headingLevel > 0 {
+                        flushRun()
+                        result += "</w:p>\n"
+                        inParagraph = false
+                        headingLevel = 0
+                    }
+                }
+                else if tagLower == "/div" { /* skip */ }
 
-                // Images
+                // Embedded image marker (post-extraction): emit <w:drawing>
+                else if tagLower.hasPrefix("imgref") {
+                    var refId: String? = nil
+                    if let idRange = tagStr.range(of: "id=\""),
+                       let idEnd = tagStr[idRange.upperBound...].firstIndex(of: "\"") {
+                        refId = String(tagStr[idRange.upperBound..<idEnd])
+                    }
+                    if let id = refId, let img = embeddedImages[id] {
+                        flushRun()
+                        ensureParagraph()
+                        result += HTMLToWordMLParser.docxDrawingRun(for: img)
+                    } else {
+                        // Fallback if marker is orphaned (shouldn't happen)
+                        currentText += "[Image]"
+                    }
+                }
+
+                // Untransformed images (no base64 extracted): fall back to placeholder
                 else if tagLower.hasPrefix("img") {
+                    var alt: String? = nil
                     if let altRange = tagStr.range(of: "alt=\""),
                        let altEnd = tagStr[altRange.upperBound...].firstIndex(of: "\"") {
-                        currentText += "[Image: \(String(tagStr[altRange.upperBound..<altEnd]))]"
+                        alt = String(tagStr[altRange.upperBound..<altEnd])
+                    }
+                    if let a = alt, !a.isEmpty, a.lowercased() != "image" {
+                        currentText += "[Image: \(a)]"
                     } else {
                         currentText += "[Image]"
                     }
@@ -1657,6 +1823,52 @@ private struct HTMLToWordMLParser {
     private static func escapeXML(_ string: String) -> String {
         return HTMLToXMLConverter.escapeXML(string)
     }
+
+    // MARK: - Drawing emission
+
+    /// One DrawingML inline picture, ready to embed as a `<w:r>` inside a
+    /// paragraph. References the image's rId from `word/_rels/document.xml.rels`.
+    static func docxDrawingRun(for img: EmbeddedImageRef) -> String {
+        let (cx, cy) = emuSize(for: img)
+        // Use a stable but unique id derived from the rId number.
+        let nId = img.rId.dropFirst(3) // strip "rId"
+        let name = "Picture \(nId)"
+        return """
+        <w:r><w:drawing>\
+        <wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">\
+        <wp:extent cx="\(cx)" cy="\(cy)"/>\
+        <wp:effectExtent l="0" t="0" r="0" b="0"/>\
+        <wp:docPr id="\(nId)" name="\(name)"/>\
+        <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/></wp:cNvGraphicFramePr>\
+        <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">\
+        <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">\
+        <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">\
+        <pic:nvPicPr><pic:cNvPr id="\(nId)" name="\(name)"/><pic:cNvPicPr/></pic:nvPicPr>\
+        <pic:blipFill><a:blip r:embed="\(img.rId)"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>\
+        <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="\(cx)" cy="\(cy)"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>\
+        </pic:pic>\
+        </a:graphicData>\
+        </a:graphic>\
+        </wp:inline>\
+        </w:drawing></w:r>
+        """
+    }
+
+    /// Convert image pixel dimensions to EMUs (914,400 EMU = 1 inch).
+    /// Assumes 96 DPI source resolution and caps page width at ~6 inches.
+    private static func emuSize(for img: EmbeddedImageRef) -> (cx: Int, cy: Int) {
+        let emuPerInch = 914_400.0
+        let maxWidthInches = 6.0
+        let defaultWidthInches = 4.0
+        let defaultHeightInches = 3.0
+        if let w = img.widthPx, let h = img.heightPx, w > 0, h > 0 {
+            let widthInches = min(Double(w) / 96.0, maxWidthInches)
+            let aspect = Double(h) / Double(w)
+            let heightInches = widthInches * aspect
+            return (Int(widthInches * emuPerInch), Int(heightInches * emuPerInch))
+        }
+        return (Int(defaultWidthInches * emuPerInch), Int(defaultHeightInches * emuPerInch))
+    }
 }
 
 // MARK: - ODT Converter
@@ -1665,11 +1877,26 @@ private struct HTMLToODTConverter {
     static func convert(_ note: NotesNote) -> Data {
         // Parse HTML body and convert to ODF content with formatting
         let html = note.htmlBody ?? "<p>\(HTMLToXMLConverter.escapeXML(note.plaintext))</p>"
-        let odtBody = HTMLToODFParser.parse(html: html)
+
+        // Hyperlinks first, then images (matches DOCX ordering).
+        let (afterLinks, links) = HyperlinkExtractor.extract(html: html, startingRId: 600)
+        var hrefByRId: [String: String] = [:]
+        for link in links { hrefByRId[link.rId] = link.href }
+
+        // Pull base64 <img> tags into rId markers so we can embed the
+        // bytes under Pictures/ and reference them with <draw:image>.
+        let (cleanedHTML, images) = EmbeddedImageExtractor.extract(html: afterLinks, startingRId: 200)
+        var imagesById: [String: EmbeddedImageRef] = [:]
+        for img in images { imagesById[img.rId] = img }
+        let odtBody = HTMLToODFParser.parse(
+            html: cleanedHTML,
+            embeddedImages: imagesById,
+            hyperlinksByRId: hrefByRId
+        )
 
         let contentXML = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2">
+        <office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.2">
         <office:automatic-styles>
         <style:style style:name="H1" style:family="paragraph"><style:text-properties fo:font-size="24pt" fo:font-weight="bold"/></style:style>
         <style:style style:name="H2" style:family="paragraph"><style:text-properties fo:font-size="18pt" fo:font-weight="bold"/></style:style>
@@ -1703,23 +1930,41 @@ private struct HTMLToODTConverter {
         </office:document-meta>
         """
 
+        // Manifest must list every file inside the archive, including the
+        // embedded images under Pictures/. LibreOffice silently drops any
+        // file that isn't declared here.
+        let pictureManifest = images.enumerated().map { (idx, img) -> String in
+            let path = "Pictures/image\(idx + 1).\(img.ext)"
+            let mime = HTMLToDOCXConverter.mimeTypeForImageExtension(img.ext)
+            return "<manifest:file-entry manifest:full-path=\"\(path)\" manifest:media-type=\"\(mime)\"/>"
+        }.joined(separator: "\n")
+
         let manifestXML = """
         <?xml version="1.0" encoding="UTF-8"?>
         <manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
         <manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.text"/>
         <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
         <manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
+        \(pictureManifest)
         </manifest:manifest>
         """
 
         let mimetypeData = Data("application/vnd.oasis.opendocument.text".utf8)
 
-        let entries: [ZIPArchive.Entry] = [
+        var entries: [ZIPArchive.Entry] = [
             .init(path: "mimetype", data: mimetypeData, compress: false),
             .init(path: "META-INF/manifest.xml", data: Data(manifestXML.utf8), compress: true),
             .init(path: "content.xml", data: Data(contentXML.utf8), compress: true),
             .init(path: "meta.xml", data: Data(metaXML.utf8), compress: true),
         ]
+
+        for (idx, img) in images.enumerated() {
+            entries.append(.init(
+                path: "Pictures/image\(idx + 1).\(img.ext)",
+                data: img.data,
+                compress: false
+            ))
+        }
 
         return ZIPArchive.build(entries: entries)
     }
@@ -1749,7 +1994,7 @@ private struct HTMLToODFParser {
         }
     }
 
-    static func parse(html: String) -> String {
+    static func parse(html: String, embeddedImages: [String: EmbeddedImageRef] = [:], hyperlinksByRId: [String: String] = [:]) -> String {
         var content = html
         if let bodyStart = content.range(of: "<body>", options: .caseInsensitive),
            let bodyEnd = content.range(of: "</body>", options: .caseInsensitive) {
@@ -1768,9 +2013,34 @@ private struct HTMLToODFParser {
         var isOrderedList = false
         var listItemNumber = 0
         var headingLevel = 0
+        var imageCounter = 0  // 1-based for Pictures/imageN.ext
+        var inHyperlink = false
+
+        // ODF requires text content to live inside a <text:p>. If stray
+        // characters appear outside an explicit block element, auto-wrap
+        // them so LibreOffice doesn't reject the document as corrupt.
+        var inParagraph = false
+        var autoOpenedParagraph = false
+
+        func ensureParagraph() {
+            if !inParagraph {
+                result += "<text:p>"
+                inParagraph = true
+                autoOpenedParagraph = true
+            }
+        }
+
+        func closeAutoParagraph() {
+            if autoOpenedParagraph {
+                result += "</text:p>\n"
+                inParagraph = false
+                autoOpenedParagraph = false
+            }
+        }
 
         func flushSpan() {
             guard !currentText.isEmpty else { return }
+            ensureParagraph()
             let escaped = escapeXML(currentText)
             if let sn = style.styleName {
                 result += "<text:span text:style-name=\"\(sn)\">\(escaped)</text:span>"
@@ -1796,6 +2066,7 @@ private struct HTMLToODFParser {
 
                 if tagLower == "br" || tagLower == "br/" || tagLower == "br /" {
                     flushSpan()
+                    ensureParagraph()
                     result += "<text:line-break/>"
                     pos = nextPos; continue
                 }
@@ -1804,55 +2075,149 @@ private struct HTMLToODFParser {
                 else if tagLower == "/b" || tagLower == "/strong" { flushSpan(); style.bold = false }
                 else if tagLower == "i" || tagLower == "em" { flushSpan(); style.italic = true }
                 else if tagLower == "/i" || tagLower == "/em" { flushSpan(); style.italic = false }
-                else if tagLower == "u" || tagLower.hasPrefix("a ") || tagLower == "a" { flushSpan(); style.underline = true }
-                else if tagLower == "/u" || tagLower == "/a" { flushSpan(); style.underline = false }
+                else if tagLower == "u" { flushSpan(); style.underline = true }
+                else if tagLower == "/u" { flushSpan(); style.underline = false }
+                else if tagLower.hasPrefix("hrefopen") {
+                    var refId: String? = nil
+                    if let r = tagContent.range(of: "id=\""),
+                       let e = tagContent[r.upperBound...].firstIndex(of: "\"") {
+                        refId = String(tagContent[r.upperBound..<e])
+                    }
+                    if let id = refId, let href = hyperlinksByRId[id] {
+                        flushSpan()
+                        ensureParagraph()
+                        let escapedHref = HTMLToXMLConverter.escapeXML(href)
+                        result += "<text:a xlink:type=\"simple\" xlink:href=\"\(escapedHref)\">"
+                        inHyperlink = true
+                    }
+                }
+                else if tagLower.hasPrefix("hrefclose") {
+                    if inHyperlink {
+                        flushSpan()
+                        result += "</text:a>"
+                        inHyperlink = false
+                    }
+                }
+                // Bare <a> without href: existing underline fallback.
+                else if tagLower.hasPrefix("a ") || tagLower == "a" { flushSpan(); style.underline = true }
+                else if tagLower == "/a" { flushSpan(); style.underline = false }
                 else if tagLower == "s" || tagLower == "strike" || tagLower == "del" { flushSpan(); style.strikethrough = true }
                 else if tagLower == "/s" || tagLower == "/strike" || tagLower == "/del" { flushSpan(); style.strikethrough = false }
-                else if tagLower == "h1" { flushSpan(); headingLevel = 1; result += "<text:p text:style-name=\"H1\">" }
-                else if tagLower == "h2" { flushSpan(); headingLevel = 2; result += "<text:p text:style-name=\"H2\">" }
-                else if tagLower == "h3" { flushSpan(); headingLevel = 3; result += "<text:p text:style-name=\"H3\">" }
-                else if tagLower == "/h1" || tagLower == "/h2" || tagLower == "/h3" { flushSpan(); headingLevel = 0; result += "</text:p>\n" }
+                else if tagLower == "h1" {
+                    flushSpan(); closeAutoParagraph(); headingLevel = 1
+                    result += "<text:p text:style-name=\"H1\">"
+                    inParagraph = true; autoOpenedParagraph = false
+                }
+                else if tagLower == "h2" {
+                    flushSpan(); closeAutoParagraph(); headingLevel = 2
+                    result += "<text:p text:style-name=\"H2\">"
+                    inParagraph = true; autoOpenedParagraph = false
+                }
+                else if tagLower == "h3" {
+                    flushSpan(); closeAutoParagraph(); headingLevel = 3
+                    result += "<text:p text:style-name=\"H3\">"
+                    inParagraph = true; autoOpenedParagraph = false
+                }
+                else if tagLower == "/h1" || tagLower == "/h2" || tagLower == "/h3" {
+                    flushSpan(); headingLevel = 0
+                    if inParagraph {
+                        result += "</text:p>\n"
+                        inParagraph = false; autoOpenedParagraph = false
+                    }
+                }
+                else if tagLower.hasPrefix("div") {
+                    // Apple Notes wraps attachment cards in a heading; drop to body style.
+                    if inParagraph && headingLevel > 0 {
+                        flushSpan()
+                        result += "</text:p>\n"
+                        inParagraph = false; autoOpenedParagraph = false
+                        headingLevel = 0
+                    }
+                }
+                else if tagLower == "/div" { /* skip */ }
                 else if tagLower == "p" || tagLower.hasPrefix("p ") {
-                    flushSpan()
-                    if !inListItem { result += "<text:p>" }
+                    flushSpan(); closeAutoParagraph()
+                    if !inListItem {
+                        result += "<text:p>"
+                        inParagraph = true; autoOpenedParagraph = false
+                    }
                 }
                 else if tagLower == "/p" {
                     flushSpan()
-                    if !inListItem { result += "</text:p>\n" }
+                    if !inListItem {
+                        result += "</text:p>\n"
+                        inParagraph = false; autoOpenedParagraph = false
+                    }
                 }
-                else if tagLower == "ul" { flushSpan(); listDepth += 1; isOrderedList = false; listItemNumber = 0 }
+                else if tagLower == "ul" { flushSpan(); closeAutoParagraph(); listDepth += 1; isOrderedList = false; listItemNumber = 0 }
                 else if tagLower == "/ul" { flushSpan(); listDepth = max(0, listDepth - 1) }
-                else if tagLower == "ol" { flushSpan(); listDepth += 1; isOrderedList = true; listItemNumber = 0 }
+                else if tagLower == "ol" { flushSpan(); closeAutoParagraph(); listDepth += 1; isOrderedList = true; listItemNumber = 0 }
                 else if tagLower == "/ol" { flushSpan(); listDepth = max(0, listDepth - 1); isOrderedList = false }
                 else if tagLower == "li" {
-                    flushSpan(); inListItem = true; listItemNumber += 1
+                    flushSpan(); closeAutoParagraph(); inListItem = true; listItemNumber += 1
                     let bullet = isOrderedList ? "\(listItemNumber). " : "\u{2022} "
                     result += "<text:p text:style-name=\"ListIndent\">\(bullet)"
+                    inParagraph = true; autoOpenedParagraph = false
                 }
-                else if tagLower == "/li" { flushSpan(); inListItem = false; result += "</text:p>\n" }
+                else if tagLower == "/li" {
+                    flushSpan(); inListItem = false
+                    result += "</text:p>\n"
+                    inParagraph = false; autoOpenedParagraph = false
+                }
                 else if tagLower == "table" || tagLower.hasPrefix("table ") {
-                    flushSpan()
+                    flushSpan(); closeAutoParagraph()
                     result += "<table:table>"
                 }
                 else if tagLower == "/table" { flushSpan(); result += "</table:table>\n" }
                 else if tagLower == "tr" || tagLower.hasPrefix("tr ") { flushSpan(); result += "<table:table-row>" }
                 else if tagLower == "/tr" { flushSpan(); result += "</table:table-row>" }
                 else if tagLower == "td" || tagLower.hasPrefix("td ") || tagLower == "th" || tagLower.hasPrefix("th ") {
-                    flushSpan(); result += "<table:table-cell><text:p>"
+                    flushSpan()
+                    result += "<table:table-cell><text:p>"
+                    inParagraph = true; autoOpenedParagraph = false
                     if tagLower.hasPrefix("th") { style.bold = true }
                 }
                 else if tagLower == "/td" || tagLower == "/th" {
                     flushSpan()
                     if tagLower == "/th" { style.bold = false }
                     result += "</text:p></table:table-cell>"
+                    inParagraph = false; autoOpenedParagraph = false
                 }
-                else if tagLower == "pre" || tagLower.hasPrefix("pre ") { flushSpan(); result += "<text:p>" }
-                else if tagLower == "/pre" { flushSpan(); result += "</text:p>\n" }
+                else if tagLower == "pre" || tagLower.hasPrefix("pre ") {
+                    flushSpan(); closeAutoParagraph()
+                    result += "<text:p>"
+                    inParagraph = true; autoOpenedParagraph = false
+                }
+                else if tagLower == "/pre" {
+                    flushSpan(); result += "</text:p>\n"
+                    inParagraph = false; autoOpenedParagraph = false
+                }
+                else if tagLower.hasPrefix("imgref") {
+                    var refId: String? = nil
+                    if let idRange = tagContent.range(of: "id=\""),
+                       let idEnd = tagContent[idRange.upperBound...].firstIndex(of: "\"") {
+                        refId = String(tagContent[idRange.upperBound..<idEnd])
+                    }
+                    if let id = refId, let img = embeddedImages[id] {
+                        flushSpan()
+                        ensureParagraph()
+                        imageCounter += 1
+                        result += odtDrawFrame(for: img, index: imageCounter)
+                    } else {
+                        currentText += "[Image]"
+                    }
+                }
                 else if tagLower.hasPrefix("img") {
+                    var alt: String? = nil
                     if let altRange = tagContent.range(of: "alt=\""),
                        let altEnd = tagContent[altRange.upperBound...].firstIndex(of: "\"") {
-                        currentText += "[Image: \(String(tagContent[altRange.upperBound..<altEnd]))]"
-                    } else { currentText += "[Image]" }
+                        alt = String(tagContent[altRange.upperBound..<altEnd])
+                    }
+                    if let a = alt, !a.isEmpty, a.lowercased() != "image" {
+                        currentText += "[Image: \(a)]"
+                    } else {
+                        currentText += "[Image]"
+                    }
                 }
                 else if tagLower.hasPrefix("style") && !tagLower.hasSuffix("/") {
                     if let styleEnd = content[nextPos...].range(of: "</style>", options: .caseInsensitive) {
@@ -1896,10 +2261,11 @@ private struct HTMLToODFParser {
             pos = content.index(after: pos)
         }
 
-        if !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            result += "<text:p>"
-            flushSpan()
+        flushSpan()
+        closeAutoParagraph()
+        if inParagraph {
             result += "</text:p>\n"
+            inParagraph = false
         }
 
         if result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1911,6 +2277,37 @@ private struct HTMLToODFParser {
 
     private static func escapeXML(_ string: String) -> String {
         return HTMLToXMLConverter.escapeXML(string)
+    }
+
+    // MARK: - Draw frame emission
+
+    /// One ODF `<draw:frame>` containing a single `<draw:image>` reference.
+    /// Must be nested inside a `<text:p>`; callers handle that.
+    static func odtDrawFrame(for img: EmbeddedImageRef, index: Int) -> String {
+        let (w, h) = inchSize(for: img)
+        let path = "Pictures/image\(index).\(img.ext)"
+        return """
+        <draw:frame draw:name="Image\(index)" text:anchor-type="paragraph" svg:width="\(w)in" svg:height="\(h)in" draw:z-index="\(index)">\
+        <draw:image xlink:href="\(path)" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/>\
+        </draw:frame>
+        """
+    }
+
+    /// Image size in inches, capped at 6" wide. Mirrors the DOCX sizing rules.
+    private static func inchSize(for img: EmbeddedImageRef) -> (w: String, h: String) {
+        let maxWidthInches = 6.0
+        let defaultWidthInches = 4.0
+        let defaultHeightInches = 3.0
+        let formatter: (Double) -> String = { v in
+            return String(format: "%.2f", v)
+        }
+        if let w = img.widthPx, let h = img.heightPx, w > 0, h > 0 {
+            let widthInches = min(Double(w) / 96.0, maxWidthInches)
+            let aspect = Double(h) / Double(w)
+            let heightInches = widthInches * aspect
+            return (formatter(widthInches), formatter(heightInches))
+        }
+        return (formatter(defaultWidthInches), formatter(defaultHeightInches))
     }
 }
 
