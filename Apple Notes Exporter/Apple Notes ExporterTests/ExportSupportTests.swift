@@ -11,6 +11,19 @@ import XCTest
 
 final class ExportSupportTests: XCTestCase {
 
+    // MARK: - HTML entity decoding
+
+    func test_htmlDecoded_decodesNamedDecimalAndHexadecimalEntities() {
+        XCTAssertEqual(
+            "Tom &amp; Jerry: &lt;example&gt; &quot;quoted&quot; &#169; &#x1F600;".htmlDecoded,
+            "Tom & Jerry: <example> \"quoted\" © 😀"
+        )
+    }
+
+    func test_htmlDecoded_decodesOneEscapingLayer() {
+        XCTAssertEqual("&amp;amp;".htmlDecoded, "&amp;")
+    }
+
     // MARK: - sanitizeExportFilename
     //
     // Contract: produce a string safe to use as a single filesystem path
