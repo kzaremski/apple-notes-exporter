@@ -95,6 +95,7 @@
 		MC00000000000000000JHTDP /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000007HTDP /* HtmlToPdf */; };
 		TT000000000000000001ESPT /* ExportSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TT000000000000000000ESPF /* ExportSupportTests.swift */; };
 		TT000000000000000003DRPT /* DOCXRoundtripTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TT000000000000000002DRPF /* DOCXRoundtripTests.swift */; };
+		TT000000000000000005MEPT /* MarkdownExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TT000000000000000004MEPF /* MarkdownExportTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -214,6 +215,7 @@
 		F873000AF0346FE18B1971CF /* FormatOptionsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FormatOptionsView.swift; sourceTree = "<group>"; };
 		TT000000000000000000ESPF /* ExportSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSupportTests.swift; sourceTree = "<group>"; };
 		TT000000000000000002DRPF /* DOCXRoundtripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DOCXRoundtripTests.swift; sourceTree = "<group>"; };
+		TT000000000000000004MEPF /* MarkdownExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownExportTests.swift; sourceTree = "<group>"; };
 		XC000000000000000001SIGN /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Signing.xcconfig; path = Config/Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -360,6 +362,7 @@
 				258D3AA429A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift */,
 				TT000000000000000000ESPF /* ExportSupportTests.swift */,
 				TT000000000000000002DRPF /* DOCXRoundtripTests.swift */,
+				TT000000000000000004MEPF /* MarkdownExportTests.swift */,
 			);
 			path = "Apple Notes ExporterTests";
 			sourceTree = "<group>";
@@ -676,6 +679,7 @@
 				258D3AA529A7CC2F00858CE1 /* Apple_Notes_ExporterTests.swift in Sources */,
 				TT000000000000000001ESPT /* ExportSupportTests.swift in Sources */,
 				TT000000000000000003DRPT /* DOCXRoundtripTests.swift in Sources */,
+				TT000000000000000005MEPT /* MarkdownExportTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

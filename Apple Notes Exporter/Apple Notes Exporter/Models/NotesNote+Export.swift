@@ -904,6 +904,9 @@ private struct HTMLToMarkdownConverter {
         // Clean up remaining tags
         result = stripRemainingTags(result)
 
+        // Decode HTML entities after stripping actual tags so encoded angle brackets remain visible
+        result = result.htmlDecoded
+
         // Clean up multiple newlines
         result = result.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
 
@@ -989,7 +992,7 @@ private struct HTMLToRTFConverter {
         var escaped = escapeTextBetweenTags(bodyContent)
 
         // Step 2: Decode HTML entities (after escaping RTF special chars but before RTF conversion)
-        escaped = decodeHTMLEntities(escaped)
+        escaped = escaped.htmlDecoded
 
         // RTF uses half-points for font size (fs = fontSize * 2)
         let baseFontSize = Int(fontSize * 2)
@@ -1097,54 +1100,6 @@ private struct HTMLToRTFConverter {
                     result.append(ch)
                 }
                 index = html.index(after: index)
-            }
-        }
-
-        return result
-    }
-
-    /// Decode common HTML entities to their character equivalents
-    private static func decodeHTMLEntities(_ text: String) -> String {
-        var result = text
-        result = result.replacingOccurrences(of: "&amp;", with: "&")
-        result = result.replacingOccurrences(of: "&lt;", with: "<")
-        result = result.replacingOccurrences(of: "&gt;", with: ">")
-        result = result.replacingOccurrences(of: "&quot;", with: "\"")
-        result = result.replacingOccurrences(of: "&#39;", with: "'")
-        result = result.replacingOccurrences(of: "&apos;", with: "'")
-        result = result.replacingOccurrences(of: "&nbsp;", with: " ")
-
-        // Decode numeric HTML entities (&#NNN; and &#xHHH;)
-        // Decimal entities
-        if let regex = try? NSRegularExpression(pattern: "&#(\\d+);", options: []) {
-            let nsString = result as NSString
-            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: nsString.length))
-            // Process in reverse to preserve string indices
-            for match in matches.reversed() {
-                if let codeRange = Range(match.range(at: 1), in: result),
-                   let codePoint = UInt32(result[codeRange]),
-                   let scalar = Unicode.Scalar(codePoint) {
-                    let replacement = String(Character(scalar))
-                    if let fullRange = Range(match.range, in: result) {
-                        result.replaceSubrange(fullRange, with: replacement)
-                    }
-                }
-            }
-        }
-
-        // Hex entities
-        if let regex = try? NSRegularExpression(pattern: "&#x([0-9a-fA-F]+);", options: []) {
-            let nsString = result as NSString
-            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: nsString.length))
-            for match in matches.reversed() {
-                if let codeRange = Range(match.range(at: 1), in: result),
-                   let codePoint = UInt32(result[codeRange], radix: 16),
-                   let scalar = Unicode.Scalar(codePoint) {
-                    let replacement = String(Character(scalar))
-                    if let fullRange = Range(match.range, in: result) {
-                        result.replaceSubrange(fullRange, with: replacement)
-                    }
-                }
             }
         }
 
