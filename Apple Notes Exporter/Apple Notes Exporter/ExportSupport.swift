@@ -41,6 +41,54 @@ extension String {
             .replacingOccurrences(of: "'", with: "&#39;")
     }
 
+    /// Decode common HTML entities to their character equivalents
+    var htmlDecoded: String {
+        var result = self
+        result = result.replacingOccurrences(of: "&amp;", with: "&")
+        result = result.replacingOccurrences(of: "&lt;", with: "<")
+        result = result.replacingOccurrences(of: "&gt;", with: ">")
+        result = result.replacingOccurrences(of: "&quot;", with: "\"")
+        result = result.replacingOccurrences(of: "&#39;", with: "'")
+        result = result.replacingOccurrences(of: "&apos;", with: "'")
+        result = result.replacingOccurrences(of: "&nbsp;", with: " ")
+
+        // Decode numeric HTML entities (&#NNN; and &#xHHH;)
+        // Decimal entities
+        if let regex = try? NSRegularExpression(pattern: "&#(\\d+);", options: []) {
+            let nsString = result as NSString
+            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: nsString.length))
+            // Process in reverse to preserve string indices
+            for match in matches.reversed() {
+                if let codeRange = Range(match.range(at: 1), in: result),
+                   let codePoint = UInt32(result[codeRange]),
+                   let scalar = Unicode.Scalar(codePoint) {
+                    let replacement = String(Character(scalar))
+                    if let fullRange = Range(match.range, in: result) {
+                        result.replaceSubrange(fullRange, with: replacement)
+                    }
+                }
+            }
+        }
+
+        // Hex entities
+        if let regex = try? NSRegularExpression(pattern: "&#x([0-9a-fA-F]+);", options: []) {
+            let nsString = result as NSString
+            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: nsString.length))
+            for match in matches.reversed() {
+                if let codeRange = Range(match.range(at: 1), in: result),
+                   let codePoint = UInt32(result[codeRange], radix: 16),
+                   let scalar = Unicode.Scalar(codePoint) {
+                    let replacement = String(Character(scalar))
+                    if let fullRange = Range(match.range, in: result) {
+                        result.replaceSubrange(fullRange, with: replacement)
+                    }
+                }
+            }
+        }
+
+        return result
+    }
+
     var rtfEscaped: String {
         self
             .replacingOccurrences(of: "\\", with: "\\\\")

@@ -3,4 +3,5 @@ Contributors:
 - Sergey Nikolsky (GitHub: @nikolsky2) - Fixed a crash when the AppleScript returns empty notes
 - Christian Hovenbitzer (GitHub: @AnotherCoolDude) - Added CLI and MCP server targets for headless/AI integration, handwritten note title bug fix
 - Sascha Schneppmüller (GitHub: @Schneppi) - Redesigned app icon
+- David Ginsburg (GitHub: @davideg) - Fixed Markdown export to decode HTML entities
 - Vaughan Risher (GitHub: @vrisher) - Preserved image attachments in Markdown exports
