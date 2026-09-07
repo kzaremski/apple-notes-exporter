@@ -1075,7 +1075,17 @@ class ExportViewModel: ObservableObject {
             return noteWithHTML.toPlainText()
         case .markdown:
             // For markdown and other formats, generate HTML first then convert
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+            var markdownHTMLConfig = configurations.html
+            markdownHTMLConfig.embedImagesInline = false
+            markdownHTMLConfig.linkEmbeddedImages = true
+
+            let html = try await generateHTML(
+                for: note,
+                config: markdownHTMLConfig,
+                attachmentPaths: attachmentPaths,
+                exportDirectory: exportDirectory
+            )
+            
             let noteWithHTML = NotesNote(
                 id: note.id,
                 title: note.title,
@@ -1087,6 +1097,7 @@ class ExportViewModel: ObservableObject {
                 accountId: note.accountId,
                 attachments: note.attachments
             )
+            
             return noteWithHTML.toMarkdown()
         case .rtf:
             // Generate HTML first, then convert to RTF

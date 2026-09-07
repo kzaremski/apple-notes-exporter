@@ -901,6 +901,9 @@ private struct HTMLToMarkdownConverter {
         result = result.replacingOccurrences(of: "<br/>", with: "\n")
         result = result.replacingOccurrences(of: "<br />", with: "\n")
 
+        // Convert images
+        result = convertImages(result)
+
         // Clean up remaining tags
         result = stripRemainingTags(result)
 
@@ -911,6 +914,46 @@ private struct HTMLToMarkdownConverter {
         result = result.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
 
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func convertImages(_ html: String) -> String {
+
+        let pattern = #"<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>"#
+
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive]
+        ) else {
+            return html
+        }
+
+        let nsString = html as NSString
+        let matches = regex.matches(
+            in: html,
+            options: [],
+            range: NSRange(location: 0, length: nsString.length)
+        )
+
+        var result = html
+
+        for match in matches.reversed() {
+            guard match.numberOfRanges >= 2,
+                let fullRange = Range(match.range(at: 0), in: result),
+                let srcRange = Range(match.range(at: 1), in: result) else {
+                continue
+            }
+
+            let src = String(result[srcRange])
+            
+            let markdownSrc = src
+                .replacingOccurrences(of: " ", with: "%20")
+                .replacingOccurrences(of: "(", with: "%28")
+                .replacingOccurrences(of: ")", with: "%29")
+
+            result.replaceSubrange(fullRange, with: "![image](\(markdownSrc))")
+        }
+
+        return result
     }
 
     /// Convert <pre> blocks (with optional style attributes) to Markdown fenced code blocks.
