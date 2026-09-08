@@ -96,26 +96,28 @@ func createDirectoryIfNotExists(location: URL) {
     }
 }
 
-func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
-    // NSFileCoordinator
+/// Zip `sourceURL` (a directory) to `destinationURL`.
+///
+/// NSFileCoordinator's .forUploading intent is what Finder's "Compress" uses,
+/// so the archive matches what a user would produce by hand. Synchronous and
+/// throwing: the caller needs to know whether the artifact was actually
+/// written before it reports success and deletes the staging directory.
+func zipDirectory(at sourceURL: URL, to destinationURL: URL) throws {
     let coordinator = NSFileCoordinator()
-    let zipIntent = NSFileAccessIntent.readingIntent(with: inputDirectory, options: [.forUploading])
-    // ZIP the input directory
-    coordinator.coordinate(with: [zipIntent], queue: .main) { errorQ in
-        if let error = errorQ {
-            Logger.noteExport.error("Zip coordination error: \(error.localizedDescription)")
-            return
-        }
-        // Get the location of the ZIP file to be copied
-        let coordinatorOutputFile = zipIntent.url
-        // Copy the output to the output ZIP file location
+    var coordinationError: NSError?
+    var writeError: Error?
+
+    coordinator.coordinate(readingItemAt: sourceURL, options: [.forUploading], error: &coordinationError) { zippedURL in
         do {
-            if FileManager.default.fileExists(atPath: outputZipFile.path) {
-                try FileManager.default.removeItem(at: outputZipFile)
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
             }
-            try FileManager.default.copyItem(at: coordinatorOutputFile, to: outputZipFile)
-        } catch (let error) {
-            Logger.noteExport.error("Failed to copy \(coordinatorOutputFile) to \(outputZipFile): \(error.localizedDescription)")
+            try FileManager.default.copyItem(at: zippedURL, to: destinationURL)
+        } catch {
+            writeError = error
         }
     }
+
+    if let coordinationError { throw coordinationError }
+    if let writeError { throw writeError }
 }

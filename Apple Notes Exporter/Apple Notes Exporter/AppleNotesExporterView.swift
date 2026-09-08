@@ -20,6 +20,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import Foundation
 
 extension Binding {
@@ -172,6 +173,23 @@ struct AppleNotesExporterView: View {
      Select the output folder.
      */
     func selectOutputFolder() {
+        // A zip export produces one file, so the user names that file rather
+        // than picking a directory to be filled.
+        if exportViewModel.configurations.zipOutput {
+            let savePanel = NSSavePanel()
+            savePanel.allowedContentTypes = [.zip]
+            savePanel.canCreateDirectories = true
+            savePanel.nameFieldStringValue = "\(ExportViewModel.zipRootName).zip"
+            savePanel.prompt = "Choose"
+            savePanel.begin { response in
+                if response == .OK, let exportURL = savePanel.url {
+                    self.outputURL = exportURL
+                    self.outputPath = exportURL.path
+                }
+            }
+            return
+        }
+
         let openPanel = NSOpenPanel()
 
         openPanel.canChooseDirectories = true
@@ -369,16 +387,47 @@ struct AppleNotesExporterView: View {
                 .padding(.top, 5)
                 .padding(.bottom, titleBottomPadding)
             
+            HStack(spacing: 8) {
+                OutputContainerButton(
+                    title: "Folder",
+                    icon: "folder",
+                    isSelected: !exportViewModel.configurations.zipOutput
+                ) {
+                    exportViewModel.configurations.zipOutput = false
+                    exportViewModel.saveConfigurations()
+                }
+                OutputContainerButton(
+                    title: "ZIP Archive",
+                    icon: "doc.zipper",
+                    isSelected: exportViewModel.configurations.zipOutput
+                ) {
+                    exportViewModel.configurations.zipOutput = true
+                    // A sync manifest has to live in a folder that persists
+                    // between runs, so it cannot travel inside an archive.
+                    exportViewModel.configurations.incrementalSync = false
+                    showSyncWarning = false
+                    exportViewModel.saveConfigurations()
+                }
+            }
+            .padding(.bottom, 6)
+
             HStack() {
-                Image(systemName: "folder")
+                Image(systemName: exportViewModel.configurations.zipOutput ? "doc.zipper" : "folder")
                 Text({
+                    if exportViewModel.configurations.zipOutput {
+                        guard outputPath != "" else { return "Choose where to save the archive" }
+                        if outputPath.lowercased().hasSuffix(".zip") { return outputPath }
+                        return outputPath + "/\(ExportViewModel.zipRootName).zip"
+                    }
+                    guard outputPath != "" else { return "Choose an output folder" }
                     let canConcat = ["MD", "TXT"].contains(outputFormat) && exportViewModel.configurations.concatenateOutput
-                    return outputPath != "" ? (outputPath + (canConcat ? "/Exported Notes.\(outputFormat.lowercased())" : "")) : "Choose an output folder"
+                    return outputPath + (canConcat ? "/Exported Notes.\(outputFormat.lowercased())" : "")
                 }()).frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .animation(.easeInOut(duration: 0.15), value: outputPath)
                 .animation(.easeInOut(duration: 0.15), value: exportViewModel.configurations.concatenateOutput)
+                .animation(.easeInOut(duration: 0.15), value: exportViewModel.configurations.zipOutput)
                 Button {
                     selectOutputFolder()
                 } label: {
@@ -428,6 +477,7 @@ struct AppleNotesExporterView: View {
                     help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
                     isOn: $exportViewModel.configurations.incrementalSync,
                     isEnabled: !exportViewModel.configurations.concatenateOutput
+                        && !exportViewModel.configurations.zipOutput
                 )
             }
             .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
@@ -723,5 +773,43 @@ private struct OutputOptionRow<Trailing: View>: View {
 extension OutputOptionRow where Trailing == EmptyView {
     init(title: String, help: String, isOn: Binding<Bool>, isEnabled: Bool = true) {
         self.init(title: title, help: help, isOn: isOn, isEnabled: isEnabled) { EmptyView() }
+    }
+}
+
+
+/// Folder vs ZIP selector above the output path. Deliberately mirrors the
+/// format tiles in Step 2 (same icon size, padding, corner radius and selected
+/// treatment) so the two controls read as the same kind of choice, but with
+/// two buttons they each take half the width instead of being narrow.
+private struct OutputContainerButton: View {
+    let title: String
+    let icon: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .frame(height: 20)
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .foregroundColor(isSelected ? .white : .secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? SwiftUI.Color.accentColor : SwiftUI.Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isSelected ? SwiftUI.Color.clear : SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
     }
 }

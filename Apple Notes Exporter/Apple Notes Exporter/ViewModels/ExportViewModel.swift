@@ -140,9 +140,27 @@ class ExportViewModel: ObservableObject {
     // MARK: - Export Operations
 
     /// Export notes to the specified output directory
+    /// Root name used for both the staging folder and the archive.
+    static let zipRootName = "Apple Notes Export"
+
+    /// A path in `directory` that does not collide with anything already there.
+    private func uniqueURL(in directory: URL, baseName: String, extension ext: String?) -> URL {
+        func candidate(_ name: String) -> URL {
+            let url = directory.appendingPathComponent(name)
+            return ext.map { url.appendingPathExtension($0) } ?? url
+        }
+        var url = candidate(baseName)
+        var counter = 2
+        while FileManager.default.fileExists(atPath: url.path), counter <= 1000 {
+            url = candidate("\(baseName) (\(counter))")
+            counter += 1
+        }
+        return url
+    }
+
     func exportNotes(
         _ notes: [NotesNote],
-        toDirectory outputURL: URL,
+        toDirectory destinationURL: URL,
         format: ExportFormat,
         includeAttachments: Bool = true
     ) async {
@@ -153,7 +171,39 @@ class ExportViewModel: ObservableObject {
         failedAttachmentsCount = 0
         let startTime = Date()
 
+        // A zip export writes the tree into a staging folder next to where the
+        // archive will land, so the archive has a single tidy root and the
+        // user's chosen folder is never littered with loose note files. The
+        // staging folder is removed once the archive exists.
+        let makeZip = configurations.zipOutput && !configurations.incrementalSync
+
+        // In zip mode the destination may be the archive the user named in the
+        // save panel, or a plain folder if they picked one before switching
+        // modes. Either way the archive's own name becomes the root folder
+        // inside it, so "Trip Notes.zip" expands to a "Trip Notes" folder.
+        let archiveURL: URL
+        let outputURL: URL
+        if makeZip {
+            if destinationURL.pathExtension.lowercased() == "zip" {
+                archiveURL = destinationURL
+            } else {
+                archiveURL = uniqueURL(
+                    in: destinationURL, baseName: Self.zipRootName, extension: "zip"
+                )
+            }
+            let rootName = archiveURL.deletingPathExtension().lastPathComponent
+            outputURL = uniqueURL(
+                in: archiveURL.deletingLastPathComponent(), baseName: rootName, extension: nil
+            )
+        } else {
+            archiveURL = destinationURL
+            outputURL = destinationURL
+        }
+
         do {
+            if makeZip {
+                try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+            }
             // Incremental sync: load existing manifest and filter to new/changed notes
             let isSync = configurations.incrementalSync
             // Pruning must be judged against the whole library, not this run's
@@ -319,6 +369,13 @@ class ExportViewModel: ObservableObject {
                 try writeHTMLFolderIndexes(underRoot: outputURL)
             }
 
+            if makeZip {
+                log("Creating \(archiveURL.lastPathComponent)...")
+                try zipDirectory(at: outputURL, to: archiveURL)
+                try? FileManager.default.removeItem(at: outputURL)
+                log("✓ Wrote \(archiveURL.lastPathComponent)")
+            }
+
             // Export completed successfully
             let successfulNotes = notesToExport.count - failedNotesCount
             exportState = .completed(ExportStatistics(
@@ -330,6 +387,9 @@ class ExportViewModel: ObservableObject {
             Logger.noteExport.info("Export completed: \(successfulNotes) successful, \(self.failedNotesCount) failed notes, \(self.failedAttachmentsCount) failed attachments")
 
         } catch {
+            if makeZip {
+                try? FileManager.default.removeItem(at: outputURL)
+            }
             exportState = .error(error.localizedDescription)
             Logger.noteExport.error("Export failed: \(error.localizedDescription)")
         }

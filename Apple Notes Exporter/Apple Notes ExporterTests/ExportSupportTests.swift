@@ -689,6 +689,97 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertFalse(path.isEmpty)
     }
 
+    // MARK: - zipDirectory
+
+    func test_zipDirectory_producesAnArchiveThatRoundTrips() throws {
+        let root = try makeTempDirectory()
+        let source = root.appendingPathComponent("Apple Notes Export")
+        try FileManager.default.createDirectory(
+            at: source.appendingPathComponent("iCloud/Notes"), withIntermediateDirectories: true
+        )
+        try Data("hello".utf8).write(to: source.appendingPathComponent("iCloud/Notes/A.md"))
+        try Data("world".utf8).write(to: source.appendingPathComponent("iCloud/Notes/B.md"))
+
+        let archive = root.appendingPathComponent("Apple Notes Export.zip")
+        try zipDirectory(at: source, to: archive)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archive.path), "archive was not written")
+        let size = (try FileManager.default.attributesOfItem(atPath: archive.path)[.size] as? Int) ?? 0
+        XCTAssertGreaterThan(size, 0, "archive is empty")
+
+        // Unpack it again and confirm the tree survived.
+        let unpacked = root.appendingPathComponent("unpacked")
+        try FileManager.default.createDirectory(at: unpacked, withIntermediateDirectories: true)
+        let unzip = Process()
+        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        unzip.arguments = ["-x", "-k", archive.path, unpacked.path]
+        try unzip.run()
+        unzip.waitUntilExit()
+        XCTAssertEqual(unzip.terminationStatus, 0, "archive could not be expanded")
+
+        let restored = unpacked.appendingPathComponent("Apple Notes Export/iCloud/Notes/A.md")
+        XCTAssertEqual(try String(contentsOf: restored, encoding: .utf8), "hello")
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: unpacked.appendingPathComponent("Apple Notes Export/iCloud/Notes/B.md").path
+            )
+        )
+    }
+
+    func test_zipDirectory_preservesFileModificationDates() throws {
+        // Exported notes carry their note's creation and modification dates.
+        // Those have to survive the trip into the archive, or a zip export
+        // loses metadata that a folder export keeps.
+        let root = try makeTempDirectory()
+        let source = root.appendingPathComponent("Apple Notes Export")
+        try FileManager.default.createDirectory(
+            at: source.appendingPathComponent("iCloud/Notes"), withIntermediateDirectories: true
+        )
+        let note = source.appendingPathComponent("iCloud/Notes/Old Note.md")
+        try Data("aged".utf8).write(to: note)
+
+        let created = Date(timeIntervalSince1970: 1_100_000_000)   // 2004-11-09
+        let modified = Date(timeIntervalSince1970: 1_400_000_000)  // 2014-05-13
+        try setExportFileTimestamps(note, creationDate: created, modificationDate: modified)
+
+        let archive = root.appendingPathComponent("Apple Notes Export.zip")
+        try zipDirectory(at: source, to: archive)
+
+        let unpacked = root.appendingPathComponent("unpacked")
+        try FileManager.default.createDirectory(at: unpacked, withIntermediateDirectories: true)
+        let unzip = Process()
+        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        unzip.arguments = ["-x", "-k", archive.path, unpacked.path]
+        try unzip.run()
+        unzip.waitUntilExit()
+
+        let restored = unpacked.appendingPathComponent("Apple Notes Export/iCloud/Notes/Old Note.md")
+        let attrs = try FileManager.default.attributesOfItem(atPath: restored.path)
+        let restoredModified = attrs[.modificationDate] as? Date
+
+        XCTAssertNotNil(restoredModified)
+        XCTAssertEqual(
+            restoredModified!.timeIntervalSince1970,
+            modified.timeIntervalSince1970,
+            accuracy: 2,
+            "modification date did not survive the archive"
+        )
+    }
+
+    func test_zipDirectory_overwritesAnExistingArchive() throws {
+        let root = try makeTempDirectory()
+        let source = root.appendingPathComponent("Apple Notes Export")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: source.appendingPathComponent("note.md"))
+
+        let archive = root.appendingPathComponent("Apple Notes Export.zip")
+        try Data("stale".utf8).write(to: archive)
+        try zipDirectory(at: source, to: archive)
+
+        let size = (try FileManager.default.attributesOfItem(atPath: archive.path)[.size] as? Int) ?? 0
+        XCTAssertGreaterThan(size, 5, "stale file should have been replaced by a real archive")
+    }
+
     // MARK: - healManifestPaths
 
     private func makeTempDirectory() throws -> URL {

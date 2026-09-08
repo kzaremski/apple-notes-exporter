@@ -341,6 +341,8 @@ struct ExportConfigurations: Codable {
     var sharedAttachmentsFolder: Bool = false
     var concatenateOutput: Bool = false
     var incrementalSync: Bool = false
+    /// Deliver the export as a single .zip instead of a folder tree.
+    var zipOutput: Bool = false
 
     static var `default`: ExportConfigurations {
         ExportConfigurations(
@@ -372,13 +374,14 @@ struct ExportConfigurations: Codable {
     enum CodingKeys: String, CodingKey {
         case html, pdf, latex, rtf
         case addDateToFilename, filenameDateFormat, includeAttachments
-        case sharedAttachmentsFolder, concatenateOutput, incrementalSync
+        case sharedAttachmentsFolder, concatenateOutput, incrementalSync, zipOutput
     }
 
     init(html: HTMLConfiguration, pdf: PDFConfiguration, latex: LaTeXConfiguration, rtf: RTFConfiguration,
          addDateToFilename: Bool = false, filenameDateFormat: FilenameDateFormat = .iso,
          includeAttachments: Bool = true, sharedAttachmentsFolder: Bool = false,
-         concatenateOutput: Bool = false, incrementalSync: Bool = false) {
+         concatenateOutput: Bool = false, incrementalSync: Bool = false,
+         zipOutput: Bool = false) {
         self.html = html
         self.pdf = pdf
         self.latex = latex
@@ -389,6 +392,7 @@ struct ExportConfigurations: Codable {
         self.sharedAttachmentsFolder = sharedAttachmentsFolder
         self.concatenateOutput = concatenateOutput
         self.incrementalSync = incrementalSync
+        self.zipOutput = zipOutput
     }
 
     init(from decoder: Decoder) throws {
@@ -403,6 +407,7 @@ struct ExportConfigurations: Codable {
         sharedAttachmentsFolder = try c.decodeIfPresent(Bool.self, forKey: .sharedAttachmentsFolder) ?? false
         concatenateOutput = try c.decodeIfPresent(Bool.self, forKey: .concatenateOutput) ?? false
         incrementalSync = try c.decodeIfPresent(Bool.self, forKey: .incrementalSync) ?? false
+        zipOutput = try c.decodeIfPresent(Bool.self, forKey: .zipOutput) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -417,5 +422,6 @@ struct ExportConfigurations: Codable {
         try c.encode(sharedAttachmentsFolder, forKey: .sharedAttachmentsFolder)
         try c.encode(concatenateOutput, forKey: .concatenateOutput)
         try c.encode(incrementalSync, forKey: .incrementalSync)
+        try c.encode(zipOutput, forKey: .zipOutput)
     }
 }
