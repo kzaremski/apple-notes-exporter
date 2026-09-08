@@ -196,6 +196,21 @@ struct ExportCommand: AsyncParsableCommand {
             throw ExitCode(CLIError.databaseUnavailable.exitCode)
         }
 
+        // A mistyped --folder must not fall through to "no filter" and export
+        // the whole library. Fail before doing any work.
+        let unmatched = unmatchedFolderFilters(
+            filters: folder,
+            folders: folders,
+            matchContains: folderContains
+        )
+        if !unmatched.isEmpty {
+            CLIOutput.writeError(.unknownFolder(
+                requested: unmatched,
+                available: folders.map(\.name).sorted()
+            ))
+            throw ExitCode(CLIError.unknownFolder(requested: unmatched, available: []).exitCode)
+        }
+
         var filtered = applyNoteSelection(
             notes: allNotes,
             folders: folders,
@@ -252,6 +267,7 @@ struct ExportCommand: AsyncParsableCommand {
                 format: exportFormat,
                 includeAttachments: !noAttachments,
                 verbose: verbose,
+                allKnownNoteIds: Set(allNotes.map(\.id)),
                 progressHandler: { current, total in
                     CLIOutput.writeProgress(current, total)
                 }

@@ -89,6 +89,21 @@ struct ListNotesCommand: AsyncParsableCommand {
         for fld in folders { folderLookup[fld.id] = fld }
 
         // Apply filters
+        // A mistyped --folder must not fall through to "no filter" and export
+        // the whole library. Fail before doing any work.
+        let unmatched = unmatchedFolderFilters(
+            filters: folder,
+            folders: folders,
+            matchContains: folderContains
+        )
+        if !unmatched.isEmpty {
+            CLIOutput.writeError(.unknownFolder(
+                requested: unmatched,
+                available: folders.map(\.name).sorted()
+            ))
+            throw ExitCode(CLIError.unknownFolder(requested: unmatched, available: []).exitCode)
+        }
+
         var filtered = applyNoteSelection(
             notes: notes,
             folders: folders,
