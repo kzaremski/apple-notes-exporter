@@ -152,6 +152,9 @@ For quick dumps of many notes into one file, the `--concatenate` flag joins ever
 ```sh
 notes-export export --output ~/Desktop --format markdown --concatenate
 # Produces: ~/Desktop/Exported Notes.md
+
+notes-export export --output ~/Desktop/My\ Notes.md --format markdown --concatenate
+# Or name the file yourself
 ```
 
 Concatenation is only supported for Markdown and plain text in the GUI; the CLI additionally supports HTML, RTF, and TeX. Concatenation is not compatible with `--incremental` (it would rewrite the whole concatenated file every time regardless) and is not available for the packaged binary formats (DOCX, ODT, EPUB, PDF).

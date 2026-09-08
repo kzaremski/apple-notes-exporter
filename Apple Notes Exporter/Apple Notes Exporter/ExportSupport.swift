@@ -555,6 +555,33 @@ func healManifestPaths(
     return healed
 }
 
+// MARK: - Evernote Limits
+
+/// Evernote's documented ceilings, from Limits.thrift in the EDAM SDK.
+enum ENEXLimits {
+    /// EDAM_NOTE_CONTENT_LEN_MAX: the ENML content of a single note.
+    static let noteContentMax = 5_242_880
+    /// EDAM_NOTE_SIZE_MAX_FREE: a whole note including its resources.
+    static let noteSizeFreeMax = 26_214_400
+    /// EDAM_NOTE_SIZE_MAX_PREMIUM: the same ceiling on a paid plan.
+    static let noteSizePaidMax = 209_715_200
+
+    /// A message for a note Evernote may refuse, or nil when it is within the
+    /// free-account ceiling. Whether it imports depends on the destination
+    /// account, which the exporter cannot know, so this is a warning and not
+    /// an error: the file is still written.
+    static func oversizeWarning(title: String, byteCount: Int) -> String? {
+        guard byteCount > noteSizeFreeMax else { return nil }
+        let size = ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
+        let free = ByteCountFormatter.string(fromByteCount: Int64(noteSizeFreeMax), countStyle: .file)
+        let paid = ByteCountFormatter.string(fromByteCount: Int64(noteSizePaidMax), countStyle: .file)
+        if byteCount > noteSizePaidMax {
+            return "'\(title)' is \(size), over Evernote's \(paid) per-note limit even on a paid plan. Evernote will refuse it."
+        }
+        return "'\(title)' is \(size), over Evernote's \(free) per-note limit for free accounts. It needs a paid Evernote plan, which raises the limit to \(paid)."
+    }
+}
+
 // MARK: - Archive Output
 
 /// Default base name for a single-file (concatenated) export.

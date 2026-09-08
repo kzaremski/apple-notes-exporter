@@ -46,6 +46,10 @@ struct ExportCommand: AsyncParsableCommand {
         --zip delivers the same export as one archive. Pass --output ending in
         .zip to name it, or a directory to get "Apple Notes Export.zip" inside.
         File dates are preserved inside the archive.
+
+        --concatenate joins every note into one file. Pass --output ending in
+        the format's extension to name that file, or a directory to get
+        "Exported Notes.<ext>" inside.
         """
     )
 
@@ -162,8 +166,28 @@ struct ExportCommand: AsyncParsableCommand {
             archiveURL = nil
             outputURL = destinationURL
         }
+        // A name ending in an extension this app produces, but not the one
+        // being written, is a mistake rather than a directory: without this it
+        // silently becomes a folder called "Notes.md" holding a .txt file.
+        if concatenate && !zip {
+            let ext = outputURL.pathExtension.lowercased()
+            let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(["zip"])
+            if ours.contains(ext) && ext != exportFormat.fileExtension {
+                CLIOutput.writeError(.incompatibleOptions(
+                    "--output ends in .\(ext) but the format is \(exportFormat.rawValue). Name it .\(exportFormat.fileExtension), or pass a directory to get \(concatenatedFileBaseName).\(exportFormat.fileExtension) inside it."
+                ))
+                throw ExitCode(2)
+            }
+        }
+
+        // With --concatenate the destination may name the file itself, in which
+        // case the directory to create is the one containing it.
+        let directoryToCreate = (concatenate && !zip
+            && outputURL.pathExtension.lowercased() == exportFormat.fileExtension)
+            ? outputURL.deletingLastPathComponent()
+            : outputURL
         do {
-            try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: directoryToCreate, withIntermediateDirectories: true)
         } catch {
             CLIOutput.writeError(.invalidOutputDirectory(output))
             throw ExitCode(2)

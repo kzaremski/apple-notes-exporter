@@ -161,7 +161,7 @@ enum MCPToolHandlers {
                         "enum": .array([.string("iso"), .string("us"), .string("eu")])
                     ]),
                     "concatenate": .object(["type": .string("boolean"),
-                        "description": .string("Join every note into a single file. Not available for the packaged formats (pdf, docx, odt, epub), and not compatible with incremental.")]),
+                        "description": .string("Join every note into a single file. 'output' may name that file, or a directory to receive \"Exported Notes.<ext>\". Not available for the packaged formats (pdf, docx, odt, epub), and not compatible with incremental.")]),
                     "zip": .object(["type": .string("boolean"),
                         "description": .string("Deliver the export as one .zip. 'output' may name the archive or a directory to receive it. Not compatible with incremental.")])
                 ]),
@@ -361,6 +361,13 @@ enum MCPToolHandlers {
         if wantsZip && wantsIncremental {
             return errorText("'zip' cannot be combined with 'incremental': the sync manifest has to persist in a folder between runs.")
         }
+        if args["concatenate"]?.boolValue ?? false {
+            let ext = outputURL.pathExtension.lowercased()
+            let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(["zip"])
+            if ours.contains(ext) && ext != exportFormat.fileExtension {
+                return errorText("'output' ends in .\(ext) but the format is \(exportFormat.rawValue). Name it .\(exportFormat.fileExtension), or pass a directory to get \(concatenatedFileBaseName).\(exportFormat.fileExtension) inside it.")
+            }
+        }
         if (args["concatenate"]?.boolValue ?? false) && !exportFormat.supportsConcatenation {
             return errorText("'concatenate' is not available for \(exportFormat.rawValue): it is a packaged format with its own internal structure, so there is nothing to join.")
         }
@@ -379,8 +386,15 @@ enum MCPToolHandlers {
             workingURL = outputURL
         }
 
+        // A named single-file destination needs its containing folder created,
+        // not a directory at the file's own path.
+        let directoryToCreate = (!wantsZip
+            && (args["concatenate"]?.boolValue ?? false)
+            && workingURL.pathExtension.lowercased() == exportFormat.fileExtension)
+            ? workingURL.deletingLastPathComponent()
+            : workingURL
         do {
-            try FileManager.default.createDirectory(at: workingURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: directoryToCreate, withIntermediateDirectories: true)
         } catch {
             return errorText("Cannot create output directory '\(outputStr)'.")
         }

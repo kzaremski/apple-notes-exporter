@@ -1281,12 +1281,7 @@ private struct HTMLToLatexConverter {
 // MARK: - ENEX (Evernote Export) Converter
 
 private struct HTMLToENEXConverter {
-    /// Evernote's documented ceiling on a single note's ENML content.
-    /// EDAM_NOTE_CONTENT_LEN_MAX in Limits.thrift.
-    static let contentLengthMax = 5_242_880
-    /// Ceiling on a whole note including its resources, for a free account.
-    /// EDAM_NOTE_SIZE_MAX_FREE. Premium is 200 MB.
-    static let noteSizeMaxFree = 26_214_400
+    static let contentLengthMax = ENEXLimits.noteContentMax
 
     /// Elements ENML 2.0 permits. Anything else is unwrapped: the tag goes,
     /// its text stays. Taken from the element list in enml2.dtd.
@@ -1395,15 +1390,9 @@ private struct HTMLToENEXConverter {
         lines.append("  </note>")
         lines.append("</en-export>")
 
-        let output = lines.joined(separator: "\n")
-        // Content is small once images become resources, but the resources
-        // themselves still count toward the per-note ceiling.
-        if output.utf8.count > noteSizeMaxFree {
-            Logger.noteExport.warning(
-                "ENEX note '\(note.title, privacy: .public)' totals \(output.utf8.count) bytes with its attachments, over the \(noteSizeMaxFree) byte limit for a free Evernote account; import may be rejected."
-            )
-        }
-        return output
+        // The whole-note ceiling is checked by the caller, which can put the
+        // warning in front of the user rather than only in Console.
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Resources

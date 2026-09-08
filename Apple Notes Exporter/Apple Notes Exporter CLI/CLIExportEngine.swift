@@ -330,9 +330,14 @@ actor CLIExportEngine {
             do {
                 var attachmentPaths: [String: String] = [:]
                 if includeAttachments && note.hasAttachments {
+                    // When the destination names a file, attachments belong in
+                    // the folder containing it.
+                    let attachmentRoot = outputURL.pathExtension.lowercased() == format.fileExtension
+                        ? outputURL.deletingLastPathComponent()
+                        : outputURL
                     attachmentPaths = try await exportAttachmentsAndReturnPaths(
-                        note.attachments, toDirectory: outputURL,
-                        outputRoot: outputURL,
+                        note.attachments, toDirectory: attachmentRoot,
+                        outputRoot: attachmentRoot,
                         noteBaseName: note.sanitizedFileName,
                         noteTitle: note.title,
                         noteCreationDate: note.creationDate,
@@ -360,8 +365,12 @@ actor CLIExportEngine {
         }
 
         let concatenated = contentParts.joined(separator: separator)
-        let filename = "\(concatenatedFileBaseName).\(format.fileExtension)"
-        let fileURL = outputURL.appendingPathComponent(filename)
+        // The destination may be the file the user named or a directory to put
+        // the default name in, matching how the app resolves it.
+        let fileURL = concatenatedExportURL(destination: outputURL, format: format)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
         try concatenated.write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
@@ -456,6 +465,12 @@ actor CLIExportEngine {
         } else {
             let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            if format == .enex,
+               let warning = ENEXLimits.oversizeWarning(title: note.title, byteCount: content.utf8.count) {
+                // Not gated on --verbose: the file was written but may be
+                // refused, which the user needs to know either way.
+                CLIOutput.writeStderr("Warning: \(warning)")
+            }
         }
         try setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
 

@@ -813,6 +813,10 @@ class ExportViewModel: ObservableObject {
             // Write to file
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
             log("✓ Exported note: \(note.title)")
+            if format == .enex,
+               let warning = ENEXLimits.oversizeWarning(title: note.title, byteCount: content.utf8.count) {
+                log("⚠︎ \(warning)")
+            }
         }
 
         // Set file timestamps to match note's creation and modification dates
