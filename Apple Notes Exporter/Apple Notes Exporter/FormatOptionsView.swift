@@ -104,6 +104,7 @@ struct FormatOptionsView: View {
 
 struct HTMLOptionsView: View {
     @Binding var config: HTMLConfiguration
+    var showFolderIndexes: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -154,6 +155,25 @@ struct HTMLOptionsView: View {
                 .frame(width: 80)
             }
 
+            if showFolderIndexes {
+                Divider()
+
+                Text("Folder Indexes")
+                    .font(.headline)
+
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .padding(.top, 2)
+                    Text("Adds an index.html in each folder listing the notes and subfolders, so you can browse the export in a web browser like the Notes tree.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Toggle("Write index.html in each folder", isOn: $config.writeFolderIndexes)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             Divider()
 
             Text("Image Attachments")
@@ -178,7 +198,7 @@ struct PDFOptionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            HTMLOptionsView(config: $config.htmlConfiguration)
+            HTMLOptionsView(config: $config.htmlConfiguration, showFolderIndexes: false)
 
             Divider()
 

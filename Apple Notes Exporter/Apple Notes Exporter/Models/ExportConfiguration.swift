@@ -36,6 +36,53 @@ struct HTMLConfiguration: ExportConfigurable {
     var marginUnit: MarginUnit
     var embedImagesInline: Bool
     var linkEmbeddedImages: Bool
+    /// Write index.html in each exported HTML folder so the tree is browsable.
+    var writeFolderIndexes: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case fontSizePoints, fontFamily, marginSize, marginUnit
+        case embedImagesInline, linkEmbeddedImages, writeFolderIndexes
+    }
+
+    init(
+        fontSizePoints: Double,
+        fontFamily: FontFamily,
+        marginSize: Double,
+        marginUnit: MarginUnit,
+        embedImagesInline: Bool,
+        linkEmbeddedImages: Bool,
+        writeFolderIndexes: Bool = false
+    ) {
+        self.fontSizePoints = fontSizePoints
+        self.fontFamily = fontFamily
+        self.marginSize = marginSize
+        self.marginUnit = marginUnit
+        self.embedImagesInline = embedImagesInline
+        self.linkEmbeddedImages = linkEmbeddedImages
+        self.writeFolderIndexes = writeFolderIndexes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fontSizePoints = try c.decode(Double.self, forKey: .fontSizePoints)
+        fontFamily = try c.decode(FontFamily.self, forKey: .fontFamily)
+        marginSize = try c.decode(Double.self, forKey: .marginSize)
+        marginUnit = try c.decode(MarginUnit.self, forKey: .marginUnit)
+        embedImagesInline = try c.decodeIfPresent(Bool.self, forKey: .embedImagesInline) ?? true
+        linkEmbeddedImages = try c.decodeIfPresent(Bool.self, forKey: .linkEmbeddedImages) ?? false
+        writeFolderIndexes = try c.decodeIfPresent(Bool.self, forKey: .writeFolderIndexes) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(fontSizePoints, forKey: .fontSizePoints)
+        try c.encode(fontFamily, forKey: .fontFamily)
+        try c.encode(marginSize, forKey: .marginSize)
+        try c.encode(marginUnit, forKey: .marginUnit)
+        try c.encode(embedImagesInline, forKey: .embedImagesInline)
+        try c.encode(linkEmbeddedImages, forKey: .linkEmbeddedImages)
+        try c.encode(writeFolderIndexes, forKey: .writeFolderIndexes)
+    }
 
     enum FontFamily: String, Codable, CaseIterable {
         case system = "System"
@@ -126,7 +173,8 @@ struct HTMLConfiguration: ExportConfigurable {
             marginSize: 36,  // 0.5 inches at 72 DPI
             marginUnit: .pt,
             embedImagesInline: true,
-            linkEmbeddedImages: false
+            linkEmbeddedImages: false,
+            writeFolderIndexes: false
         )
     }
 }
@@ -288,6 +336,9 @@ struct ExportConfigurations: Codable {
     var addDateToFilename: Bool = false
     var filenameDateFormat: FilenameDateFormat = .iso
     var includeAttachments: Bool = true
+    /// When true, write every attachment under <output>/Attachments/ instead of
+    /// a per-note " (Attachments)" folder beside the note file.
+    var sharedAttachmentsFolder: Bool = false
     var concatenateOutput: Bool = false
     var incrementalSync: Bool = false
 
@@ -316,5 +367,55 @@ struct ExportConfigurations: Codable {
         if let data = try? JSONEncoder().encode(self) {
             UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
         }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case html, pdf, latex, rtf
+        case addDateToFilename, filenameDateFormat, includeAttachments
+        case sharedAttachmentsFolder, concatenateOutput, incrementalSync
+    }
+
+    init(html: HTMLConfiguration, pdf: PDFConfiguration, latex: LaTeXConfiguration, rtf: RTFConfiguration,
+         addDateToFilename: Bool = false, filenameDateFormat: FilenameDateFormat = .iso,
+         includeAttachments: Bool = true, sharedAttachmentsFolder: Bool = false,
+         concatenateOutput: Bool = false, incrementalSync: Bool = false) {
+        self.html = html
+        self.pdf = pdf
+        self.latex = latex
+        self.rtf = rtf
+        self.addDateToFilename = addDateToFilename
+        self.filenameDateFormat = filenameDateFormat
+        self.includeAttachments = includeAttachments
+        self.sharedAttachmentsFolder = sharedAttachmentsFolder
+        self.concatenateOutput = concatenateOutput
+        self.incrementalSync = incrementalSync
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        html = try c.decode(HTMLConfiguration.self, forKey: .html)
+        pdf = try c.decode(PDFConfiguration.self, forKey: .pdf)
+        latex = try c.decode(LaTeXConfiguration.self, forKey: .latex)
+        rtf = try c.decode(RTFConfiguration.self, forKey: .rtf)
+        addDateToFilename = try c.decodeIfPresent(Bool.self, forKey: .addDateToFilename) ?? false
+        filenameDateFormat = try c.decodeIfPresent(FilenameDateFormat.self, forKey: .filenameDateFormat) ?? .iso
+        includeAttachments = try c.decodeIfPresent(Bool.self, forKey: .includeAttachments) ?? true
+        sharedAttachmentsFolder = try c.decodeIfPresent(Bool.self, forKey: .sharedAttachmentsFolder) ?? false
+        concatenateOutput = try c.decodeIfPresent(Bool.self, forKey: .concatenateOutput) ?? false
+        incrementalSync = try c.decodeIfPresent(Bool.self, forKey: .incrementalSync) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(html, forKey: .html)
+        try c.encode(pdf, forKey: .pdf)
+        try c.encode(latex, forKey: .latex)
+        try c.encode(rtf, forKey: .rtf)
+        try c.encode(addDateToFilename, forKey: .addDateToFilename)
+        try c.encode(filenameDateFormat, forKey: .filenameDateFormat)
+        try c.encode(includeAttachments, forKey: .includeAttachments)
+        try c.encode(sharedAttachmentsFolder, forKey: .sharedAttachmentsFolder)
+        try c.encode(concatenateOutput, forKey: .concatenateOutput)
+        try c.encode(incrementalSync, forKey: .incrementalSync)
     }
 }

@@ -57,8 +57,13 @@ struct NotesExportCLI: AsyncParsableCommand {
         discussion: """
         Headless companion to the Apple Notes Exporter macOS app. Reads the
         local Notes database directly (no AppleScript, no UI), and supports
-        filtering by account, folder (name or id, including subfolders),
-        title, and modification date.
+        filtering by account, folder (exact name or id, repeatable; subfolders
+        included), title, and modification date. Use --include-deleted or
+        --folder "Recently Deleted" for trash. --shared-attachments writes
+        files under Attachments/ at the output root.
+
+        Shortcuts: grant Full Disk Access to Shortcuts.app to Run Shell Script
+        without opening Terminal. App Intents need a signed copy of the GUI.
 
         Full Disk Access is required. In System Settings > Privacy & Security
         > Full Disk Access, add your Terminal app (Terminal.app, iTerm, etc.)

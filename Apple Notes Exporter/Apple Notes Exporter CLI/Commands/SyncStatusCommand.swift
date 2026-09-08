@@ -29,7 +29,8 @@ struct SyncStatusCommand: AsyncParsableCommand {
         abstract: "Show the incremental sync state for an output directory.",
         discussion: """
         Reads AppleNotesExportSyncWatermark.json from the output directory and
-        reports when the last sync ran and how many notes are tracked.
+        reports when the last sync ran, how many notes are tracked, and the
+        recent file/folder-level history (added, updated, deleted paths).
         Does not open the Notes database.
 
         To reset sync state, delete the manifest file or use:
@@ -50,10 +51,25 @@ struct SyncStatusCommand: AsyncParsableCommand {
             let manifestPath: String
         }
 
+        struct HistoryItemDTO: Encodable {
+            let noteId: String
+            let path: String
+        }
+        struct RunDTO: Encodable {
+            let timestamp: String
+            let added: [HistoryItemDTO]
+            let updated: [HistoryItemDTO]
+            let deleted: [HistoryItemDTO]
+            let addedCount: Int
+            let updatedCount: Int
+            let deletedCount: Int
+        }
         struct ManifestResponse: Encodable {
             let manifestFound: Bool
             let lastSync: String
             let trackedNotes: Int
+            let historyRuns: Int
+            let history: [RunDTO]
             let manifestPath: String
         }
 
@@ -69,10 +85,27 @@ struct SyncStatusCommand: AsyncParsableCommand {
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
+        func items(_ list: [SyncManifest.HistoryItem]) -> [HistoryItemDTO] {
+            list.map { HistoryItemDTO(noteId: $0.noteId, path: $0.path) }
+        }
+        let history = manifest.history.suffix(10).map { run in
+            RunDTO(
+                timestamp: isoFormatter.string(from: run.timestamp),
+                added: items(run.added),
+                updated: items(run.updated),
+                deleted: items(run.deleted),
+                addedCount: run.added.count,
+                updatedCount: run.updated.count,
+                deletedCount: run.deleted.count
+            )
+        }
+
         CLIOutput.writeJSON(ManifestResponse(
             manifestFound: true,
             lastSync: isoFormatter.string(from: manifest.lastSync),
             trackedNotes: manifest.notes.count,
+            historyRuns: manifest.history.count,
+            history: history,
             manifestPath: manifestURL.path
         ))
     }

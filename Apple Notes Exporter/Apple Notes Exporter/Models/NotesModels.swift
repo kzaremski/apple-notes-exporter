@@ -100,6 +100,8 @@ struct NotesNote: NotesItem {
     let attachments: [NotesAttachment]
     /// ZIDENTIFIER UUID used in applenotes:note/ links. Empty for legacy notes.
     var identifier: String = ""
+    /// True when ZMARKEDFORDELETION is set (Recently Deleted).
+    var isDeleted: Bool = false
 
     var name: String { title }
     var description: String { title }

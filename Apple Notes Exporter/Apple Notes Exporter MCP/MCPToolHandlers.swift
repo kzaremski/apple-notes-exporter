@@ -58,7 +58,13 @@ enum MCPToolHandlers {
                     "account": .object(["type": .string("string"),
                         "description": .string("Account name filter (partial match).")]),
                     "folder": .object(["type": .string("string"),
-                        "description": .string("Folder name (partial, case-insensitive) or exact folder id. Includes notes in matching subfolders.")]),
+                        "description": .string("Folder name (exact, case-insensitive) or id. Comma-separate several. Includes subfolders.")]),
+                    "folder_contains": .object(["type": .string("boolean"),
+                        "description": .string("Treat folder as a substring instead of an exact name.")]),
+                    "no_subfolders": .object(["type": .string("boolean"),
+                        "description": .string("Do not include notes in subfolders.")]),
+                    "include_deleted": .object(["type": .string("boolean"),
+                        "description": .string("Include Recently Deleted notes.")]),
                     "title_contains": .object(["type": .string("string"),
                         "description": .string("Title substring filter (case-insensitive).")]),
                     "modified_after": .object(["type": .string("string"),
@@ -93,7 +99,13 @@ enum MCPToolHandlers {
                     "account": .object(["type": .string("string"),
                         "description": .string("Account name filter (partial match).")]),
                     "folder": .object(["type": .string("string"),
-                        "description": .string("Folder name (partial, case-insensitive) or exact folder id. Includes notes in matching subfolders.")]),
+                        "description": .string("Folder name (exact, case-insensitive) or id. Comma-separate several. Includes subfolders.")]),
+                    "folder_contains": .object(["type": .string("boolean"),
+                        "description": .string("Treat folder as a substring instead of an exact name.")]),
+                    "no_subfolders": .object(["type": .string("boolean"),
+                        "description": .string("Do not include notes in subfolders.")]),
+                    "include_deleted": .object(["type": .string("boolean"),
+                        "description": .string("Include Recently Deleted notes.")]),
                     "title_contains": .object(["type": .string("string"),
                         "description": .string("Title substring filter.")]),
                     "modified_after": .object(["type": .string("string"),
@@ -106,6 +118,10 @@ enum MCPToolHandlers {
                         "description": .string("Delete the sync manifest before exporting, forcing a full re-export.")]),
                     "no_attachments": .object(["type": .string("boolean"),
                         "description": .string("Skip exporting attachments.")]),
+                    "shared_attachments": .object(["type": .string("boolean"),
+                        "description": .string("Write all attachments under Attachments/ at the output root.")]),
+                    "html_indexes": .object(["type": .string("boolean"),
+                        "description": .string("Write index.html in each HTML folder (off by default).")]),
                     "add_date_prefix": .object(["type": .string("boolean"),
                         "description": .string("Prefix filenames with the note creation date.")]),
                     "font_family": .object([
@@ -210,18 +226,24 @@ enum MCPToolHandlers {
         let engine = CLIExportEngine()
         async let allAccounts = engine.fetchAccounts()
         async let allFolders  = engine.fetchFolders()
-        async let allNotes    = engine.fetchNotes()
+        let includeDeleted = args["include_deleted"]?.boolValue ?? false
+        let folderFilter = args["folder"]?.stringValue
+        async let allNotes    = engine.fetchNotes(includeDeleted: includeDeleted || parseListArgument(folderFilter).contains { isRecentlyDeletedFolderName($0) })
         let (accounts, folders, notes) = try await (allAccounts, allFolders, allNotes)
 
-        var filtered = notes
+        var filtered = applyNoteSelection(
+            notes: notes,
+            folders: folders,
+            folderFilters: folderFilter.map { [$0] } ?? [],
+            matchContains: args["folder_contains"]?.boolValue ?? false,
+            includeSubfolders: !(args["no_subfolders"]?.boolValue ?? false),
+            includeDeleted: includeDeleted,
+            noteIds: []
+        )
 
         if let accountFilter = args["account"]?.stringValue?.lowercased() {
             let ids = accounts.filter { $0.name.lowercased().contains(accountFilter) }.map { $0.id }
             filtered = filtered.filter { ids.contains($0.accountId) }
-        }
-        if let folderFilter = args["folder"]?.stringValue {
-            let ids = matchingFolderIds(filter: folderFilter, folders: folders)
-            filtered = filtered.filter { ids.contains($0.folderId) }
         }
         if let tc = args["title_contains"]?.stringValue?.lowercased() {
             filtered = filtered.filter { $0.title.lowercased().contains(tc) }
@@ -309,6 +331,7 @@ enum MCPToolHandlers {
         // Build configurations
         var configs = ExportConfigurations.default
         configs.includeAttachments = !(args["no_attachments"]?.boolValue ?? false)
+        configs.sharedAttachmentsFolder = args["shared_attachments"]?.boolValue ?? false
         configs.addDateToFilename  = args["add_date_prefix"]?.boolValue ?? false
         configs.incrementalSync    = args["incremental"]?.boolValue ?? false
 
@@ -333,6 +356,10 @@ enum MCPToolHandlers {
             )
         }
 
+        if let htmlIndexes = args["html_indexes"]?.boolValue {
+            configs.html.writeFolderIndexes = htmlIndexes
+        }
+
         // Reset sync manifest if requested
         if args["reset_sync"]?.boolValue == true {
             let manifestURL = outputURL.appendingPathComponent(SyncManifest.filename)
@@ -346,25 +373,25 @@ enum MCPToolHandlers {
         do {
             async let a = engine.fetchAccounts()
             async let f = engine.fetchFolders()
-            async let n = engine.fetchNotes()
+            async let n = engine.fetchNotes(includeDeleted: (args["include_deleted"]?.boolValue ?? false) || parseListArgument(args["folder"]?.stringValue).contains { isRecentlyDeletedFolderName($0) })
             (accounts, folders, allNotes) = try await (a, f, n)
         } catch {
             return errorText("Cannot read the Notes database. Grant Full Disk Access to the process running this MCP server in System Settings → Privacy & Security → Full Disk Access.")
         }
 
-        var filtered = allNotes
+        var filtered = applyNoteSelection(
+            notes: allNotes,
+            folders: folders,
+            folderFilters: args["folder"]?.stringValue.map { [$0] } ?? [],
+            matchContains: args["folder_contains"]?.boolValue ?? false,
+            includeSubfolders: !(args["no_subfolders"]?.boolValue ?? false),
+            includeDeleted: args["include_deleted"]?.boolValue ?? false,
+            noteIds: args["notes"]?.stringValue.map { [$0] } ?? []
+        )
 
-        if let noteIdsStr = args["notes"]?.stringValue {
-            let ids = Set(noteIdsStr.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) })
-            filtered = filtered.filter { ids.contains($0.id) }
-        }
         if let accountFilter = args["account"]?.stringValue?.lowercased() {
             let ids = accounts.filter { $0.name.lowercased().contains(accountFilter) }.map { $0.id }
             filtered = filtered.filter { ids.contains($0.accountId) }
-        }
-        if let folderFilter = args["folder"]?.stringValue {
-            let ids = matchingFolderIds(filter: folderFilter, folders: folders)
-            filtered = filtered.filter { ids.contains($0.folderId) }
         }
         if let tc = args["title_contains"]?.stringValue?.lowercased() {
             filtered = filtered.filter { $0.title.lowercased().contains(tc) }
@@ -433,15 +460,46 @@ enum MCPToolHandlers {
                                      manifestPath: manifestURL.path))
         }
 
+        struct HistoryItemDTO: Encodable {
+            let noteId: String
+            let path: String
+        }
+        struct RunDTO: Encodable {
+            let timestamp: Date
+            let added: [HistoryItemDTO]
+            let updated: [HistoryItemDTO]
+            let deleted: [HistoryItemDTO]
+            let addedCount: Int
+            let updatedCount: Int
+            let deletedCount: Int
+        }
         struct Response: Encodable {
             let manifestFound: Bool
             let lastSync: Date
             let trackedNotes: Int
+            let historyRuns: Int
+            let history: [RunDTO]
             let manifestPath: String
+        }
+        func items(_ list: [SyncManifest.HistoryItem]) -> [HistoryItemDTO] {
+            list.map { HistoryItemDTO(noteId: $0.noteId, path: $0.path) }
+        }
+        let history = manifest.history.suffix(10).map { run in
+            RunDTO(
+                timestamp: run.timestamp,
+                added: items(run.added),
+                updated: items(run.updated),
+                deleted: items(run.deleted),
+                addedCount: run.added.count,
+                updatedCount: run.updated.count,
+                deletedCount: run.deleted.count
+            )
         }
         return jsonText(Response(manifestFound: true,
                                  lastSync: manifest.lastSync,
                                  trackedNotes: manifest.notes.count,
+                                 historyRuns: manifest.history.count,
+                                 history: history,
                                  manifestPath: manifestURL.path))
     }
 

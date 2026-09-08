@@ -404,6 +404,11 @@ struct AppleNotesExporterView: View {
                     Spacer()
                 }
                 HStack {
+                    Toggle("Shared Attachments folder", isOn: $exportViewModel.configurations.sharedAttachmentsFolder)
+                        .disabled(!exportViewModel.configurations.includeAttachments)
+                    Spacer()
+                }
+                HStack {
                     let concatAllowed = ["MD", "TXT"].contains(outputFormat) && !exportViewModel.configurations.incrementalSync
                     Toggle("Concatenate into single file", isOn: $exportViewModel.configurations.concatenateOutput)
                         .disabled(!concatAllowed)
@@ -418,6 +423,7 @@ struct AppleNotesExporterView: View {
             .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.filenameDateFormat) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.includeAttachments) { _ in exportViewModel.saveConfigurations() }
+            .onChange(of: exportViewModel.configurations.sharedAttachmentsFolder) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.concatenateOutput) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.incrementalSync) { _ in
                 exportViewModel.saveConfigurations()

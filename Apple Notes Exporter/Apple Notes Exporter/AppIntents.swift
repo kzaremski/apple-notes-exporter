@@ -127,7 +127,8 @@ struct ExportNotesIntent: AppIntent {
         // Fetch data
         let accounts = try await repo.fetchAccounts()
         let folders = try await repo.fetchFolders()
-        var notes = try await repo.fetchNotes()
+        let wantsTrash = folderFilter.map { isRecentlyDeletedFolderName($0) } ?? false
+        var notes = try await repo.fetchNotes(includeDeleted: wantsTrash)
 
         // Apply filters
         if let accountName = accountFilter, !accountName.isEmpty {
@@ -138,8 +139,15 @@ struct ExportNotesIntent: AppIntent {
         }
 
         if let folderName = folderFilter, !folderName.isEmpty {
-            let matchingIds = matchingFolderIds(filter: folderName, folders: folders)
-            notes = notes.filter { matchingIds.contains($0.folderId) }
+            notes = applyNoteSelection(
+                notes: notes,
+                folders: folders,
+                folderFilters: [folderName],
+                matchContains: false,
+                includeSubfolders: true,
+                includeDeleted: wantsTrash,
+                noteIds: []
+            )
         }
 
         guard !notes.isEmpty else {
@@ -156,7 +164,7 @@ struct ExportNotesIntent: AppIntent {
         var hierarchy: [(accountName: String, folderPath: String, note: NotesNote)] = []
         for note in notes {
             let acctName = sanitizeFileNameString(accountNames[note.accountId] ?? "Unknown Account")
-            let fPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup, accountId: note.accountId)
+            let fPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup, accountId: note.accountId, isDeleted: note.isDeleted)
             hierarchy.append((accountName: acctName, folderPath: fPath, note: note))
         }
 
@@ -252,9 +260,7 @@ struct ExportNotesIntent: AppIntent {
             }
         }
 
-        if exportFormat == .html {
-            try? writeHTMLFolderIndexes(underRoot: outputURL)
-        }
+        // Folder indexes stay off unless the user enables them in HTML options / --html-indexes.
 
         let summary = "\(successCount) notes exported as \(exportFormat.rawValue). \(failCount > 0 ? "\(failCount) failed." : "")"
         return .result(value: summary)

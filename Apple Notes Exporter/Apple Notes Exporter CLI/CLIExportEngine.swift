@@ -98,9 +98,9 @@ actor CLIExportEngine {
                 // have been deleted from Apple Notes since the last sync.
                 let presentIds = Set(notes.map { $0.id })
                 let removed = await syncTracker!.pruneDeleted(presentNoteIds: presentIds)
-                for entry in removed {
-                    deleteExportedNoteFiles(outputRoot: outputURL, entry: entry)
-                    if verbose { CLIOutput.writeStderr("Deleted (no longer in Notes): \(entry.exportedPath)") }
+                for pruned in removed {
+                    deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
+                    if verbose { CLIOutput.writeStderr("Deleted (no longer in Notes): \(pruned.entry.exportedPath)") }
                 }
                 if verbose {
                     let msg = removed.isEmpty
@@ -108,10 +108,10 @@ actor CLIExportEngine {
                         : "All present notes are up to date; pruned \(removed.count) deleted note(s)."
                     CLIOutput.writeStderr(msg)
                 }
-                var updatedManifest = await syncTracker!.getManifest()
-                updatedManifest.lastSync = Date()
+                await syncTracker!.finishRun(pruned: removed)
+                let updatedManifest = await syncTracker!.getManifest()
                 try updatedManifest.save(to: outputURL)
-                if format == .html && !configurations.concatenateOutput {
+                if format == .html && !configurations.concatenateOutput && configurations.html.writeFolderIndexes {
                     try writeHTMLFolderIndexes(underRoot: outputURL)
                 }
                 return ExportResult(
@@ -180,7 +180,7 @@ actor CLIExportEngine {
                 totalNotes: notesToExport.count, startTime: startTime,
                 syncTracker: syncTracker,
                 syncManifest: existingManifest,
-                outputRootURL: isSync ? outputURL : nil,
+                outputRootURL: outputURL,
                 verbose: verbose, tracker: tracker,
                 progressHandler: progressHandler
             )
@@ -193,15 +193,16 @@ actor CLIExportEngine {
         if let syncTracker = syncTracker {
             let presentIds = Set(notes.map { $0.id })
             let removed = await syncTracker.pruneDeleted(presentNoteIds: presentIds)
-            for entry in removed {
-                deleteExportedNoteFiles(outputRoot: outputURL, entry: entry)
-                if verbose { CLIOutput.writeStderr("Deleted (no longer in Notes): \(entry.exportedPath)") }
+            for pruned in removed {
+                deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
+                if verbose { CLIOutput.writeStderr("Deleted (no longer in Notes): \(pruned.entry.exportedPath)") }
             }
+            await syncTracker.finishRun(pruned: removed)
             let finalManifest = await syncTracker.getManifest()
             try finalManifest.save(to: outputURL)
         }
 
-        if format == .html && !configurations.concatenateOutput {
+        if format == .html && !configurations.concatenateOutput && configurations.html.writeFolderIndexes {
             try writeHTMLFolderIndexes(underRoot: outputURL)
         }
 
@@ -301,6 +302,7 @@ actor CLIExportEngine {
                 if includeAttachments && note.hasAttachments {
                     attachmentPaths = try await exportAttachmentsAndReturnPaths(
                         note.attachments, toDirectory: outputURL,
+                        outputRoot: outputURL,
                         noteBaseName: note.sanitizedFileName,
                         noteTitle: note.title,
                         noteCreationDate: note.creationDate,
@@ -407,6 +409,7 @@ actor CLIExportEngine {
             try Task.checkCancellation()
             attachmentPaths = try await exportAttachmentsAndReturnPaths(
                 note.attachments, toDirectory: directory,
+                outputRoot: outputRootURL ?? directory,
                 noteBaseName: uniqueBaseName,
                 noteTitle: note.title,
                 noteCreationDate: note.creationDate,
@@ -446,6 +449,7 @@ actor CLIExportEngine {
     private func exportAttachmentsAndReturnPaths(
         _ attachments: [NotesAttachment],
         toDirectory directory: URL,
+        outputRoot: URL,
         noteBaseName: String,
         noteTitle: String,
         noteCreationDate: Date,
@@ -468,8 +472,14 @@ actor CLIExportEngine {
 
         guard !fileAttachments.isEmpty else { return attachmentPaths }
 
-        let attachmentsURL = directory.appendingPathComponent("\(noteBaseName) (Attachments)")
-        try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+        let plan = attachmentExportLocation(
+            sharedDump: configurations.sharedAttachmentsFolder,
+            outputRoot: outputRoot,
+            noteDirectory: directory,
+            noteBaseName: noteBaseName,
+            filename: "placeholder"
+        )
+        try FileManager.default.createDirectory(at: plan.directory, withIntermediateDirectories: true)
 
         var usedFilenames: [String: Int] = [:]
 
@@ -497,19 +507,26 @@ actor CLIExportEngine {
                     usedFilenames[baseFilename] = 1
                 }
 
-                let fileURL = attachmentsURL.appendingPathComponent(finalFilename)
+                let loc = attachmentExportLocation(
+                    sharedDump: configurations.sharedAttachmentsFolder,
+                    outputRoot: outputRoot,
+                    noteDirectory: directory,
+                    noteBaseName: noteBaseName,
+                    filename: finalFilename
+                )
+                try FileManager.default.createDirectory(at: loc.directory, withIntermediateDirectories: true)
+                let fileURL = loc.directory.appendingPathComponent(finalFilename)
                 try data.write(to: fileURL)
                 try setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
 
-                let relativePath = "\(noteBaseName) (Attachments)/\(finalFilename)"
-                attachmentPaths[attachment.id] = relativePath
+                attachmentPaths[attachment.id] = loc.relativePath
             } catch {
                 await tracker.attachmentFailed()
             }
         }
 
         if !fileAttachments.isEmpty {
-            try setExportFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
+            try setExportFileTimestamps(plan.directory, creationDate: noteCreationDate, modificationDate: noteModificationDate)
         }
 
         return attachmentPaths
@@ -707,7 +724,7 @@ actor CLIExportEngine {
         for note in notes {
             let accountName = accountLookup[note.accountId] ?? "Unknown Account"
             let accountKey = sanitizeExportFilename(accountName)
-            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup, accountId: note.accountId)
+            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup, accountId: note.accountId, isDeleted: note.isDeleted)
 
             result[accountKey, default: [:]][folderPath, default: []].append(note)
         }
@@ -725,7 +742,7 @@ actor CLIExportEngine {
         try await repository.fetchFolders()
     }
 
-    func fetchNotes() async throws -> [NotesNote] {
-        try await repository.fetchNotes()
+    func fetchNotes(includeDeleted: Bool = false) async throws -> [NotesNote] {
+        try await repository.fetchNotes(includeDeleted: includeDeleted)
     }
 }

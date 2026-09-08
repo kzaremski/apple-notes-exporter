@@ -124,6 +124,7 @@ typedef struct {
     int         is_password_protected;
     int         is_pinned;        /* ZISPINNED, 0 for legacy */
     int         is_legacy;        /* 1 if from legacy iOS 8 tables */
+    int         marked_for_deletion; /* ZMARKEDFORDELETION, Recently Deleted */
 } ane_note;
 
 typedef struct {

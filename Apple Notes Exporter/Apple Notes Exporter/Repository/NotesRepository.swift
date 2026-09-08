@@ -32,8 +32,8 @@ protocol NotesRepository {
     /// Fetch all folders from the Notes database
     func fetchFolders() async throws -> [NotesFolder]
 
-    /// Fetch all notes from the Notes database
-    func fetchNotes() async throws -> [NotesNote]
+    /// Fetch notes. Recently Deleted rows are omitted unless `includeDeleted` is true.
+    func fetchNotes(includeDeleted: Bool) async throws -> [NotesNote]
 
     /// Fetch binary data for a specific attachment
     func fetchAttachment(id: String) async throws -> Data
@@ -52,6 +52,12 @@ protocol NotesRepository {
 
     /// Drop any cached NoteStore snapshot so the next fetch reopens the live file.
     func invalidateCache()
+}
+
+extension NotesRepository {
+    func fetchNotes() async throws -> [NotesNote] {
+        try await fetchNotes(includeDeleted: false)
+    }
 }
 
 // MARK: - Gallery Child
@@ -231,7 +237,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
         }
     }
 
-    func fetchNotes() async throws -> [NotesNote] {
+    func fetchNotes(includeDeleted: Bool = false) async throws -> [NotesNote] {
         try await withCheckedThrowingContinuation { continuation in
             self.dbQueue.async {
                 guard let db = self.openDB() else {
@@ -318,11 +324,12 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                         folderId: n.folder_pk >= 0 ? "\(n.folder_pk)" : "",
                         accountId: n.account_pk >= 0 ? "\(n.account_pk)" : "",
                         attachments: attachments,
-                        identifier: n.identifier != nil ? String(cString: n.identifier) : ""
+                        identifier: n.identifier != nil ? String(cString: n.identifier) : "",
+                        isDeleted: n.marked_for_deletion != 0
                     ))
                 }
 
-                continuation.resume(returning: notes)
+                continuation.resume(returning: includeDeleted ? notes : notes.filter { !$0.isDeleted })
             }
         }
     }
@@ -540,9 +547,9 @@ class MockNotesRepository: NotesRepository {
         return mockFolders
     }
 
-    func fetchNotes() async throws -> [NotesNote] {
+    func fetchNotes(includeDeleted: Bool = false) async throws -> [NotesNote] {
         try await Task.sleep(nanoseconds: 100_000_000)
-        return mockNotes
+        return includeDeleted ? mockNotes : mockNotes.filter { !$0.isDeleted }
     }
 
     func fetchAttachment(id: String) async throws -> Data {

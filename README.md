@@ -31,7 +31,7 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 ## Export Formats
 
 ### Rich / document formats
-* **HTML** - Native format returned by the Apple Notes database. Images included inline via base64 embed syntax. Each exported folder also gets an `index.html` listing the notes and subfolders so the tree is browsable in a web browser. **Configurable:** font family, font size, margins.
+* **HTML** - Native format returned by the Apple Notes database. Images included inline via base64 embed syntax. Optional `index.html` in each folder (off by default) so the tree is browsable in a web browser. **Configurable:** font family, font size, margins, folder indexes.
 * **PDF** - Generated from HTML, preserves all formatting and images. **Configurable:** font family, font size, margins, page size (Letter, A4, A5, Legal, Tabloid).
 * **TEX** - LaTeX format for typesetting. Notes can be compiled individually or combined. **Configurable:** custom template with placeholders for title, dates, author, and content.
 * **MD** - Markdown format. Useful for moving to other Markdown-based apps like Obsidian. Images included inline via base64 embed syntax.
@@ -71,7 +71,7 @@ notes-export list-notes --folder Work
 notes-export export --output ~/Desktop/notes --format markdown --account iCloud
 ```
 
-Built with Swift ArgumentParser. JSON output on stdout for piping into other tools, progress and errors on stderr. Supports filtering by account, folder (name substring or exact folder id, including subfolders), title, and modification date, plus incremental sync.
+Built with Swift ArgumentParser. JSON output on stdout for piping into other tools, progress and errors on stderr. `--folder` takes an exact name or id (repeat or comma-separate for several) and includes subfolders; `--folder-contains` restores substring match; `--no-subfolders` turns descendants off. Combine `--folder` and `--notes` as a union. `--include-deleted` (or `--folder "Recently Deleted"`) exports trash. `--shared-attachments` dumps every file under `Attachments/` instead of a folder beside each note.
 
 ### Apple Shortcuts (App Intents)
 
@@ -85,6 +85,8 @@ Run them from Siri, automations, or any Shortcuts flow.
 
 Unsigned Debug builds (Xcode Run) often fail to register with Shortcuts (`linkd` error 4097). Use a signed build, typically the copy in `/Applications`, and grant Full Disk Access to that same binary.
 
+To run `notes-export` from a Shortcuts **Run Shell Script** action without opening Terminal, grant Full Disk Access to **Shortcuts.app** as well. The CLI lives at `Apple Notes Exporter.app/Contents/SharedSupport/notes-export`.
+
 ### Model Context Protocol server (`notes-export-mcp`)
 
 An MCP server exposing five tools (`list_accounts`, `list_folders`, `list_notes`, `get_note`, `export_note`) so AI assistants like Claude Desktop can read and export your notes directly. See [PR #30](https://github.com/kzaremski/apple-notes-exporter/pull/30) for details.
@@ -95,7 +97,7 @@ All three require Full Disk Access (same as the GUI app) to read the local Notes
 
 Re-exporting an entire Notes library on every backup is wasteful when only a handful of notes have changed. Incremental sync tracks which notes have already been exported and, on subsequent runs, writes only notes that are new or have been modified since the last export.
 
-On first run with `--incremental`, the CLI writes a `AppleNotesExportSyncWatermark.json` manifest to the output directory recording each note's ID, modification date, and exported path. On subsequent runs against the same directory, notes whose modification date has not changed are skipped, and existing files are left in place.
+On first run with `--incremental`, the CLI writes a `AppleNotesExportSyncWatermark.json` manifest to the output directory recording each note's ID, modification date, and exported path. On subsequent runs against the same directory, notes whose modification date has not changed are skipped, and existing files are left in place. Notes that have disappeared from Apple Notes are pruned from disk. Each run appends a file/folder-level diff (added, updated, deleted paths and a timestamp) to the manifest; `notes-export sync-status` prints the recent history.
 
 ```sh
 # First run: full export

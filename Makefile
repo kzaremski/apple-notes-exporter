@@ -1,7 +1,7 @@
 # Apple Notes Exporter - Makefile
 # For terminal-based development workflow
 
-.PHONY: help build run clean logs test test-ui test-formats rebuild install icon \
+.PHONY: help build run clean logs test test-ui test-cli test-all test-formats rebuild install icon \
         release release-archive release-export release-notarize release-zip release-clean
 
 # Configuration
@@ -53,9 +53,12 @@ help:
 	@echo "  make rebuild      - Clean and build"
 	@echo "  make logs         - Stream app logs (run in separate terminal)"
 	@echo "  make test         - Run unit tests (skips UI tests; unsigned Debug)"
+	@echo "  make test-cli     - Offline CLI checks (help, sync-status history, missing db)"
+	@echo "  make test-all     - unit tests + offline CLI (no Notes database / FDA needed)"
 	@echo "  make test-ui      - Run UI tests (needs a signed runner)"
 	@echo "  make test-formats - Export a sample note via the embedded CLI to every format"
 	@echo "                      OUTPUT=/path FILTER=title FORMATS=\"pdf html\""
+	@echo "                      Needs Full Disk Access on the terminal."
 	@echo "  make install      - Build and install to /Applications"
 	@echo "  make icon         - Generate app icon from icon/icon.svg"
 	@echo ""
@@ -127,6 +130,19 @@ test-formats: build
 	echo "-------------------------------------------------------------"; \
 	echo "✓ $$passed passed, ✗ $$failed failed of $$(echo $(FORMATS) | wc -w | tr -d ' ') formats"; \
 	if [ "$$failed" -gt 0 ]; then exit 1; fi
+
+# Offline CLI checks: no NoteStore and no Full Disk Access required.
+# Covers help text (--folder id/descendants, sync history), sync-status JSON
+# against a fixture manifest, and export failure on a missing --db path.
+CLI_BIN = $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export
+MCP_BIN = $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export-mcp
+
+test-cli: build
+	@if [ ! -x "$(CLI_BIN)" ]; then echo "❌ CLI not found at $(CLI_BIN)"; exit 1; fi
+	@if [ ! -x "$(MCP_BIN)" ]; then echo "❌ MCP not found at $(MCP_BIN)"; exit 1; fi
+	@bash scripts/test-cli-offline.sh "$(CLI_BIN)"
+
+test-all: test test-cli
 
 # Build and run
 run: build

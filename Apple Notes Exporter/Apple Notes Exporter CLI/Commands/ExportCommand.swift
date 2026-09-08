@@ -53,14 +53,23 @@ struct ExportCommand: AsyncParsableCommand {
     var format: String = "markdown"
 
     // Note selection filters
-    @Option(name: .long, help: "Export only these note IDs (comma-separated).")
+    @Option(name: .long, help: "Export these note IDs (comma-separated). Combined with --folder as a union.")
     var notes: String?
 
     @Option(name: .long, help: "Filter by account name (partial match, case-insensitive).")
     var account: String?
 
-    @Option(name: .long, help: "Filter by folder name (partial, case-insensitive) or exact folder id. Includes notes in matching subfolders.")
-    var folder: String?
+    @Option(name: .long, help: "Folder name (exact, case-insensitive) or folder id. Repeat or comma-separate to select several. Includes subfolders unless --no-subfolders.")
+    var folder: [String] = []
+
+    @Flag(name: .long, help: "Treat --folder as a case-insensitive substring instead of an exact name.")
+    var folderContains: Bool = false
+
+    @Flag(name: .long, help: "Do not include notes in subfolders of --folder.")
+    var noSubfolders: Bool = false
+
+    @Flag(name: .long, help: "Include Recently Deleted notes. Also implied by --folder 'Recently Deleted'.")
+    var includeDeleted: Bool = false
 
     @Option(name: .long, help: "Filter notes whose title contains this string (case-insensitive).")
     var titleContains: String?
@@ -74,6 +83,12 @@ struct ExportCommand: AsyncParsableCommand {
     // Export options
     @Flag(name: .long, help: "Skip exporting attachments.")
     var noAttachments: Bool = false
+
+    @Flag(name: .long, help: "Write all attachments under <output>/Attachments/ instead of a folder beside each note.")
+    var sharedAttachments: Bool = false
+
+    @Flag(name: .customLong("html-indexes"), inversion: .prefixedNo, help: "Write index.html in each HTML folder (off by default).")
+    var htmlIndexes: Bool = false
 
     @Flag(name: .long, help: "Add creation date prefix to filenames.")
     var addDatePrefix: Bool = false
@@ -122,6 +137,7 @@ struct ExportCommand: AsyncParsableCommand {
         // Build configurations
         var configs = ExportConfigurations.default
         configs.includeAttachments = !noAttachments
+        configs.sharedAttachmentsFolder = sharedAttachments
         configs.addDateToFilename = addDatePrefix
         configs.concatenateOutput = concatenate
         configs.incrementalSync = incremental
@@ -151,7 +167,8 @@ struct ExportCommand: AsyncParsableCommand {
                 marginSize: configs.html.marginSize,
                 marginUnit: configs.html.marginUnit,
                 embedImagesInline: configs.html.embedImagesInline,
-                linkEmbeddedImages: configs.html.linkEmbeddedImages
+                linkEmbeddedImages: configs.html.linkEmbeddedImages,
+                writeFolderIndexes: htmlIndexes
             )
         } else {
             configs.html = HTMLConfiguration(
@@ -160,7 +177,8 @@ struct ExportCommand: AsyncParsableCommand {
                 marginSize: configs.html.marginSize,
                 marginUnit: configs.html.marginUnit,
                 embedImagesInline: configs.html.embedImagesInline,
-                linkEmbeddedImages: configs.html.linkEmbeddedImages
+                linkEmbeddedImages: configs.html.linkEmbeddedImages,
+                writeFolderIndexes: htmlIndexes
             )
         }
 
@@ -171,29 +189,26 @@ struct ExportCommand: AsyncParsableCommand {
         do {
             async let a = engine.fetchAccounts()
             async let f = engine.fetchFolders()
-            async let n = engine.fetchNotes()
+            async let n = engine.fetchNotes(includeDeleted: includeDeleted || parseListArgument(folder).contains { isRecentlyDeletedFolderName($0) })
             (accounts, folders, allNotes) = try await (a, f, n)
         } catch {
             CLIOutput.writeError(.databaseUnavailable)
             throw ExitCode(CLIError.databaseUnavailable.exitCode)
         }
 
-        var filtered = allNotes
-
-        // Filter by explicit note IDs
-        if let noteIdsStr = notes {
-            let ids = Set(noteIdsStr.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) })
-            filtered = filtered.filter { ids.contains($0.id) }
-        }
+        var filtered = applyNoteSelection(
+            notes: allNotes,
+            folders: folders,
+            folderFilters: folder,
+            matchContains: folderContains,
+            includeSubfolders: !noSubfolders,
+            includeDeleted: includeDeleted,
+            noteIds: notes.map { [$0] } ?? []
+        )
 
         if let accountFilter = account?.lowercased() {
             let matchingIds = accounts.filter { $0.name.lowercased().contains(accountFilter) }.map { $0.id }
             filtered = filtered.filter { matchingIds.contains($0.accountId) }
-        }
-
-        if let folderFilter = folder {
-            let matchingIds = matchingFolderIds(filter: folderFilter, folders: folders)
-            filtered = filtered.filter { matchingIds.contains($0.folderId) }
         }
 
         if let tc = titleContains?.lowercased() {

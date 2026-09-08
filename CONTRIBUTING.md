@@ -13,10 +13,12 @@ Thanks for your interest in Apple Notes Exporter! Contributions of all kinds are
 ```sh
 make build        # Debug build (CLI + MCP embedded in the .app bundle)
 make run          # Build and launch
-make test         # Run tests
+make test         # Run unit tests
+make test-cli     # Offline CLI checks (no Notes database required)
+make test-all     # unit tests + offline CLI
 make clean        # Clean build artifacts
 make logs         # Stream app logs
-make test-formats # Export a sample note via the embedded CLI to every format
+make test-formats # Export a sample note via the embedded CLI to every format (needs FDA)
 ```
 
 ## Signing

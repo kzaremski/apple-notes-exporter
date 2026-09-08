@@ -493,13 +493,12 @@ static void _prepare_statements(ane_db *db)
             "Z_11NOTES.Z_11FOLDERS AS FOLDER_ID, "
             "ZICCLOUDSYNCINGOBJECT.ZACCOUNT2 AS ACCOUNT_FK, "
             "ZICNOTEDATA.ZDATA, "
-            "%s%s "
+            "%s%s, "
+            "COALESCE(ZICCLOUDSYNCINGOBJECT.ZMARKEDFORDELETION, 0) "
             "FROM ZICNOTEDATA "
             "JOIN ZICCLOUDSYNCINGOBJECT ON ZICCLOUDSYNCINGOBJECT.Z_PK = ZICNOTEDATA.ZNOTE "
             "JOIN Z_11NOTES ON Z_11NOTES.Z_8NOTES = ZICNOTEDATA.ZNOTE "
-            "WHERE 1=1 AND ZICNOTEDATA.ZDATA IS NOT NULL "
-            "AND (ZICCLOUDSYNCINGOBJECT.ZMARKEDFORDELETION IS NULL "
-            "OR ZICCLOUDSYNCINGOBJECT.ZMARKEDFORDELETION = 0) /*ank*/;",
+            "WHERE 1=1 AND ZICNOTEDATA.ZDATA IS NOT NULL /*ank*/;",
             title_col, creation_col, modification_col,
             has_pinned ? "ZICCLOUDSYNCINGOBJECT.ZISPINNED" : "0 AS ZISPINNED",
             has_password ? ", ZICCLOUDSYNCINGOBJECT.ZPASSWORDPROTECTED" : "");
@@ -516,12 +515,12 @@ static void _prepare_statements(ane_db *db)
             "%s AS ACCOUNT_FK, "
             "data.ZDATA, "
             "%s%s, "
-            "note.ZIDENTIFIER "
+            "note.ZIDENTIFIER, "
+            "COALESCE(note.ZMARKEDFORDELETION, 0) "
             "FROM ZICCLOUDSYNCINGOBJECT note "
             "LEFT JOIN ZICNOTEDATA data ON note.Z_PK = data.ZNOTE "
             "WHERE 1=1 AND (note.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
-            "              OR data.Z_PK IS NOT NULL) "
-            "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0) /*ank*/;",
+            "              OR data.Z_PK IS NOT NULL) /*ank*/;",
             title_col, creation_col, modification_col, folder_col,
             note_account_expr,
             has_pinned ? "note.ZISPINNED" : "0 AS ZISPINNED",
@@ -539,12 +538,12 @@ static void _prepare_statements(ane_db *db)
             "%s AS ACCOUNT_FK, "
             "data.ZDATA, "
             "%s%s, "
-            "note.ZIDENTIFIER "
+            "note.ZIDENTIFIER, "
+            "COALESCE(note.ZMARKEDFORDELETION, 0) "
             "FROM ZICCLOUDSYNCINGOBJECT note "
             "LEFT JOIN ZICNOTEDATA data ON note.Z_PK = data.ZNOTE "
             "WHERE 1=1 AND (note.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
             "              OR data.Z_PK IS NOT NULL) "
-            "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0) "
             "AND note.%s >= ? AND note.%s <= ? /*ank*/;",
             title_col, creation_col, modification_col, folder_col,
             note_account_expr,
@@ -564,7 +563,7 @@ static void _prepare_statements(ane_db *db)
         "WHERE 1=1 AND att.ZIDENTIFIER = ? "
         "AND att.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICAttachment') "
         "AND (att.ZMARKEDFORDELETION IS NULL OR att.ZMARKEDFORDELETION = 0) "
-        "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0 OR att.ZNOTE IS NULL) /*ank*/;",
+        "/* parent note may be Recently Deleted; still resolve the attachment */ /*ank*/;",
         uti_coalesce_att,
         note_account_expr);
     sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_ATTACHMENT], NULL);
@@ -641,7 +640,7 @@ static void _prepare_statements(ane_db *db)
         "LEFT JOIN ZICCLOUDSYNCINGOBJECT acct ON (%s) = acct.Z_PK "
         "WHERE 1=1 AND att.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICAttachment') "
         "AND (att.ZMARKEDFORDELETION IS NULL OR att.ZMARKEDFORDELETION = 0) "
-        "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0 OR att.ZNOTE IS NULL) /*ank*/;",
+        "/* parent note may be Recently Deleted; still resolve the attachment */ /*ank*/;",
         uti_coalesce_att,
         has_user_title ? ", att.ZUSERTITLE" : "",
         has_size_dims ? ", att.ZSIZEHEIGHT, att.ZSIZEWIDTH" : "",
@@ -1265,8 +1264,10 @@ static ane_note *_fetch_notes_impl(ane_db *db, sqlite3_stmt *stmt,
             ? sqlite3_column_int(stmt, 8)
             : 0;
 
-        /* ZIDENTIFIER -- last column (8 without password, 9 with) */
+        /* ZIDENTIFIER -- column 8 without password, 9 with */
         n->identifier = _strdup_col(stmt, has_password ? 9 : 8);
+        /* MARKED_DELETED is always the last selected column. */
+        n->marked_for_deletion = sqlite3_column_int(stmt, sqlite3_column_count(stmt) - 1);
 
         (*count)++;
     }
@@ -1427,6 +1428,7 @@ ane_note *ane_fetch_notes_in_range(ane_db *db,
             ? sqlite3_column_int(stmt, 8)
             : 0;
         n->identifier = _strdup_col(stmt, has_password ? 9 : 8);
+        n->marked_for_deletion = sqlite3_column_int(stmt, sqlite3_column_count(stmt) - 1);
 
         (*count)++;
     }

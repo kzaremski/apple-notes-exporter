@@ -25,16 +25,65 @@ import Foundation
 struct SyncManifest: Codable {
     static let filename = "AppleNotesExportSyncWatermark.json"
     static let currentVersion = 1
+    /// Keep the last N incremental runs so the file cannot grow without bound.
+    static let maxHistoryRuns = 50
 
     var version: Int = SyncManifest.currentVersion
     var lastSync: Date
     var notes: [String: SyncedNoteEntry]
+    /// File/folder-level diffs of each incremental run (not note contents).
+    var history: [SyncRun] = []
 
     struct SyncedNoteEntry: Codable {
         var modificationDate: Date
         var exportedPath: String
         /// Relative paths to exported attachment files for this note
         var attachmentPaths: [String]
+    }
+
+    /// One exported note as it appears on disk, for run history.
+    struct HistoryItem: Codable, Equatable {
+        var noteId: String
+        var path: String
+    }
+
+    /// One incremental run: when it ran and which files were added, updated, or removed.
+    struct SyncRun: Codable, Equatable {
+        var timestamp: Date
+        var added: [HistoryItem]
+        var updated: [HistoryItem]
+        var deleted: [HistoryItem]
+    }
+
+    struct PrunedNote {
+        let noteId: String
+        let entry: SyncedNoteEntry
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case version, lastSync, notes, history
+    }
+
+    init(lastSync: Date, notes: [String: SyncedNoteEntry], history: [SyncRun] = []) {
+        self.lastSync = lastSync
+        self.notes = notes
+        self.history = history
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? SyncManifest.currentVersion
+        lastSync = try c.decode(Date.self, forKey: .lastSync)
+        notes = try c.decode([String: SyncedNoteEntry].self, forKey: .notes)
+        history = try c.decodeIfPresent([SyncRun].self, forKey: .history) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(lastSync, forKey: .lastSync)
+        try c.encode(notes, forKey: .notes)
+        try c.encode(history, forKey: .history)
     }
 
     // MARK: - Factory
@@ -99,14 +148,23 @@ struct SyncManifest: Codable {
 
     /// Remove manifest entries whose note ID is not in the given set, and return
     /// the removed entries so the caller can delete the corresponding files.
-    mutating func pruneDeleted(presentNoteIds: Set<String>) -> [SyncedNoteEntry] {
+    mutating func pruneDeleted(presentNoteIds: Set<String>) -> [PrunedNote] {
         let deletedIds = Set(notes.keys).subtracting(presentNoteIds)
-        var removed: [SyncedNoteEntry] = []
+        var removed: [PrunedNote] = []
         for id in deletedIds {
             if let entry = notes.removeValue(forKey: id) {
-                removed.append(entry)
+                removed.append(PrunedNote(noteId: id, entry: entry))
             }
         }
         return removed
+    }
+
+    /// Append one run to history, dropping the oldest if over the cap.
+    mutating func appendRun(_ run: SyncRun) {
+        history.append(run)
+        if history.count > Self.maxHistoryRuns {
+            history.removeFirst(history.count - Self.maxHistoryRuns)
+        }
+        lastSync = run.timestamp
     }
 }

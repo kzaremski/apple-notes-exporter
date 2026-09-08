@@ -156,17 +156,38 @@ extension String {
 /// Thread-safe wrapper for SyncManifest mutations during concurrent export
 actor SyncManifestTracker {
     private var manifest: SyncManifest
+    private var currentAdded: [SyncManifest.HistoryItem] = []
+    private var currentUpdated: [SyncManifest.HistoryItem] = []
 
     init(manifest: SyncManifest) {
         self.manifest = manifest
     }
 
     func recordExport(noteId: String, modificationDate: Date, exportedPath: String, attachmentPaths: [String] = []) {
+        let item = SyncManifest.HistoryItem(noteId: noteId, path: exportedPath)
+        if manifest.notes[noteId] != nil {
+            currentUpdated.append(item)
+        } else {
+            currentAdded.append(item)
+        }
         manifest.recordExport(noteId: noteId, modificationDate: modificationDate, exportedPath: exportedPath, attachmentPaths: attachmentPaths)
     }
 
-    func pruneDeleted(presentNoteIds: Set<String>) -> [SyncManifest.SyncedNoteEntry] {
+    func pruneDeleted(presentNoteIds: Set<String>) -> [SyncManifest.PrunedNote] {
         manifest.pruneDeleted(presentNoteIds: presentNoteIds)
+    }
+
+    /// Close out this incremental run with a file/folder-level diff.
+    func finishRun(pruned: [SyncManifest.PrunedNote]) {
+        let deleted = pruned.map { SyncManifest.HistoryItem(noteId: $0.noteId, path: $0.entry.exportedPath) }
+        manifest.appendRun(SyncManifest.SyncRun(
+            timestamp: Date(),
+            added: currentAdded,
+            updated: currentUpdated,
+            deleted: deleted
+        ))
+        currentAdded = []
+        currentUpdated = []
     }
 
     func getManifest() -> SyncManifest {
@@ -411,7 +432,10 @@ func sanitizeExportFilename(_ name: String) -> String {
 }
 
 /// Build a relative folder path by walking up the parent folder chain.
-func buildExportFolderPath(folderId: String, folderLookup: [String: NotesFolder], accountId: String? = nil) -> String {
+func buildExportFolderPath(folderId: String, folderLookup: [String: NotesFolder], accountId: String? = nil, isDeleted: Bool = false) -> String {
+    if isDeleted {
+        return sanitizeExportFilename("Recently Deleted")
+    }
     if let folder = folderLookup[folderId] {
         var components: [String] = [sanitizeExportFilename(folder.name)]
         var currentParentId = folder.parentId
@@ -503,19 +527,49 @@ let nonFileAttachmentPrefixes: [String] = [
     "public.url"
 ]
 
-/// Folder IDs matching `filter` by exact id or case-insensitive name substring,
-/// plus every descendant of those folders.
-func matchingFolderIds(filter: String, folders: [NotesFolder]) -> Set<String> {
-    let needle = filter.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !needle.isEmpty else { return [] }
-    let lowered = needle.lowercased()
+/// Split comma-separated CLI tokens, also flattening repeated --folder values.
+func parseListArgument(_ values: [String]) -> [String] {
+    values.flatMap { raw in
+        raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }.filter { !$0.isEmpty }
+}
 
-    var matched = Set(folders.filter { folder in
-        folder.id.caseInsensitiveCompare(needle) == .orderedSame
-            || folder.name.lowercased().contains(lowered)
-    }.map(\.id))
+func parseListArgument(_ value: String?) -> [String] {
+    guard let value else { return [] }
+    return parseListArgument([value])
+}
 
-    guard !matched.isEmpty else { return [] }
+/// True when a filter refers to Apple Notes' Recently Deleted smart folder.
+func isRecentlyDeletedFolderName(_ name: String) -> Bool {
+    name.compare("Recently Deleted", options: .caseInsensitive) == .orderedSame
+}
+
+/// Folder IDs matching `filters` (comma-separated or repeated).
+/// Default match is exact folder id or case-insensitive exact name.
+/// `matchContains` restores substring matching. Descendants are included unless disabled.
+func matchingFolderIds(
+    filters: [String],
+    folders: [NotesFolder],
+    matchContains: Bool = false,
+    includeDescendants: Bool = true
+) -> Set<String> {
+    let tokens = parseListArgument(filters)
+    guard !tokens.isEmpty else { return [] }
+
+    var matched: Set<String> = []
+    for token in tokens {
+        if isRecentlyDeletedFolderName(token) { continue }
+        let lowered = token.lowercased()
+        let hits = folders.filter { folder in
+            folder.id.caseInsensitiveCompare(token) == .orderedSame
+                || folder.name.compare(token, options: .caseInsensitive) == .orderedSame
+                || (matchContains && folder.name.lowercased().contains(lowered))
+        }
+        for folder in hits { matched.insert(folder.id) }
+    }
+
+    guard !matched.isEmpty else { return matched }
+    guard includeDescendants else { return matched }
 
     var childrenByParent: [String: [String]] = [:]
     for folder in folders {
@@ -535,6 +589,105 @@ func matchingFolderIds(filter: String, folders: [NotesFolder]) -> Set<String> {
     return matched
 }
 
+func matchingFolderIds(filter: String, folders: [NotesFolder]) -> Set<String> {
+    matchingFolderIds(filters: [filter], folders: folders, matchContains: false, includeDescendants: true)
+}
+
+func applyNoteSelection(
+    notes: [NotesNote],
+    folders: [NotesFolder],
+    folderFilters: [String],
+    matchContains: Bool,
+    includeSubfolders: Bool,
+    includeDeleted: Bool,
+    noteIds: [String]
+) -> [NotesNote] {
+    let tokens = parseListArgument(folderFilters)
+    let wantsTrash = tokens.contains { isRecentlyDeletedFolderName($0) }
+    let keepDeleted = includeDeleted || wantsTrash
+    let folderIds = matchingFolderIds(
+        filters: tokens,
+        folders: folders,
+        matchContains: matchContains,
+        includeDescendants: includeSubfolders
+    )
+    return selectedNotes(
+        from: notes,
+        folderIds: folderIds,
+        noteIds: Set(parseListArgument(noteIds)),
+        includeDeleted: keepDeleted,
+        selectAllTrash: wantsTrash
+    )
+}
+
+/// Apply CLI/MCP note selection: listed note ids UNION notes in matching folders.
+/// `includeDeleted` keeps Recently Deleted notes in the pool.
+/// `selectAllTrash` is set when a filter is the Recently Deleted smart folder.
+func selectedNotes(
+    from notes: [NotesNote],
+    folderIds: Set<String>,
+    noteIds: Set<String>,
+    includeDeleted: Bool,
+    selectAllTrash: Bool
+) -> [NotesNote] {
+    if selectAllTrash && folderIds.isEmpty && noteIds.isEmpty {
+        return notes.filter(\.isDeleted)
+    }
+
+    return notes.filter { note in
+        if !includeDeleted && note.isDeleted { return false }
+
+        if folderIds.isEmpty && noteIds.isEmpty {
+            return true
+        }
+        if !noteIds.isEmpty && noteIds.contains(note.id) {
+            return true
+        }
+        if note.isDeleted {
+            if selectAllTrash { return true }
+            return !folderIds.isEmpty && folderIds.contains(note.folderId)
+        }
+        return !folderIds.isEmpty && folderIds.contains(note.folderId)
+    }
+}
+
+/// Directory and HTML-relative prefix for a note's attachments.
+func attachmentExportLocation(
+    sharedDump: Bool,
+    outputRoot: URL,
+    noteDirectory: URL,
+    noteBaseName: String,
+    filename: String
+) -> (directory: URL, relativePath: String) {
+    if !sharedDump {
+        let dir = noteDirectory.appendingPathComponent("\(noteBaseName) (Attachments)")
+        return (dir, "\(noteBaseName) (Attachments)/\(filename)")
+    }
+
+    let rootPath = outputRoot.standardizedFileURL.path
+    let dirPath = noteDirectory.standardizedFileURL.path
+    let relDir: String
+    if dirPath == rootPath {
+        relDir = ""
+    } else if dirPath.hasPrefix(rootPath + "/") {
+        relDir = String(dirPath.dropFirst(rootPath.count + 1))
+    } else {
+        relDir = ""
+    }
+
+    var attRel = "Attachments"
+    if !relDir.isEmpty { attRel += "/\(relDir)" }
+    attRel += "/\(noteBaseName)/\(filename)"
+
+    let noteRel = relDir.isEmpty ? "note.ext" : "\(relDir)/note.ext"
+    let href = relativePathFromSource(noteRel, toTarget: attRel)
+    let dir = outputRoot.appendingPathComponent(
+        attRel.split(separator: "/").dropLast().map(String.init).joined(separator: "/"),
+        isDirectory: true
+    )
+    return (dir, href)
+}
+
 /// Marker comment written into generated folder index.html files so a later
 /// export can tell them apart from a note that happened to be titled "index".
 let htmlFolderIndexMarker = "apple-notes-exporter-folder-index"
@@ -549,7 +702,7 @@ func writeHTMLFolderIndexes(underRoot root: URL) throws {
         for case let url as URL in enumerator {
             let values = try url.resourceValues(forKeys: [.isDirectoryKey])
             guard values.isDirectory == true else { continue }
-            if url.lastPathComponent.hasSuffix(" (Attachments)") {
+            if url.lastPathComponent.hasSuffix(" (Attachments)") || url.lastPathComponent == "Attachments" {
                 enumerator.skipDescendants()
                 continue
             }
@@ -572,7 +725,7 @@ func writeHTMLFolderIndex(inFolder folderURL: URL) throws {
     for url in contents {
         let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
         if values?.isDirectory == true {
-            if !url.lastPathComponent.hasSuffix(" (Attachments)") {
+            if !url.lastPathComponent.hasSuffix(" (Attachments)") && url.lastPathComponent != "Attachments" {
                 subfolders.append(url)
             }
             continue
@@ -651,7 +804,8 @@ func noteWithHTML(_ note: NotesNote, html: String) -> NotesNote {
         htmlBody: html, creationDate: note.creationDate,
         modificationDate: note.modificationDate, folderId: note.folderId,
         accountId: note.accountId, attachments: note.attachments,
-        identifier: note.identifier
+        identifier: note.identifier,
+        isDeleted: note.isDeleted
     )
 }
 

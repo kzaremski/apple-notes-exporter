@@ -312,14 +312,99 @@ final class ExportSupportTests: XCTestCase {
         NotesFolder(id: id, name: name, parentId: parent, accountId: "1")
     }
 
-    func test_matchingFolderIds_nameSubstringIncludesDescendants() {
+    func test_matchingFolderIds_exactNameIncludesDescendants() {
         let folders = [
             folder("10", name: "Recipes"),
             folder("11", name: "Soups", parent: "10"),
             folder("12", name: "Work"),
+            folder("13", name: "Recipe Book"),
         ]
         XCTAssertEqual(matchingFolderIds(filter: "Recipes", folders: folders), ["10", "11"])
         XCTAssertEqual(matchingFolderIds(filter: "Work", folders: folders), ["12"])
+        XCTAssertTrue(matchingFolderIds(filter: "Rec", folders: folders).isEmpty)
+    }
+
+    func test_matchingFolderIds_containsModeAndNoDescendants() {
+        let folders = [
+            folder("10", name: "Recipes"),
+            folder("11", name: "Soups", parent: "10"),
+            folder("13", name: "Recipe Book"),
+        ]
+        XCTAssertEqual(
+            matchingFolderIds(filters: ["Rec"], folders: folders, matchContains: true, includeDescendants: false),
+            ["10", "13"]
+        )
+        XCTAssertEqual(
+            matchingFolderIds(filters: ["Recipes"], folders: folders, matchContains: false, includeDescendants: false),
+            ["10"]
+        )
+    }
+
+    func test_matchingFolderIds_multiSelectUnion() {
+        let folders = [
+            folder("10", name: "Recipes"),
+            folder("12", name: "Work"),
+        ]
+        XCTAssertEqual(
+            matchingFolderIds(filters: ["Recipes", "Work"], folders: folders),
+            ["10", "12"]
+        )
+        XCTAssertEqual(
+            matchingFolderIds(filters: ["10,12"], folders: folders, includeDescendants: false),
+            ["10", "12"]
+        )
+    }
+
+    func test_selectedNotes_unionAndRecentlyDeleted() {
+        let live = NotesNote(
+            id: "1", title: "A", plaintext: "", htmlBody: nil,
+            creationDate: Date(), modificationDate: Date(),
+            folderId: "10", accountId: "1", attachments: [], isDeleted: false
+        )
+        let trash = NotesNote(
+            id: "2", title: "B", plaintext: "", htmlBody: nil,
+            creationDate: Date(), modificationDate: Date(),
+            folderId: "10", accountId: "1", attachments: [], isDeleted: true
+        )
+        let other = NotesNote(
+            id: "3", title: "C", plaintext: "", htmlBody: nil,
+            creationDate: Date(), modificationDate: Date(),
+            folderId: "12", accountId: "1", attachments: [], isDeleted: false
+        )
+        let all = [live, trash, other]
+
+        let onlyLive = selectedNotes(from: all, folderIds: [], noteIds: [], includeDeleted: false, selectAllTrash: false)
+        XCTAssertEqual(Set(onlyLive.map(\.id)), ["1", "3"])
+
+        let trashOnly = applyNoteSelection(
+            notes: all, folders: [folder("10", name: "Work")],
+            folderFilters: ["Recently Deleted"], matchContains: false,
+            includeSubfolders: true, includeDeleted: false, noteIds: []
+        )
+        XCTAssertEqual(trashOnly.map(\.id), ["2"])
+
+        let union = applyNoteSelection(
+            notes: all, folders: [folder("12", name: "Work")],
+            folderFilters: ["Work"], matchContains: false,
+            includeSubfolders: true, includeDeleted: false, noteIds: ["1"]
+        )
+        XCTAssertEqual(Set(union.map(\.id)), ["1", "3"])
+    }
+
+    func test_attachmentExportLocation_sharedDumpIsRelativeToNote() {
+        let root = URL(fileURLWithPath: "/tmp/export")
+        let noteDir = root.appendingPathComponent("iCloud/Notes")
+        let loc = attachmentExportLocation(
+            sharedDump: true,
+            outputRoot: root,
+            noteDirectory: noteDir,
+            noteBaseName: "Foo",
+            filename: "img.png"
+        )
+        XCTAssertTrue(loc.directory.path.hasSuffix("Attachments/iCloud/Notes/Foo"))
+        XCTAssertTrue(loc.relativePath.contains("Attachments/"))
+        XCTAssertTrue(loc.relativePath.hasSuffix("img.png"))
+        XCTAssertFalse(loc.relativePath.hasPrefix("/"))
     }
 
     func test_matchingFolderIds_exactIdIncludesDescendants() {
@@ -371,6 +456,103 @@ final class ExportSupportTests: XCTestCase {
         let name = generateUniqueExportFilename(baseName: "index", extension: "html", inDirectory: dir)
         XCTAssertNotEqual(name.lowercased(), "index.html")
         XCTAssertTrue(name.hasSuffix(".html"))
+    }
+
+    // MARK: - Sync manifest history
+
+    func test_syncManifest_oldJSONWithoutHistoryStillLoads() throws {
+        let json = """
+        {
+          "version": 1,
+          "lastSync": 1700000000,
+          "notes": {
+            "1": {
+              "modificationDate": 1700000000,
+              "exportedPath": "iCloud/Notes/A.md",
+              "attachmentPaths": []
+            }
+          }
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let manifest = try decoder.decode(SyncManifest.self, from: Data(json.utf8))
+        XCTAssertTrue(manifest.history.isEmpty)
+        XCTAssertEqual(manifest.notes["1"]?.exportedPath, "iCloud/Notes/A.md")
+    }
+
+    func test_syncManifest_recordsAddedUpdatedDeletedAsFileDiff() {
+        var manifest = SyncManifest.empty()
+        manifest.recordExport(noteId: "1", modificationDate: Date(), exportedPath: "iCloud/Notes/A.md")
+        manifest.recordExport(noteId: "2", modificationDate: Date(), exportedPath: "iCloud/Work/B.md")
+
+        let pruned = manifest.pruneDeleted(presentNoteIds: ["1"])
+        XCTAssertEqual(pruned.map(\.noteId), ["2"])
+
+        manifest.appendRun(SyncManifest.SyncRun(
+            timestamp: Date(),
+            added: [SyncManifest.HistoryItem(noteId: "1", path: "iCloud/Notes/A.md")],
+            updated: [],
+            deleted: [SyncManifest.HistoryItem(noteId: "2", path: "iCloud/Work/B.md")]
+        ))
+
+        XCTAssertEqual(manifest.history.count, 1)
+        XCTAssertEqual(manifest.history[0].added.map(\.path), ["iCloud/Notes/A.md"])
+        XCTAssertEqual(manifest.history[0].deleted.map(\.path), ["iCloud/Work/B.md"])
+        XCTAssertNil(manifest.notes["2"])
+    }
+
+    func test_syncManifestTracker_classifiesAddedVsUpdated() async {
+        var seed = SyncManifest.empty()
+        seed.recordExport(noteId: "1", modificationDate: Date(), exportedPath: "Notes/A.md")
+        let tracker = SyncManifestTracker(manifest: seed)
+
+        await tracker.recordExport(noteId: "1", modificationDate: Date(), exportedPath: "Notes/A.md")
+        await tracker.recordExport(noteId: "2", modificationDate: Date(), exportedPath: "Notes/B.md")
+        await tracker.finishRun(pruned: [])
+
+        let manifest = await tracker.getManifest()
+        XCTAssertEqual(manifest.history.last?.updated.map(\.noteId), ["1"])
+        XCTAssertEqual(manifest.history.last?.added.map(\.noteId), ["2"])
+        XCTAssertEqual(manifest.history.last?.deleted, [])
+    }
+
+    func test_syncManifest_saveLoadRoundtripsHistory() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-manifest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        var manifest = SyncManifest.empty()
+        manifest.recordExport(noteId: "1", modificationDate: Date(timeIntervalSince1970: 1_700_000_000), exportedPath: "iCloud/Notes/A.md")
+        manifest.appendRun(SyncManifest.SyncRun(
+            timestamp: Date(timeIntervalSince1970: 1_700_000_100),
+            added: [SyncManifest.HistoryItem(noteId: "1", path: "iCloud/Notes/A.md")],
+            updated: [],
+            deleted: [SyncManifest.HistoryItem(noteId: "9", path: "iCloud/Notes/Old.md")]
+        ))
+        try manifest.save(to: dir)
+
+        let loaded = try XCTUnwrap(SyncManifest.load(from: dir))
+        XCTAssertEqual(loaded.notes["1"]?.exportedPath, "iCloud/Notes/A.md")
+        XCTAssertEqual(loaded.history.count, 1)
+        XCTAssertEqual(loaded.history[0].added.first?.path, "iCloud/Notes/A.md")
+        XCTAssertEqual(loaded.history[0].deleted.first?.path, "iCloud/Notes/Old.md")
+    }
+
+    func test_syncManifest_historyDropsOldestOverCap() {
+        var manifest = SyncManifest.empty()
+        for i in 0..<(SyncManifest.maxHistoryRuns + 3) {
+            manifest.appendRun(SyncManifest.SyncRun(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(i)),
+                added: [SyncManifest.HistoryItem(noteId: "\(i)", path: "Notes/\(i).md")],
+                updated: [],
+                deleted: []
+            ))
+        }
+        XCTAssertEqual(manifest.history.count, SyncManifest.maxHistoryRuns)
+        XCTAssertEqual(manifest.history.first?.added.first?.noteId, "3")
+        XCTAssertEqual(manifest.history.last?.added.first?.noteId, "\(SyncManifest.maxHistoryRuns + 2)")
     }
 
     // MARK: - Notes database path resolution

@@ -32,8 +32,17 @@ struct ListNotesCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Filter by account name (partial match, case-insensitive).")
     var account: String?
 
-    @Option(name: .long, help: "Filter by folder name (partial, case-insensitive) or exact folder id. Includes notes in matching subfolders.")
-    var folder: String?
+    @Option(name: .long, help: "Folder name (exact, case-insensitive) or folder id. Repeat or comma-separate. Includes subfolders unless --no-subfolders.")
+    var folder: [String] = []
+
+    @Flag(name: .long, help: "Treat --folder as a case-insensitive substring instead of an exact name.")
+    var folderContains: Bool = false
+
+    @Flag(name: .long, help: "Do not include notes in subfolders of --folder.")
+    var noSubfolders: Bool = false
+
+    @Flag(name: .long, help: "Include Recently Deleted notes. Also implied by --folder 'Recently Deleted'.")
+    var includeDeleted: Bool = false
 
     @Option(name: .long, help: "Filter notes whose title contains this string (case-insensitive).")
     var titleContains: String?
@@ -66,7 +75,7 @@ struct ListNotesCommand: AsyncParsableCommand {
         do {
             async let a = engine.fetchAccounts()
             async let f = engine.fetchFolders()
-            async let n = engine.fetchNotes()
+            async let n = engine.fetchNotes(includeDeleted: includeDeleted || parseListArgument(folder).contains { isRecentlyDeletedFolderName($0) })
             (accounts, folders, notes) = try await (a, f, n)
         } catch {
             CLIOutput.writeError(.databaseUnavailable)
@@ -80,16 +89,19 @@ struct ListNotesCommand: AsyncParsableCommand {
         for fld in folders { folderLookup[fld.id] = fld }
 
         // Apply filters
-        var filtered = notes
+        var filtered = applyNoteSelection(
+            notes: notes,
+            folders: folders,
+            folderFilters: folder,
+            matchContains: folderContains,
+            includeSubfolders: !noSubfolders,
+            includeDeleted: includeDeleted,
+            noteIds: []
+        )
 
         if let accountFilter = account?.lowercased() {
             let matchingIds = accounts.filter { $0.name.lowercased().contains(accountFilter) }.map { $0.id }
             filtered = filtered.filter { matchingIds.contains($0.accountId) }
-        }
-
-        if let folderFilter = folder {
-            let matchingIds = matchingFolderIds(filter: folderFilter, folders: folders)
-            filtered = filtered.filter { matchingIds.contains($0.folderId) }
         }
 
         if let tc = titleContains?.lowercased() {
