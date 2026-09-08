@@ -370,11 +370,20 @@ class NoteHTMLGenerator {
         guard let altTextPtr = att.pointee.alt_text else { return nil }
         let altText = String(cString: altTextPtr)
 
-        // For mentions and links, append the token identifier
-        if typeUti == "com.apple.notes.inlinetextattachment.mention" ||
-           typeUti == "com.apple.notes.inlinetextattachment.link" {
-            if let tokenPtr = att.pointee.token_identifier {
-                let token = String(cString: tokenPtr)
+        if let tokenPtr = att.pointee.token_identifier {
+            let token = String(cString: tokenPtr)
+
+            // A link to another note becomes a real anchor, so that
+            // rewriteInternalLinks can retarget the href at the exported file
+            // and the result is actually clickable. Emitted as plain text it
+            // was only ever a bare applenotes: URL sitting in the output.
+            if typeUti == "com.apple.notes.inlinetextattachment.link" {
+                return "<a href=\"\(token.htmlEscaped)\">\(altText.htmlEscaped)</a>"
+            }
+
+            // Mentions point at people, not notes, so there is nothing to link
+            // to. Keep the token visible rather than dropping information.
+            if typeUti == "com.apple.notes.inlinetextattachment.mention" {
                 return "\(altText) [\(token)]"
             }
         }

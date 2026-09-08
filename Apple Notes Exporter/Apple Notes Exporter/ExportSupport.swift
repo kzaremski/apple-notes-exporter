@@ -353,8 +353,20 @@ func rewriteInternalLinks(
           html.contains("applenotes:note/") else { return html }
 
     // Match applenotes:note/UUID, stopping at the first non-UUID character (?, ", ', >, space, etc.)
-    let pattern = #"applenotes:note/([A-Fa-f0-9][A-Fa-f0-9\-]{7,})(\?[^"'<>\s]*)?"#
+    // The query class must exclude ] and ) as well: Apple renders an inline
+    // link as "alt [url]", and swallowing the bracket leaves it unbalanced.
+    let pattern = #"applenotes:note/([A-Fa-f0-9][A-Fa-f0-9\-]{7,})(\?[^"'<>\s\]\)]*)?"#
     guard let regex = try? NSRegularExpression(pattern: pattern) else { return html }
+
+    // Apple stores ZIDENTIFIER uppercase but writes the UUID lowercase into
+    // applenotes: links, so a case-sensitive lookup never matches on real
+    // data. Normalize here rather than relying on how the caller keyed it.
+    var loweredIndex: [String: String] = [:]
+    loweredIndex.reserveCapacity(noteIdToRelativePath.count)
+    for (key, value) in noteIdToRelativePath {
+        let lowered = key.lowercased()
+        if loweredIndex[lowered] == nil { loweredIndex[lowered] = value }
+    }
 
     let nsHtml = html as NSString
     let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
@@ -369,7 +381,8 @@ func rewriteInternalLinks(
         guard uuidRange.location != NSNotFound else { continue }
 
         let uuid = nsHtml.substring(with: uuidRange)
-        guard let targetRelPath = noteIdToRelativePath[uuid] else { continue }
+        guard let targetRelPath = noteIdToRelativePath[uuid]
+                ?? loweredIndex[uuid.lowercased()] else { continue }
 
         let relativeLink = relativePathFromSource(currentNoteRelativePath, toTarget: targetRelPath)
         let encoded = relativeLink.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativeLink

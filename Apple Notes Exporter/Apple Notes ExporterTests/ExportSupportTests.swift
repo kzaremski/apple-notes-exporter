@@ -200,6 +200,23 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertNotEqual(path, "Unknown Folder")
     }
 
+    func test_rewriteInternalLinks_uuidCaseDiffersBetweenLinkAndDatabase() {
+        // Real data: ZIDENTIFIER is stored uppercase, but Apple writes the
+        // UUID lowercase into the applenotes: link. A case-sensitive lookup
+        // silently leaves the link unrewritten.
+        let stored = "634112D0-8C76-435A-9EC5-1436D955EF53"
+        let map = [stored: "iCloud/Notes/Viviana.md"]
+        let html = "Viviana [applenotes:note/\(stored.lowercased())?ownerIdentifier=_9e42932ef6]"
+
+        let result = rewriteInternalLinks(
+            html: html,
+            currentNoteRelativePath: "iCloud/Work/Source.md",
+            noteIdToRelativePath: map
+        )
+        XCTAssertFalse(result.contains("applenotes:note"), "link should be rewritten, got: \(result)")
+        XCTAssertTrue(result.contains("Viviana.md"))
+    }
+
     func test_rewriteInternalLinks_multipleLinks() {
         let id1 = "1d1d6543-df39-9275-9a7a-827db983efc0"
         let id2 = "2e2e7654-ef40-a386-ab8b-938ec094f0d1"
