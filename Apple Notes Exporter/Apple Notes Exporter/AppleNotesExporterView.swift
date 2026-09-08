@@ -386,10 +386,12 @@ struct AppleNotesExporterView: View {
                 }
             }
 
-            VStack(spacing: 4) {
-                HStack {
-                    Toggle("Add date to filename", isOn: $exportViewModel.configurations.addDateToFilename)
-                    Spacer()
+            VStack(spacing: outputOptionRowSpacing) {
+                OutputOptionRow(
+                    title: "Add date to filename",
+                    help: "Prefix each exported file with the note's creation date, so files sort chronologically.",
+                    isOn: $exportViewModel.configurations.addDateToFilename
+                ) {
                     Picker("", selection: $exportViewModel.configurations.filenameDateFormat) {
                         ForEach(FilenameDateFormat.allCases, id: \.self) { format in
                             Text(format.displayName).tag(format)
@@ -399,26 +401,33 @@ struct AppleNotesExporterView: View {
                     .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
                     .disabled(!exportViewModel.configurations.addDateToFilename)
                 }
-                HStack {
-                    Toggle("Include attachments", isOn: $exportViewModel.configurations.includeAttachments)
-                    Spacer()
-                }
-                HStack {
-                    Toggle("Shared Attachments folder", isOn: $exportViewModel.configurations.sharedAttachmentsFolder)
-                        .disabled(!exportViewModel.configurations.includeAttachments)
-                    Spacer()
-                }
-                HStack {
-                    let concatAllowed = ["MD", "TXT"].contains(outputFormat) && !exportViewModel.configurations.incrementalSync
-                    Toggle("Concatenate into single file", isOn: $exportViewModel.configurations.concatenateOutput)
-                        .disabled(!concatAllowed)
-                    Spacer()
-                }
-                HStack {
-                    Toggle("Incremental sync", isOn: $exportViewModel.configurations.incrementalSync)
-                        .disabled(exportViewModel.configurations.concatenateOutput)
-                    Spacer()
-                }
+
+                OutputOptionRow(
+                    title: "Include attachments",
+                    help: "Export images, PDFs, drawings, and other files attached to each note.",
+                    isOn: $exportViewModel.configurations.includeAttachments
+                )
+
+                OutputOptionRow(
+                    title: "Shared Attachments folder",
+                    help: "Collect every attachment in one Attachments folder at the top level, instead of a folder beside each note.",
+                    isOn: $exportViewModel.configurations.sharedAttachmentsFolder,
+                    isEnabled: exportViewModel.configurations.includeAttachments
+                )
+
+                OutputOptionRow(
+                    title: "Concatenate into single file",
+                    help: "Join every note into one file instead of writing one file per note. Markdown and plain text only, and cannot be combined with incremental sync.",
+                    isOn: $exportViewModel.configurations.concatenateOutput,
+                    isEnabled: ["MD", "TXT"].contains(outputFormat) && !exportViewModel.configurations.incrementalSync
+                )
+
+                OutputOptionRow(
+                    title: "Incremental sync",
+                    help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
+                    isOn: $exportViewModel.configurations.incrementalSync,
+                    isEnabled: !exportViewModel.configurations.concatenateOutput
+                )
             }
             .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.filenameDateFormat) { _ in exportViewModel.saveConfigurations() }
@@ -617,5 +626,68 @@ struct BorderedProminentButtonStyle: ButtonStyle {
             .background(configuration.isPressed ? SwiftUI.Color.blue.opacity(0.8) : SwiftUI.Color.blue)
             .cornerRadius(6)
             
+    }
+}
+
+
+// MARK: - Step 3 option rows
+
+/// Rows in Step 3 share a fixed height. Without it the row carrying the date
+/// picker is taller than the plain checkbox rows, so the gaps between the
+/// checkboxes read as uneven even though the stack spacing is uniform.
+private let outputOptionRowHeight: CGFloat = 26
+private let outputOptionRowSpacing: CGFloat = 4
+
+/// A "?" affordance carrying a tooltip. Uses `.help`, so it appears on hover
+/// and is also exposed to VoiceOver rather than being purely decorative.
+private struct OptionHelpTip: View {
+    let text: String
+
+    var body: some View {
+        Image(systemName: "questionmark.circle")
+            .foregroundColor(.secondary)
+            .help(text)
+            .accessibilityLabel(Text(text))
+    }
+}
+
+/// One checkbox row: toggle, help tip, and optional trailing controls.
+private struct OutputOptionRow<Trailing: View>: View {
+    let title: String
+    let help: String
+    @Binding var isOn: Bool
+    var isEnabled: Bool
+    let trailing: () -> Trailing
+
+    init(
+        title: String,
+        help: String,
+        isOn: Binding<Bool>,
+        isEnabled: Bool = true,
+        @ViewBuilder trailing: @escaping () -> Trailing
+    ) {
+        self.title = title
+        self.help = help
+        self._isOn = isOn
+        self.isEnabled = isEnabled
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Toggle(title, isOn: $isOn)
+                .disabled(!isEnabled)
+            OptionHelpTip(text: help)
+                .opacity(isEnabled ? 1 : 0.4)
+            Spacer()
+            trailing()
+        }
+        .frame(height: outputOptionRowHeight)
+    }
+}
+
+extension OutputOptionRow where Trailing == EmptyView {
+    init(title: String, help: String, isOn: Binding<Bool>, isEnabled: Bool = true) {
+        self.init(title: title, help: help, isOn: isOn, isEnabled: isEnabled) { EmptyView() }
     }
 }

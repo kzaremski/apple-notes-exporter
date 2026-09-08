@@ -18,6 +18,8 @@
 //  along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
+import AppKit
+import OSLog
 import SwiftUI
 
 extension Scene {
@@ -310,7 +312,45 @@ struct Apple_Notes_ExporterApp: App {
                 .keyboardShortcut("L", modifiers: [.command, .shift])
                 .disabled(!sharedState.licenseAccepted)
             }
+
+            // The app ships no .help bundle, so the stock Help item raises
+            // "Help isn't available for Apple Notes Exporter". Point the menu
+            // at the documentation that actually exists instead.
+            CommandGroup(replacing: .help) {
+                Button("Apple Notes Exporter Help") {
+                    openDocumentation("https://github.com/kzaremski/apple-notes-exporter#readme")
+                }
+                .keyboardShortcut("?", modifiers: [.command])
+
+                Divider()
+
+                Button("Export Formats") {
+                    openDocumentation("https://github.com/kzaremski/apple-notes-exporter#export-formats")
+                }
+                Button("Full Disk Access Setup") {
+                    openDocumentation("https://github.com/kzaremski/apple-notes-exporter#installation")
+                }
+                Button("Command Line & Automation") {
+                    openDocumentation("https://github.com/kzaremski/apple-notes-exporter#scripting--automation")
+                }
+
+                Divider()
+
+                Button("Report an Issue...") {
+                    openDocumentation("https://github.com/kzaremski/apple-notes-exporter/issues/new")
+                }
+            }
         }
         .windowResizabilityContentSize()
     }
+}
+
+/// Open a documentation URL in the user's browser. Kept in one place so the
+/// Help menu cannot drift into opening a malformed URL silently.
+private func openDocumentation(_ urlString: String) {
+    guard let url = URL(string: urlString) else {
+        Logger.noteExport.error("Help menu has a malformed URL: \(urlString, privacy: .public)")
+        return
+    }
+    NSWorkspace.shared.open(url)
 }
