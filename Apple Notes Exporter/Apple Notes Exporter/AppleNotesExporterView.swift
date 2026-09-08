@@ -648,34 +648,40 @@ private let outputOptionRowSpacing: CGFloat = 0
 private struct OptionHelpTip: View {
     let text: String
 
+    @State private var isShowingHelp = false
+
     var body: some View {
-        Image(systemName: "questionmark.circle")
-            .foregroundColor(.secondary)
-            .overlay(ToolTipArea(text: text))
-            .accessibilityLabel(Text(text))
+        Button {
+            isShowingHelp.toggle()
+        } label: {
+            Image(systemName: "questionmark.circle")
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HelpTipButtonStyle(isActive: isShowingHelp))
+        .popover(isPresented: $isShowingHelp, arrowEdge: .bottom) {
+            Text(text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 260, alignment: .leading)
+                .padding(12)
+        }
+        // A Button is a real control, so .help also gives the hover tooltip.
+        .help(text)
+        .accessibilityLabel(Text(text))
     }
 }
 
-/// Sets AppKit's `toolTip` on a transparent view laid over the icon.
-///
-/// SwiftUI's `.help` only reaches AppKit for views that are backed by a real
-/// control; on a plain `Image` no tracking area is installed and the tooltip
-/// never appears. `NSView.toolTip` installs its own tracking area, so the
-/// tooltip works regardless of what it is attached to.
-private struct ToolTipArea: NSViewRepresentable {
-    let text: String
+/// Press feedback for the help icons. A plain button style leaves them inert,
+/// so they look like decoration rather than something you can click.
+private struct HelpTipButtonStyle: ButtonStyle {
+    let isActive: Bool
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        view.toolTip = text
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        // Keep the tooltip in sync if the text ever becomes dynamic.
-        if nsView.toolTip != text {
-            nsView.toolTip = text
-        }
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(
+                configuration.isPressed || isActive ? SwiftUI.Color.accentColor : SwiftUI.Color.secondary
+            )
+            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
 
