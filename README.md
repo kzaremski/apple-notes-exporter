@@ -19,6 +19,23 @@ Built by [Konstantin Zaremski](https://konstantin.zarem.ski)
 
 Many choose to do all of their note taking and planning through Apple Notes because of the simplicity and convenience that it offers. Unfortunately, there is no good workflow or mechanism built into Apple Notes that allows you to export all your notes or a group of your notes at once.  This app provides a fast, efficient way to export your entire notes library while maintaining the folder hierarchy and preserving formatting.
 
+## What's New in v2.1
+
+* **Folder selection in the CLI.** `--folder` now takes an exact name **or** a folder id, can be repeated or comma-separated, and includes subfolders by default. `--folder-contains` restores the old substring behaviour and `--no-subfolders` limits a selection to direct children.
+* **Recently Deleted export** via `--include-deleted`, or `--folder "Recently Deleted"`.
+* **Sync history.** Each incremental run appends a file-level diff (added, updated, deleted) to the manifest, and `notes-export sync-status` prints the recent history.
+* **Deleted notes are pruned** from the output directory on incremental runs instead of being left behind.
+* **Shared attachment dumps** with `--shared-attachments`, writing every file under `Attachments/` instead of a folder beside each note.
+* **Optional HTML folder indexes** (`--html-indexes`) so an HTML export is browsable in a web browser.
+* **Internal note links resolve.** `applenotes:note/UUID` links were looked up by the wrong key and never rewrote in HTML or Markdown exports.
+* **Unfiled notes** land in the account's default folder instead of a synthetic "Unknown Folder", and the folder is matched by Apple's own marker so localized libraries work.
+* **Full Disk Access** registration uses an absolute path, and the app now explains how to add itself to the list if it does not appear.
+* **Database access is serialized**, fixing intermittent "no accounts found" failures in the GUI.
+* **EPUBs open in Apple Books** (correct EPUB 3 OCF layout), plus DOCX/ODT fixes.
+* **A working Help menu.** It previously raised "Help isn't available for Apple Notes Exporter"; it now links to the documentation, Full Disk Access setup, and the issue tracker.
+* **Mistyped folder filters fail loudly.** `--folder` with a name that matches nothing used to fall through to "no filter" and export the entire library; it now errors and lists the folders that do exist.
+* **Incremental sync no longer deletes filtered-out notes.** Pruning is judged against the whole library rather than the current run's selection, so exporting one folder into an existing sync directory does not remove the others.
+
 ## What's New in v2.0
 
 * **Command-line interface** (`notes-export`) with subcommands for listing accounts, folders, and notes, plus full export support. JSON output for scripting.
@@ -60,7 +77,7 @@ Attachments are always saved in a folder corresponding to the name/title of the 
 
 ## Scripting & Automation
 
-In addition to the GUI app, v2.0 ships three ways to drive the exporter from other tools:
+In addition to the GUI app, Apple Notes Exporter ships three ways to drive the exporter from other tools:
 
 ### Command-line interface (`notes-export`)
 

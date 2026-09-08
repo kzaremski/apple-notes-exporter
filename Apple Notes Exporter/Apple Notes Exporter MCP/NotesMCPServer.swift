@@ -43,7 +43,7 @@ struct NotesMCPServer {
     }
 
     static func runServer() async throws {
-        let marketingVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0"
+        let marketingVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1"
         let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
 
         let server = Server(

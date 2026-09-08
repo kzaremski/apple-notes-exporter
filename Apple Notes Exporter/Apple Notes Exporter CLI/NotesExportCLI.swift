@@ -83,7 +83,7 @@ struct NotesExportCLI: AsyncParsableCommand {
           notes-export sync-status -o ~/backups/notes
         """,
         version: {
-            let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0"
+            let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1"
             let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
             return "\(marketing).\(build)"
         }(),
