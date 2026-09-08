@@ -34,6 +34,9 @@
 		A763A884FDDA01ABEE1BEE17 /* ExportConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83A62FC148D1934031FD191 /* ExportConfiguration.swift */; };
 		A8F32496C70C760F63A553A8 /* ExportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF86799EAEEA063229FD0106 /* ExportViewModel.swift */; };
 		AAAA000000000002LICENSES /* Licenses in Resources */ = {isa = PBXBuildFile; fileRef = AAAA000000000001LICENSES /* Licenses */; };
+		AP0000000000000000ENGN /* CLIExportEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000002ENGN /* CLIExportEngine.swift */; };
+		AP0000000000000000ERRO /* CLIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000004ERRO /* CLIError.swift */; };
+		AP0000000000000000OUTP /* CLIOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000003OUTP /* CLIOutput.swift */; };
 		B2D4E9A1F3C8A7B5D6E0F123 /* SyncManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A3F7B2E4C9D8A6F5B0E234 /* SyncManifest.swift */; };
 		BB000000000000000001MAIN /* NotesExportCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000001MAIN /* NotesExportCLI.swift */; };
 		BB000000000000000002ENGN /* CLIExportEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000002ENGN /* CLIExportEngine.swift */; };
@@ -675,6 +678,9 @@
 				B2D4E9A1F3C8A7B5D6E0F123 /* SyncManifest.swift in Sources */,
 				CD247032451BCF2264B446AC /* FormatOptionsView.swift in Sources */,
 				F6A42B2B6E8AFF8161AA22CE /* HTMLAttachmentProcessor.swift in Sources */,
+				AP0000000000000000ENGN /* CLIExportEngine.swift in Sources */,
+				AP0000000000000000OUTP /* CLIOutput.swift in Sources */,
+				AP0000000000000000ERRO /* CLIError.swift in Sources */,
 				MS0000000000000000APPBF /* MCPSetupView.swift in Sources */,
 				BBBB000000000002HTMLGEN /* NoteHTMLGenerator.swift in Sources */,
 			);
