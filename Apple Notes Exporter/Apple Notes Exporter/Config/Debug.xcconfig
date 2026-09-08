@@ -1,0 +1,15 @@
+// Debug.xcconfig -- base configuration for Debug builds of the app, CLI, and
+// MCP server.
+//
+// Debug builds must be properly signed: unsigned or ad-hoc binaries often do
+// not appear in Full Disk Access and fail to register App Intents (linkd 4097).
+// See CONTRIBUTING.md. `make build` still overrides these on the command line
+// for contributors without a developer certificate.
+
+#include "Signing.xcconfig"
+#include "Version.xcconfig"
+
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_IDENTITY[sdk=macosx*] = Apple Development
+PROVISIONING_PROFILE_SPECIFIER =

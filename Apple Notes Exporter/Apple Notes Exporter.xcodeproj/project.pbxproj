@@ -30,9 +30,6 @@
 		8A94616573DA263AAD9AA0FB /* NotesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112D188009F1E92C1561588B /* NotesRepository.swift */; };
 		8D4C76EB0567C11E57ADAA1B /* TableParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A703BDEDC79C3484E6F80575 /* TableParser.swift */; };
 		981EF032D162367F78219491 /* NotesNote+Export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */; };
-		EI000000000000000001APPS /* EmbeddedImageHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EI0000000000000000000FR /* EmbeddedImageHelper.swift */; };
-		EI000000000000000002CLIS /* EmbeddedImageHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EI0000000000000000000FR /* EmbeddedImageHelper.swift */; };
-		EI000000000000000003MCPS /* EmbeddedImageHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EI0000000000000000000FR /* EmbeddedImageHelper.swift */; };
 		A4F0225E1D3DAA18CE0DE934 /* NotesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D09E1923B3E3C03B035AEB /* NotesViewModel.swift */; };
 		A763A884FDDA01ABEE1BEE17 /* ExportConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83A62FC148D1934031FD191 /* ExportConfiguration.swift */; };
 		A8F32496C70C760F63A553A8 /* ExportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF86799EAEEA063229FD0106 /* ExportViewModel.swift */; };
@@ -73,6 +70,9 @@
 		EE000000000000000100SUPP /* ExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000XSUPP /* ExportSupport.swift */; };
 		EE000000000000000101SUPP /* ExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000XSUPP /* ExportSupport.swift */; };
 		EE000000000000000102SUPP /* ExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE00000000000000000XSUPP /* ExportSupport.swift */; };
+		EI000000000000000001APPS /* EmbeddedImageHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EI0000000000000000000FR /* EmbeddedImageHelper.swift */; };
+		EI000000000000000002CLIS /* EmbeddedImageHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EI0000000000000000000FR /* EmbeddedImageHelper.swift */; };
+		EI000000000000000003MCPS /* EmbeddedImageHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EI0000000000000000000FR /* EmbeddedImageHelper.swift */; };
 		F6A42B2B6E8AFF8161AA22CE /* HTMLAttachmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E296FC967ECC48BECE58F68 /* HTMLAttachmentProcessor.swift */; };
 		MC000000000000000001KITC /* AppleNotesKit.c in Sources */ = {isa = PBXBuildFile; fileRef = 2508168E2F527B6400CD5778 /* AppleNotesKit.c */; };
 		MC000000000000000002MODS /* NotesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 213C2B20532A819D34D10996 /* NotesModels.swift */; };
@@ -186,7 +186,6 @@
 		25A01F112E8F3FBE00C7D9FA /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		25EB771F2BFA9E2600A35E62 /* ScriptingBridge.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ScriptingBridge.framework; path = System/Library/Frameworks/ScriptingBridge.framework; sourceTree = SDKROOT; };
 		4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "NotesNote+Export.swift"; path = "Models/NotesNote+Export.swift"; sourceTree = "<group>"; };
-		EI0000000000000000000FR /* EmbeddedImageHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EmbeddedImageHelper.swift; path = Models/EmbeddedImageHelper.swift; sourceTree = "<group>"; };
 		5E296FC967ECC48BECE58F68 /* HTMLAttachmentProcessor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HTMLAttachmentProcessor.swift; sourceTree = "<group>"; };
 		A703BDEDC79C3484E6F80575 /* TableParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TableParser.swift; sourceTree = "<group>"; };
 		AA000000000000000001MAIN /* NotesExportCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesExportCLI.swift; sourceTree = "<group>"; };
@@ -212,11 +211,15 @@
 		D1A3F7B2E4C9D8A6F5B0E234 /* SyncManifest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SyncManifest.swift; path = Models/SyncManifest.swift; sourceTree = "<group>"; };
 		DF86799EAEEA063229FD0106 /* ExportViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExportViewModel.swift; path = ViewModels/ExportViewModel.swift; sourceTree = "<group>"; };
 		EE00000000000000000XSUPP /* ExportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSupport.swift; sourceTree = "<group>"; };
+		EI0000000000000000000FR /* EmbeddedImageHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EmbeddedImageHelper.swift; path = Models/EmbeddedImageHelper.swift; sourceTree = "<group>"; };
 		F873000AF0346FE18B1971CF /* FormatOptionsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FormatOptionsView.swift; sourceTree = "<group>"; };
 		TT000000000000000000ESPF /* ExportSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSupportTests.swift; sourceTree = "<group>"; };
 		TT000000000000000002DRPF /* DOCXRoundtripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DOCXRoundtripTests.swift; sourceTree = "<group>"; };
 		TT000000000000000004MEPF /* MarkdownExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownExportTests.swift; sourceTree = "<group>"; };
 		XC000000000000000001SIGN /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Signing.xcconfig; path = Config/Signing.xcconfig; sourceTree = "<group>"; };
+		XC000000000000000002DBUG /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Config/Debug.xcconfig; sourceTree = "<group>"; };
+		XC000000000000000003RLSE /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Config/Release.xcconfig; sourceTree = "<group>"; };
+		XC000000000000000004VERS /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Version.xcconfig; path = Config/Version.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -343,7 +346,10 @@
 				F873000AF0346FE18B1971CF /* FormatOptionsView.swift */,
 				BBBB000000000001HTMLGEN /* NoteHTMLGenerator.swift */,
 				80A04E9746F5F871E62EEA87 /* Apple Notes Exporter */,
+				XC000000000000000002DBUG /* Debug.xcconfig */,
+				XC000000000000000003RLSE /* Release.xcconfig */,
 				XC000000000000000001SIGN /* Signing.xcconfig */,
+				XC000000000000000004VERS /* Version.xcconfig */,
 			);
 			path = "Apple Notes Exporter";
 			sourceTree = "<group>";
@@ -808,7 +814,6 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = Q7TB7B38LW;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -873,7 +878,6 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = Q7TB7B38LW;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -897,16 +901,13 @@
 		};
 		258D3AB529A7CC2F00858CE1 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = XC000000000000000002DBUG /* Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter/Apple_Notes_Exporter.entitlements";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -922,10 +923,8 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
-				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Apple Notes Exporter/AppleNotesKit/AppleNotesKit-Bridging-Header.h";
 				SWIFT_PRECOMPILE_BRIDGING_HEADER = NO;
@@ -935,16 +934,13 @@
 		};
 		258D3AB629A7CC2F00858CE1 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = XC000000000000000003RLSE /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter/Apple_Notes_Exporter.entitlements";
-				CODE_SIGN_IDENTITY = "Developer ID Application";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
-				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Apple Notes Exporter/Preview Content\"";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -960,10 +956,8 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.0;
-				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Apple Notes Exporter/AppleNotesKit/AppleNotesKit-Bridging-Header.h";
 				SWIFT_PRECOMPILE_BRIDGING_HEADER = NO;
@@ -1041,17 +1035,14 @@
 		};
 		FF000000000000000001DBUG /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = XC000000000000000002DBUG /* Debug.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter CLI/AppleNotesExporterCLI.entitlements";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 2.0;
 				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterCLI;
 				PRODUCT_NAME = "notes-export";
@@ -1064,20 +1055,17 @@
 		};
 		FF000000000000000002RLSE /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = XC000000000000000003RLSE /* Release.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter CLI/AppleNotesExporterCLI.entitlements";
-				CODE_SIGN_IDENTITY = "Developer ID Application";
-				CODE_SIGN_STYLE = Manual;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 2.0;
 				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterCLI;
 				PRODUCT_NAME = "notes-export";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OBJC_BRIDGING_HEADER = "Apple Notes Exporter/AppleNotesKit/AppleNotesKit-Bridging-Header.h";
@@ -1089,17 +1077,14 @@
 		};
 		FF000000000000000003DBUG /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = XC000000000000000002DBUG /* Debug.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter MCP/AppleNotesExporterMCP.entitlements";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 2.0;
 				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterMCP;
 				PRODUCT_NAME = "notes-export-mcp";
@@ -1112,21 +1097,17 @@
 		};
 		FF000000000000000004RLSE /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = XC000000000000000003RLSE /* Release.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "Apple Notes Exporter MCP/AppleNotesExporterMCP.entitlements";
-				CODE_SIGN_IDENTITY = "Developer ID Application";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
-				CODE_SIGN_STYLE = Manual;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 2.0;
 				OTHER_SWIFT_FLAGS = "-DCLI_TARGET";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zaremski.AppleNotesExporterMCP;
 				PRODUCT_NAME = "notes-export-mcp";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OBJC_BRIDGING_HEADER = "Apple Notes Exporter/AppleNotesKit/AppleNotesKit-Bridging-Header.h";

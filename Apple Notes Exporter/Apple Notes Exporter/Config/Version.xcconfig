@@ -1,0 +1,7 @@
+// Version.xcconfig -- single place to bump the version for the app, the CLI,
+// and the MCP server. Keeping these out of project.pbxproj means a release
+// bump is a one-line diff in a plain text file instead of six scattered edits
+// in the project file (which is CODEOWNERS-gated).
+
+MARKETING_VERSION = 2.1
+CURRENT_PROJECT_VERSION = 1

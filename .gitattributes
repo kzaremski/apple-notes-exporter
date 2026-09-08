@@ -1,0 +1,19 @@
+# Xcode project file.
+#
+# Never auto-merge it. Git's line-based merge happily produces a project.pbxproj
+# that parses and opens but builds wrong: duplicated build-phase entries, target
+# membership applied to one target and not its sibling. Unsetting `merge` makes
+# git declare a conflict instead, so the file gets resolved deliberately (open
+# both versions in Xcode, or re-apply the change on top of theirs).
+*.pbxproj -merge text eol=lf
+
+# Keep the other Xcode text files normalized so a Windows or WSL checkout does
+# not rewrite every line.
+*.xcscheme  text eol=lf
+*.xcconfig  text eol=lf
+*.entitlements text eol=lf
+*.plist     text eol=lf
+
+# Generated: collapse it in PR diffs by default.
+# (paths with spaces are not expressible here, so match on the basename)
+notestore.pb.swift linguist-generated=true
