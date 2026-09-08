@@ -106,7 +106,20 @@ To run `notes-export` from a Shortcuts **Run Shell Script** action without openi
 
 ### Model Context Protocol server (`notes-export-mcp`)
 
-An MCP server exposing five tools (`list_accounts`, `list_folders`, `list_notes`, `get_note`, `export_note`) so AI assistants like Claude Desktop can read and export your notes directly. See [PR #30](https://github.com/kzaremski/apple-notes-exporter/pull/30) for details.
+An MCP server so AI assistants like Claude Desktop can read and export your notes directly. Six tools:
+
+| Tool | Purpose |
+|------|---------|
+| `list_accounts` | Available note accounts. |
+| `list_folders` | Folders, optionally filtered by account. |
+| `list_notes` | Notes with folder, account, title and date filtering. `include_content` embeds plaintext. |
+| `get_note` | One note's full content by id, rendered as Markdown, HTML, or any other text format, plus its attachment list. |
+| `export_notes` | Run a partial or full export with every option the CLI supports, including `zip`, `concatenate` and `incremental`. |
+| `sync_status` | Incremental sync state of an output directory, without opening the Notes database. |
+
+`export_notes` only writes under `$HOME` or `/tmp`, so adversarial note content cannot steer an assistant into writing to sensitive locations.
+
+The app can set this up for you: **Help > Connect to an AI Assistant...** shows the server path and a Claude Desktop config block to copy. Note content is user-authored and should be treated as untrusted input.
 
 All three require Full Disk Access (same as the GUI app) to read the local Notes database.
 

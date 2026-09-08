@@ -616,6 +616,17 @@ actor CLIExportEngine {
         }
     }
 
+    /// Render one note in a text format, without writing anything to disk.
+    ///
+    /// Lets a caller read a note's actual content (formatting, links, tables)
+    /// rather than only the plaintext the database stores alongside it.
+    func renderNote(_ note: NotesNote, as format: ExportFormat) async throws -> String {
+        guard !format.isBinaryFormat else {
+            throw CLIError.unsupportedFormat(format)
+        }
+        return try await generateContent(for: note, format: format)
+    }
+
     private func generateContent(
         for note: NotesNote,
         format: ExportFormat,
