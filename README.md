@@ -71,7 +71,7 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 * **ADOC** - AsciiDoc format for technical documentation.
 
 ### Interchange formats
-* **ENEX** - Evernote export format for import into Evernote, Joplin, and similar apps.
+* **ENEX** - Evernote export format for import into Evernote, Joplin, and similar apps. Images are written as `<resource>` elements referenced by `<en-media>`, so note content stays within Evernote's 5 MB `EDAM_NOTE_CONTENT_LEN_MAX`; output validates against `enml2.dtd` and `evernote-export3.dtd`.
 
 Attachments are always saved in a folder corresponding to the name/title of the note that they are associated with.
 

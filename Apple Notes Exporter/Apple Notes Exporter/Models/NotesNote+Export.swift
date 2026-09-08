@@ -18,7 +18,9 @@
 //  along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
+import CryptoKit
 import Foundation
+import OSLog
 
 // MARK: - Export Format Converters
 
@@ -1279,54 +1281,294 @@ private struct HTMLToLatexConverter {
 // MARK: - ENEX (Evernote Export) Converter
 
 private struct HTMLToENEXConverter {
-    static func convert(_ note: NotesNote) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
+    /// Evernote's documented ceiling on a single note's ENML content.
+    /// EDAM_NOTE_CONTENT_LEN_MAX in Limits.thrift.
+    static let contentLengthMax = 5_242_880
+    /// Ceiling on a whole note including its resources, for a free account.
+    /// EDAM_NOTE_SIZE_MAX_FREE. Premium is 200 MB.
+    static let noteSizeMaxFree = 26_214_400
 
-        // ENEX uses a specific date format: yyyyMMdd'T'HHmmss'Z'
+    /// Elements ENML 2.0 permits. Anything else is unwrapped: the tag goes,
+    /// its text stays. Taken from the element list in enml2.dtd.
+    static let allowedElements: Set<String> = [
+        "en-note", "en-crypt", "en-todo", "en-media",
+        "a", "abbr", "acronym", "address", "area", "b", "bdo", "big", "blockquote",
+        "br", "caption", "center", "cite", "code", "col", "colgroup", "dd", "del",
+        "dfn", "div", "dl", "dt", "em", "font", "h1", "h2", "h3", "h4", "h5", "h6",
+        "hr", "i", "img", "ins", "kbd", "li", "map", "ol", "p", "pre", "q", "s",
+        "samp", "small", "span", "strike", "strong", "sub", "sup", "table",
+        "tbody", "td", "tfoot", "th", "thead", "tr", "tt", "u", "ul", "var"
+    ]
+
+    /// ENML's %coreattrs; and %i18n; are only these. Notably absent: class and
+    /// id, which Apple's HTML does emit.
+    static let globalAttributes: Set<String> = ["style", "title", "lang", "xml:lang", "dir"]
+
+    /// Per-element attributes beyond the global set, for the elements we emit.
+    static let elementAttributes: [String: Set<String>] = [
+        "a": ["href", "name", "target", "rel"],
+        "img": ["src", "alt", "height", "width", "align", "border"],
+        "en-media": ["type", "hash", "height", "width", "align"],
+        "font": ["size", "color", "face"],
+        "table": ["border", "cellpadding", "cellspacing", "width", "align", "bgcolor"],
+        "td": ["colspan", "rowspan", "align", "valign", "width", "height", "bgcolor"],
+        "th": ["colspan", "rowspan", "align", "valign", "width", "height", "bgcolor"],
+        "tr": ["align", "valign", "bgcolor"],
+        "ol": ["start", "type"], "ul": ["type"], "li": ["value", "type"],
+        "col": ["span", "width", "align"], "colgroup": ["span", "width", "align"]
+    ]
+
+    static func convert(_ note: NotesNote) -> String {
         let enexFormatter = DateFormatter()
         enexFormatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
         enexFormatter.timeZone = TimeZone(identifier: "UTC")
 
-        let bodyContent: String
+        var bodyContent: String
         if let html = note.htmlBody {
-            // Extract body content or use the whole thing
+            // The note's own <html><body> is nested inside the export wrapper's,
+            // so the first </body> closes the inner one and would cut the
+            // enclosing markup in half. Take the outermost span; the sanitiser
+            // drops the nested html/body tags since ENML defines neither.
             if let bodyStart = html.range(of: "<body>"),
-               let bodyEnd = html.range(of: "</body>") {
+               let bodyEnd = html.range(of: "</body>", options: .backwards) {
                 bodyContent = String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
             } else {
                 bodyContent = html
             }
         } else {
-            bodyContent = note.plaintext.replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
+            bodyContent = HTMLToXMLConverter.escapeXML(note.plaintext)
         }
 
-        // Build ENEX-compatible XHTML content
-        // Evernote requires en-note wrapper with specific DTD
+        // Images move out of the content and into <resource> elements. Left
+        // inline as base64 data: URIs they push a single note far past
+        // EDAM_NOTE_CONTENT_LEN_MAX, which is what makes Evernote hang on
+        // import; as resources they count against the much larger per-resource
+        // limit instead, and the content stays a few KB of markup.
+        let (withMarkers, images) = EmbeddedImageExtractor.extract(html: bodyContent, startingRId: 1)
+        var resources: [String] = []
+        var enmlBody = withMarkers
+
+        for image in images {
+            let mime = mimeType(forExtension: image.ext)
+            let hash = md5Hex(image.data)
+            var media = "<en-media type=\"\(mime)\" hash=\"\(hash)\""
+            if let w = image.widthPx { media += " width=\"\(w)\"" }
+            if let h = image.heightPx { media += " height=\"\(h)\"" }
+            media += "/>"
+            enmlBody = enmlBody.replacingOccurrences(of: "<imgref id=\"\(image.rId)\"/>", with: media)
+            resources.append(resourceElement(for: image, mime: mime))
+        }
+
+        enmlBody = sanitizeENML(enmlBody)
+
         let enContent = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">
-        <en-note>\(bodyContent)</en-note>
+        <en-note>\(enmlBody)</en-note>
         """
+
+        if enContent.utf8.count > contentLengthMax {
+            // Still over after moving images out: a genuinely enormous note.
+            // Say so rather than writing a file Evernote will choke on.
+            Logger.noteExport.warning(
+                "ENEX content for '\(note.title, privacy: .public)' is \(enContent.utf8.count) bytes, over Evernote's \(contentLengthMax) byte limit; the note may fail to import."
+            )
+        }
 
         var lines: [String] = []
         lines.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-        lines.append("<!DOCTYPE en-export SYSTEM \"http://xml.evernote.com/pub/evernote-export4.dtd\">")
-        lines.append("<en-export export-date=\"\(enexFormatter.string(from: Date()))\" application=\"Apple Notes Exporter\">")
+        // export3 is the widely supported declaration. export4 only adds task
+        // and reminder elements, which we do not emit.
+        lines.append("<!DOCTYPE en-export SYSTEM \"http://xml.evernote.com/pub/evernote-export3.dtd\">")
+        lines.append("<en-export export-date=\"\(enexFormatter.string(from: Date()))\" application=\"Apple Notes Exporter\" version=\"2.1\">")
         lines.append("  <note>")
         lines.append("    <title>\(HTMLToXMLConverter.escapeXML(note.title))</title>")
-        lines.append("    <content><![CDATA[\(enContent)]]></content>")
+        lines.append("    <content><![CDATA[\(escapeForCDATA(enContent))]]></content>")
         lines.append("    <created>\(enexFormatter.string(from: note.creationDate))</created>")
         lines.append("    <updated>\(enexFormatter.string(from: note.modificationDate))</updated>")
         lines.append("    <note-attributes>")
         lines.append("      <source>apple-notes-exporter</source>")
         lines.append("    </note-attributes>")
+        // The DTD orders <note> as (title, content, created?, updated?, tag*,
+        // note-attributes?, resource*), so resources come last.
+        lines.append(contentsOf: resources)
         lines.append("  </note>")
         lines.append("</en-export>")
 
+        let output = lines.joined(separator: "\n")
+        // Content is small once images become resources, but the resources
+        // themselves still count toward the per-note ceiling.
+        if output.utf8.count > noteSizeMaxFree {
+            Logger.noteExport.warning(
+                "ENEX note '\(note.title, privacy: .public)' totals \(output.utf8.count) bytes with its attachments, over the \(noteSizeMaxFree) byte limit for a free Evernote account; import may be rejected."
+            )
+        }
+        return output
+    }
+
+    // MARK: - Resources
+
+    private static func resourceElement(for image: EmbeddedImageRef, mime: String) -> String {
+        var out: [String] = []
+        out.append("    <resource>")
+        // Wrapped at 76 columns: an unwrapped payload puts the whole image on
+        // one line, which is hostile to every XML reader downstream.
+        out.append("      <data encoding=\"base64\">")
+        out.append(wrapBase64(image.data.base64EncodedString()))
+        out.append("      </data>")
+        out.append("      <mime>\(mime)</mime>")
+        if let w = image.widthPx { out.append("      <width>\(w)</width>") }
+        if let h = image.heightPx { out.append("      <height>\(h)</height>") }
+        out.append("      <resource-attributes>")
+        out.append("        <file-name>\(image.rId).\(image.ext)</file-name>")
+        out.append("      </resource-attributes>")
+        out.append("    </resource>")
+        return out.joined(separator: "\n")
+    }
+
+    private static func wrapBase64(_ encoded: String, width: Int = 76) -> String {
+        var lines: [String] = []
+        var index = encoded.startIndex
+        while index < encoded.endIndex {
+            let end = encoded.index(index, offsetBy: width, limitedBy: encoded.endIndex) ?? encoded.endIndex
+            lines.append(String(encoded[index..<end]))
+            index = end
+        }
         return lines.joined(separator: "\n")
+    }
+
+    private static func md5Hex(_ data: Data) -> String {
+        // en-media's hash is the MD5 of the raw bytes, not of the base64.
+        Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func mimeType(forExtension ext: String) -> String {
+        switch ext.lowercased() {
+        case "png":          return "image/png"
+        case "jpg", "jpeg":  return "image/jpeg"
+        case "gif":          return "image/gif"
+        case "tif", "tiff":  return "image/tiff"
+        case "bmp":          return "image/bmp"
+        case "heic":         return "image/heic"
+        case "webp":         return "image/webp"
+        case "pdf":          return "application/pdf"
+        default:             return "application/octet-stream"
+        }
+    }
+
+    // MARK: - ENML sanitising
+
+    /// A CDATA section ends at the first "]]>", so a literal one in the content
+    /// would truncate the note. Split it across two sections.
+    private static func escapeForCDATA(_ text: String) -> String {
+        text.replacingOccurrences(of: "]]>", with: "]]]]><![CDATA[>")
+    }
+
+    /// Drop elements ENML does not define and attributes it does not permit.
+    /// Unknown elements are unwrapped rather than deleted so their text
+    /// survives; <style> and <script> are removed outright, contents included.
+    static func sanitizeENML(_ html: String) -> String {
+        var working = html
+        // head carries <title> and <style>, neither of which ENML defines;
+        // unwrapping them would leak their text into the note body.
+        for tag in ["head", "style", "script"] {
+            while let open = working.range(of: "<\(tag)", options: .caseInsensitive),
+                  let close = working.range(of: "</\(tag)>", options: .caseInsensitive, range: open.upperBound..<working.endIndex) {
+                working.removeSubrange(open.lowerBound..<close.upperBound)
+            }
+        }
+
+        // ENML has to be well-formed XML, but the HTML feeding it is not
+        // guaranteed to be: elements arrive unclosed, and closing tags arrive
+        // for elements that were never opened. Track the open elements so the
+        // result balances whatever the input did.
+        var out = ""
+        var openStack: [String] = []
+        var index = working.startIndex
+
+        while index < working.endIndex {
+            guard working[index] == "<", let close = working[index...].firstIndex(of: ">") else {
+                out.append(working[index])
+                index = working.index(after: index)
+                continue
+            }
+            let tagText = String(working[index...close])
+            index = working.index(after: close)
+
+            let rendered = rewriteTag(tagText)
+            guard !rendered.isEmpty else { continue }
+
+            if rendered.hasPrefix("</") {
+                let name = String(rendered.dropFirst(2).dropLast())
+                // A close with no matching open is noise; drop it rather than
+                // emitting a tag that would make the document invalid.
+                guard let depth = openStack.lastIndex(of: name) else { continue }
+                // Anything opened inside it has to close first.
+                while openStack.count > depth {
+                    out += "</\(openStack.removeLast())>"
+                }
+            } else {
+                out += rendered
+                if !rendered.hasSuffix("/>") {
+                    openStack.append(String(rendered.dropFirst().prefix(while: { $0 != " " && $0 != ">" })))
+                }
+            }
+        }
+
+        while let name = openStack.popLast() { out += "</\(name)>" }
+        return out
+    }
+
+    private static func rewriteTag(_ tagText: String) -> String {
+        // Comments and declarations have no place in ENML content.
+        if tagText.hasPrefix("<!") || tagText.hasPrefix("<?") { return "" }
+
+        let isClosing = tagText.hasPrefix("</")
+        let inner = tagText.dropFirst(isClosing ? 2 : 1).dropLast()
+        let selfClosing = inner.hasSuffix("/")
+        let body = selfClosing ? String(inner.dropLast()) : String(inner)
+
+        guard let name = body.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).first
+                .map({ String($0).lowercased() }) else { return "" }
+        guard allowedElements.contains(name) else { return "" }
+        if isClosing { return "</\(name)>" }
+
+        let permitted = globalAttributes.union(elementAttributes[name] ?? [])
+        var kept: [String] = []
+        for (attr, value) in parseAttributes(String(body.dropFirst(name.count))) where permitted.contains(attr.lowercased()) {
+            kept.append("\(attr)=\"\(value)\"")
+        }
+
+        let attrs = kept.isEmpty ? "" : " " + kept.joined(separator: " ")
+        return selfClosing || name == "br" || name == "hr" || name == "img" || name == "en-media"
+            ? "<\(name)\(attrs)/>"
+            : "<\(name)\(attrs)>"
+    }
+
+    private static func parseAttributes(_ text: String) -> [(String, String)] {
+        var result: [(String, String)] = []
+        var index = text.startIndex
+        while index < text.endIndex {
+            while index < text.endIndex, text[index] == " " || text[index] == "\t" || text[index] == "\n" {
+                index = text.index(after: index)
+            }
+            guard index < text.endIndex, let eq = text[index...].firstIndex(of: "=") else { break }
+            let name = String(text[index..<eq]).trimmingCharacters(in: .whitespacesAndNewlines)
+            var valueStart = text.index(after: eq)
+            guard valueStart < text.endIndex else { break }
+            let quote = text[valueStart]
+            guard quote == "\"" || quote == "'" else { break }
+            valueStart = text.index(after: valueStart)
+            guard let valueEnd = text[valueStart...].firstIndex(of: quote) else { break }
+            let raw = String(text[valueStart..<valueEnd])
+            if !name.isEmpty {
+                // Re-escape so a quote or ampersand in the value cannot break
+                // the attribute or the surrounding XML.
+                result.append((name, HTMLToXMLConverter.escapeXML(raw).replacingOccurrences(of: "\"", with: "&quot;")))
+            }
+            index = text.index(after: valueEnd)
+        }
+        return result
     }
 }
 

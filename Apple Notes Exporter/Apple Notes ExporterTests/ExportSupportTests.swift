@@ -689,6 +689,95 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertFalse(path.isEmpty)
     }
 
+    // MARK: - ENEX / ENML
+
+    private func enexNote(html: String, title: String = "Note") -> NotesNote {
+        NotesNote(
+            id: "1", title: title, plaintext: "", htmlBody: html,
+            creationDate: Date(timeIntervalSince1970: 1_400_000_000),
+            modificationDate: Date(timeIntervalSince1970: 1_400_000_000),
+            folderId: "10", accountId: "1", attachments: []
+        )
+    }
+
+    /// A 1x1 PNG, so the converter has real bytes to hash and encode.
+    private static let onePixelPNG =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+    func test_enex_movesEmbeddedImagesIntoResources() {
+        let html = "<html><body><p>Before</p><img src=\"data:image/png;base64,\(Self.onePixelPNG)\" alt=\"x\"><p>After</p></body></html>"
+        let enex = enexNote(html: html).toENEX()
+
+        XCTAssertTrue(enex.contains("<resource>"), "image should become a resource")
+        XCTAssertTrue(enex.contains("<en-media"), "content should reference the resource")
+        XCTAssertFalse(enex.contains("data:image"), "no base64 should remain inline in the content")
+        XCTAssertTrue(enex.contains("<mime>image/png</mime>"))
+    }
+
+    func test_enex_enMediaHashMatchesResourceBytes() throws {
+        let html = "<body><img src=\"data:image/png;base64,\(Self.onePixelPNG)\"></body>"
+        let enex = enexNote(html: html).toENEX()
+
+        let hashes = matches(in: enex, pattern: #"<en-media[^>]*hash="([0-9a-f]{32})""#)
+        XCTAssertEqual(hashes.count, 1)
+
+        // The hash must be the MD5 of the decoded bytes, not of the base64.
+        let payloads = matches(in: enex, pattern: #"<data encoding="base64">\s*([A-Za-z0-9+/=\s]+?)\s*</data>"#)
+        XCTAssertEqual(payloads.count, 1)
+        let raw = try XCTUnwrap(Data(base64Encoded: payloads[0].replacingOccurrences(of: "\n", with: "")))
+        XCTAssertEqual(raw, Data(base64Encoded: Self.onePixelPNG))
+    }
+
+    func test_enex_stripsAttributesENMLDoesNotAllow() {
+        // %coreattrs; in enml2.dtd is style and title only; class and id are not there.
+        let html = "<body><div class=\"x\" id=\"y\" style=\"color:red\">Text</div></body>"
+        let enex = enexNote(html: html).toENEX()
+        XCTAssertFalse(enex.contains("class="))
+        XCTAssertFalse(enex.contains("id="))
+        XCTAssertTrue(enex.contains("style="), "style is permitted and should survive")
+    }
+
+    func test_enex_balancesUnclosedTags() {
+        // The note HTML nests its own <html><body> inside the wrapper's, which
+        // leaves elements open once the body span is taken.
+        let html = "<body><div><p>Unclosed"
+        let enex = enexNote(html: html).toENEX()
+        let content = try? XCTUnwrap(enex.range(of: "<![CDATA["))
+        XCTAssertNotNil(content)
+        XCTAssertEqual(count(of: "<div", in: enex), count(of: "</div>", in: enex))
+        XCTAssertEqual(count(of: "<p", in: enex), count(of: "</p>", in: enex))
+    }
+
+    func test_enex_escapesCDATATerminator() {
+        let html = "<body><p>a ]]> b</p></body>"
+        let enex = enexNote(html: html).toENEX()
+        // Exactly one CDATA section may close the content element.
+        XCTAssertTrue(enex.contains("]]]]><![CDATA[>"), "the terminator must be split")
+    }
+
+    func test_enex_declaresExport3AndDropsDisallowedElements() {
+        let html = "<html><head><title>T</title><style>p{color:red}</style></head><body><script>evil()</script><p>Keep</p></body></html>"
+        let enex = enexNote(html: html).toENEX()
+        XCTAssertTrue(enex.contains("evernote-export3.dtd"))
+        XCTAssertFalse(enex.contains("<script"))
+        XCTAssertFalse(enex.contains("<style"))
+        XCTAssertFalse(enex.contains("evil()"), "script contents must go, not just the tag")
+        XCTAssertFalse(enex.contains("<title>T</title>"), "head contents must not leak into the body")
+        XCTAssertTrue(enex.contains("Keep"))
+    }
+
+    private func matches(in text: String, pattern: String) -> [String] {
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return [] }
+        let ns = text as NSString
+        return re.matches(in: text, range: NSRange(location: 0, length: ns.length)).map {
+            ns.substring(with: $0.range(at: 1))
+        }
+    }
+
+    private func count(of needle: String, in text: String) -> Int {
+        text.components(separatedBy: needle).count - 1
+    }
+
     // MARK: - zipDirectory
 
     func test_zipDirectory_producesAnArchiveThatRoundTrips() throws {
