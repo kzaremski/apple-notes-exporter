@@ -80,6 +80,7 @@ actor CLIExportEngine {
         format: ExportFormat,
         includeAttachments: Bool,
         verbose: Bool,
+        allKnownNoteIds: Set<String>? = nil,
         progressHandler: @Sendable @escaping (Int, Int) -> Void
     ) async throws -> ExportResult {
         let startTime = Date()
@@ -90,13 +91,40 @@ actor CLIExportEngine {
         let syncTracker: SyncManifestTracker?
 
         let notesToExport: [NotesNote]
-        if isSync, let manifest = existingManifest {
+        var activeManifest = existingManifest
+        if isSync, var manifest = existingManifest {
+            // Repair entries that point somewhere the note no longer belongs.
+            // Older versions parked unresolvable notes in "Unknown Folder" and
+            // then overwrote them there forever; the same applies to a note the
+            // user has since moved between folders in Apple Notes.
+            let accounts = try await repository.fetchAccounts()
+            let folders = try await repository.fetchFolders()
+            var accountLookup: [String: String] = [:]
+            for account in accounts { accountLookup[account.id] = account.name }
+            var folderLookup: [String: NotesFolder] = [:]
+            for folder in folders { folderLookup[folder.id] = folder }
+
+            let relocated = healManifestPaths(
+                manifest: &manifest,
+                notes: notes,
+                accountLookup: accountLookup,
+                folderLookup: folderLookup,
+                outputRoot: outputURL
+            )
+            if verbose && !relocated.isEmpty {
+                CLIOutput.writeStderr("Relocating \(relocated.count) note(s) whose export folder changed.")
+            }
+            activeManifest = manifest
+
             notesToExport = manifest.notesNeedingExport(from: notes)
             syncTracker = SyncManifestTracker(manifest: manifest)
             if notesToExport.isEmpty {
                 // Nothing to re-export, but we still need to prune notes that
                 // have been deleted from Apple Notes since the last sync.
-                let presentIds = Set(notes.map { $0.id })
+                // Prune against every note in the library, not just this
+                // run's selection: a narrower --folder must not make previously
+                // exported notes look deleted and take their files with it.
+                let presentIds = allKnownNoteIds.map { $0.union(notes.map(\.id)) } ?? Set(notes.map(\.id))
                 let removed = await syncTracker!.pruneDeleted(presentNoteIds: presentIds)
                 for pruned in removed {
                     deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
@@ -179,7 +207,7 @@ actor CLIExportEngine {
                 includeAttachments: includeAttachments,
                 totalNotes: notesToExport.count, startTime: startTime,
                 syncTracker: syncTracker,
-                syncManifest: existingManifest,
+                syncManifest: activeManifest,
                 outputRootURL: outputURL,
                 verbose: verbose, tracker: tracker,
                 progressHandler: progressHandler
@@ -191,7 +219,9 @@ actor CLIExportEngine {
 
         // Prune deleted notes from the manifest, remove their files, then save.
         if let syncTracker = syncTracker {
-            let presentIds = Set(notes.map { $0.id })
+            // See above: "present" means present in Apple Notes, not present
+            // in this run's filtered selection.
+            let presentIds = allKnownNoteIds.map { $0.union(notes.map(\.id)) } ?? Set(notes.map(\.id))
             let removed = await syncTracker.pruneDeleted(presentNoteIds: presentIds)
             for pruned in removed {
                 deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)

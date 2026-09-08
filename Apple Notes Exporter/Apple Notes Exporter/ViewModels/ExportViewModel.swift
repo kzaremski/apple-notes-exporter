@@ -156,16 +156,46 @@ class ExportViewModel: ObservableObject {
         do {
             // Incremental sync: load existing manifest and filter to new/changed notes
             let isSync = configurations.incrementalSync
+            // Pruning must be judged against the whole library, not this run's
+            // selection, or exporting a subset would delete the files of every
+            // note the user did not happen to select this time.
+            let libraryNoteIds: Set<String>? = isSync
+                ? Set(((try? await repository.fetchNotes(includeDeleted: false)) ?? []).map(\.id))
+                : nil
             let existingManifest = isSync ? SyncManifest.load(from: outputURL) : nil
             let syncTracker: SyncManifestTracker?
 
             let notesToExport: [NotesNote]
-            if isSync, let manifest = existingManifest {
+            var activeManifest = existingManifest
+            if isSync, var manifest = existingManifest {
+                // Repair entries that point somewhere the note no longer
+                // belongs. Older versions parked unresolvable notes in
+                // "Unknown Folder" and then overwrote them there forever; the
+                // same applies to a note moved between folders in Apple Notes.
+                let accounts = try await repository.fetchAccounts()
+                let folders = try await repository.fetchFolders()
+                var accountLookup: [String: String] = [:]
+                for account in accounts { accountLookup[account.id] = account.name }
+                var folderLookup: [String: NotesFolder] = [:]
+                for folder in folders { folderLookup[folder.id] = folder }
+
+                let relocated = healManifestPaths(
+                    manifest: &manifest,
+                    notes: notes,
+                    accountLookup: accountLookup,
+                    folderLookup: folderLookup,
+                    outputRoot: outputURL
+                )
+                if !relocated.isEmpty {
+                    log("Relocating \(relocated.count) note(s) whose export folder changed")
+                }
+                activeManifest = manifest
+
                 notesToExport = manifest.notesNeedingExport(from: notes)
                 // Start from existing manifest so we preserve entries for unchanged notes
                 syncTracker = SyncManifestTracker(manifest: manifest)
                 if notesToExport.isEmpty {
-                    let presentIds = Set(notes.map { $0.id })
+                    let presentIds = libraryNoteIds.map { $0.union(notes.map(\.id)) } ?? Set(notes.map(\.id))
                     let removed = await syncTracker!.pruneDeleted(presentNoteIds: presentIds)
                     for pruned in removed {
                         deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
@@ -257,7 +287,7 @@ class ExportViewModel: ObservableObject {
                     totalNotes: notesToExport.count,
                     startTime: startTime,
                     syncTracker: syncTracker,
-                    syncManifest: existingManifest,
+                    syncManifest: activeManifest,
                     outputRootURL: outputURL
                 )
             }
@@ -273,7 +303,7 @@ class ExportViewModel: ObservableObject {
 
             // Prune deleted notes from manifest, remove their files, then save.
             if let syncTracker = syncTracker {
-                let presentIds = Set(notes.map { $0.id })
+                let presentIds = libraryNoteIds.map { $0.union(notes.map(\.id)) } ?? Set(notes.map(\.id))
                 let removed = await syncTracker.pruneDeleted(presentNoteIds: presentIds)
                 for pruned in removed {
                     deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
