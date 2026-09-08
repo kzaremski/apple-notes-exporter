@@ -56,6 +56,7 @@ class AppleNotesExporterState: ObservableObject {
     @Published var triggerSelectNotes: Bool = false
     @Published var triggerChooseFolder: Bool = false
     @Published var triggerExport: Bool = false
+    @Published var triggerMCPSetup: Bool = false
 
     // Export Log Window reference
     var exportLogWindow: NSWindow?
@@ -333,6 +334,23 @@ struct Apple_Notes_ExporterApp: App {
                 Button("Command Line & Automation") {
                     openDocumentation("https://github.com/kzaremski/apple-notes-exporter#scripting--automation")
                 }
+
+                Divider()
+
+                Button("Connect to an AI Assistant...") {
+                    sharedState.triggerMCPSetup = true
+                }
+                .disabled(!sharedState.licenseAccepted)
+
+                Button("Copy MCP Server Config") {
+                    MCPServer.copyConfigurationToClipboard()
+                }
+                .disabled(MCPServer.executableURL == nil)
+
+                Button("Reveal MCP Server in Finder") {
+                    MCPServer.revealInFinder()
+                }
+                .disabled(MCPServer.executableURL == nil)
 
                 Divider()
 

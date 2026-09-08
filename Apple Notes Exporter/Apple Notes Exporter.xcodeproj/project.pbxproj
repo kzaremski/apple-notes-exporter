@@ -93,6 +93,7 @@
 		MC00000000000000000HSPRT /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000006SPDP /* SwiftProtobuf */; };
 		MC00000000000000000IMCPP /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000005APDP /* MCP */; };
 		MC00000000000000000JHTDP /* HtmlToPdf in Frameworks */ = {isa = PBXBuildFile; productRef = II000000000000000007HTDP /* HtmlToPdf */; };
+		MS0000000000000000APPBF /* MCPSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MS00000000000000000FREF /* MCPSetupView.swift */; };
 		TT000000000000000001ESPT /* ExportSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TT000000000000000000ESPF /* ExportSupportTests.swift */; };
 		TT000000000000000003DRPT /* DOCXRoundtripTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TT000000000000000002DRPF /* DOCXRoundtripTests.swift */; };
 		TT000000000000000005MEPT /* MarkdownExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TT000000000000000004MEPF /* MarkdownExportTests.swift */; };
@@ -212,6 +213,7 @@
 		EE00000000000000000XSUPP /* ExportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSupport.swift; sourceTree = "<group>"; };
 		EI0000000000000000000FR /* EmbeddedImageHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EmbeddedImageHelper.swift; path = Models/EmbeddedImageHelper.swift; sourceTree = "<group>"; };
 		F873000AF0346FE18B1971CF /* FormatOptionsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FormatOptionsView.swift; sourceTree = "<group>"; };
+		MS00000000000000000FREF /* MCPSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSetupView.swift; sourceTree = "<group>"; };
 		TT000000000000000000ESPF /* ExportSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSupportTests.swift; sourceTree = "<group>"; };
 		TT000000000000000002DRPF /* DOCXRoundtripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DOCXRoundtripTests.swift; sourceTree = "<group>"; };
 		TT000000000000000004MEPF /* MarkdownExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownExportTests.swift; sourceTree = "<group>"; };
@@ -344,6 +346,7 @@
 				A703BDEDC79C3484E6F80575 /* TableParser.swift */,
 				F873000AF0346FE18B1971CF /* FormatOptionsView.swift */,
 				BBBB000000000001HTMLGEN /* NoteHTMLGenerator.swift */,
+				MS00000000000000000FREF /* MCPSetupView.swift */,
 				80A04E9746F5F871E62EEA87 /* Apple Notes Exporter */,
 				XC000000000000000002DBUG /* Debug.xcconfig */,
 				XC000000000000000003RLSE /* Release.xcconfig */,
@@ -672,6 +675,7 @@
 				B2D4E9A1F3C8A7B5D6E0F123 /* SyncManifest.swift in Sources */,
 				CD247032451BCF2264B446AC /* FormatOptionsView.swift in Sources */,
 				F6A42B2B6E8AFF8161AA22CE /* HTMLAttachmentProcessor.swift in Sources */,
+				MS0000000000000000APPBF /* MCPSetupView.swift in Sources */,
 				BBBB000000000002HTMLGEN /* NoteHTMLGenerator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

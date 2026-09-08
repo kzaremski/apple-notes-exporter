@@ -231,6 +231,7 @@ struct AppleNotesExporterView: View {
     }()
     @State private var showNoteSelectorView: Bool = false
     @State private var showFormatOptionsView: Bool = false
+    @State private var showMCPSetupView: Bool = false
     @State private var showProgressWindow: Bool = false
     @State private var showErrorExportingAlert: Bool = false
     @State private var showAlert: Bool = false
@@ -642,6 +643,15 @@ struct AppleNotesExporterView: View {
                 sharedState: sharedState,
                 showNoteSelectorView: $showNoteSelectorView
             ).frame(width: 600, height: 400)
+        }
+        .sheet(isPresented: $showMCPSetupView) {
+            MCPSetupView(showMCPSetupView: $showMCPSetupView)
+        }
+        .onChange(of: sharedState.triggerMCPSetup) { trigger in
+            if trigger {
+                showMCPSetupView = true
+                sharedState.triggerMCPSetup = false
+            }
         }
         .sheet(isPresented: $showFormatOptionsView) {
             if let format = ExportFormat(rawValue: outputFormat) {
