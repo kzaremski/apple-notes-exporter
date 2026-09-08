@@ -33,7 +33,7 @@ struct ListAccountsCommand: AsyncParsableCommand {
     @OptionGroup var formatOptions: FormatOptions
 
     func run() async throws {
-        let engine = CLIExportEngine(databasePath: dbOptions.db)
+        let engine = CLIExportEngine(databasePath: dbOptions.resolvedDB)
 
         let accounts: [NotesAccount]
         do {

@@ -96,8 +96,10 @@ struct NotesExportCLI: AsyncParsableCommand {
 
 /// Options used by every subcommand for database path override.
 struct DatabaseOptions: ParsableArguments {
-    @Option(name: .long, help: "Path to NoteStore.sqlite (default: system Notes database).")
-    var db: String = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
+    @Option(name: .long, help: "Path to NoteStore.sqlite (default: system Notes database). Tildes are expanded to an absolute path.")
+    var db: String = defaultNotesDatabasePath()
+
+    var resolvedDB: String { resolvedFilePath(db) }
 }
 
 /// Options used by list commands for output format selection.

@@ -99,8 +99,8 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
     private var cachedDB: OpaquePointer?
 
     /// Initialize with custom database path (useful for testing)
-    init(databasePath: String = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite") {
-        self.databasePath = databasePath
+    init(databasePath: String = defaultNotesDatabasePath()) {
+        self.databasePath = resolvedFilePath(databasePath)
     }
 
     deinit {

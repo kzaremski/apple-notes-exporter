@@ -174,7 +174,7 @@ The latest download is available from the Github "Releases" tab.
 
 Make sure that you have "App Store and Identified Developers" set as your app install sources in the "Privacy & Security" section of System Settings in MacOS.
 
-**Full Disk Access:** the app will not show up in the Full Disk Access list by itself (especially on older macOS). Open System Settings > Privacy & Security > Full Disk Access, click +, and choose Apple Notes Exporter, or drag the .app from Finder / Applications into the list. Grant access to the copy you actually run (the Debug build from Xcode is a different binary than the one in /Applications).
+**Full Disk Access:** the app tries to register itself by reading the Notes database at an absolute path, then opens System Settings. macOS still requires you to enable the checkbox; there is no API that grants Full Disk Access. If the app does not appear in the list, click +, or drag Apple Notes Exporter.app from Finder / Applications into Full Disk Access. Use a **signed** copy (Developer ID for release, or a Development-signed Debug build). Unsigned binaries often never appear, and the Debug build from Xcode is a different binary than the one in /Applications.
 
 **As of Version 0.4 Build 5, we are distributing a notarized executable.** *For older versions, go to the "Privacy & Security" pane of System Settings and click "Open Anyway" under the "Security" section towards the bottom of the pane. See Apple's article https://support.apple.com/en-us/HT202491 if you need more help or a better explanation on how to make an exception for the app to run.*
 
@@ -187,6 +187,8 @@ Thanks to everyone who has contributed to this project:
 * [Christian Hovenbitzer (@AnotherCoolDude)](https://github.com/AnotherCoolDude) - CLI and MCP server targets for v2.0
 * [Sascha Schneppmüller (@Schneppi)](https://github.com/Schneppi) - Redesigned app icon for v2.0
 * [Sergey Nikolsky (@nikolsky2)](https://github.com/nikolsky2) - Fixed a crash when AppleScript returned empty notes
+* [David Ginsburg (@davideg)](https://github.com/davideg) - Fixed Markdown export to decode HTML entities
+* [Vaughan Risher (@vrisher)](https://github.com/vrisher) - Preserved image attachments in Markdown exports
 
 See [CONTRIBUTORS.txt](CONTRIBUTORS.txt) for the full list.
 
@@ -214,6 +216,18 @@ See [CONTRIBUTORS.txt](CONTRIBUTORS.txt) for the full list.
       <a href="https://github.com/nikolsky2">
         <img src="https://github.com/nikolsky2.png?size=80" width="80" height="80" alt="@nikolsky2" /><br />
         <sub><b>@nikolsky2</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/davideg">
+        <img src="https://github.com/davideg.png?size=80" width="80" height="80" alt="@davideg" /><br />
+        <sub><b>@davideg</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/vrisher">
+        <img src="https://github.com/vrisher.png?size=80" width="80" height="80" alt="@vrisher" /><br />
+        <sub><b>@vrisher</b></sub>
       </a>
     </td>
   </tr>

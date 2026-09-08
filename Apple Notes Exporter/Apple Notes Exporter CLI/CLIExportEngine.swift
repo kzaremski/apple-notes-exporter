@@ -63,12 +63,12 @@ actor CLIExportEngine {
     // MARK: - Init
 
     init(
-        databasePath: String = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite",
+        databasePath: String = defaultNotesDatabasePath(),
         configurations: ExportConfigurations = .default
     ) {
-        self.databasePath = databasePath
+        self.databasePath = resolvedFilePath(databasePath)
         self.configurations = configurations
-        self.repository = DatabaseNotesRepository(databasePath: databasePath)
+        self.repository = DatabaseNotesRepository(databasePath: self.databasePath)
     }
 
     // MARK: - Public API

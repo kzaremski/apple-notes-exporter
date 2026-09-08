@@ -34,6 +34,16 @@ Then edit `Signing.local.xcconfig` and fill in `LOCAL_DEVELOPMENT_TEAM` with you
 
 If you're just building locally without a paid developer account, you can leave the team empty and Xcode will fall back to ad-hoc signing — enough to run the Debug build on your own machine.
 
+## Full Disk Access
+
+macOS does not expose a public API that grants Full Disk Access. The app registers itself with TCC by reading a protected path, then asks the user to flip the toggle in System Settings.
+
+When working on permission checks or the Notes database:
+
+1. Probe a protected path with an **absolute** file path (`hasNotesDatabaseAccess()` / `defaultNotesDatabasePath()` in `ExportSupport.swift`). Relative paths and `NSHomeDirectory()` can fail to match the binary TCC is tracking.
+2. Keep the app **code-signed**. Unsigned or ad-hoc Debug builds often do not appear in Full Disk Access, do not register App Intents (`linkd` 4097), and may never trigger the prompt. Use `Signing.local.xcconfig` and prefer a Developer ID signed copy in `/Applications` for permission testing.
+3. There is no supported TCC request for `kTCCServiceSystemPolicyAllFiles`. `FullDiskAccess.promptIfNotGranted` enumerates a protected directory (to create the Privacy entry) and opens System Settings. The user still has to enable the checkbox.
+
 ## Project Layout
 
 ```

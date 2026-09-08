@@ -34,25 +34,25 @@ struct LicensePermissionsView: View {
     @State private var gplTextExpanded = false
     @State private var fullDiskPermissionGranted = false
     @State private var checkingFullDiskPermission = false
+    @State private var showFullDiskAccessHelp = false
     
     @State private var permissionCheckTimer: Timer?
     
     func requestFullDiskAccess() {
-        DispatchQueue.main.async {
-            FullDiskAccess.promptIfNotGranted(
-                title: "Enable Full Disk Access for\nApple Notes Exporter",
-                message: "Apple Notes Exporter requires Full Disk Access to read your Notes database. If the app does not appear in the list, click + or drag this app from Finder into Full Disk Access.",
-                settingsButtonTitle: "Open Settings",
-                skipButtonTitle: "Later",
-                canBeSuppressed: false,
-                icon: nil
-            )
-        }
+        // Enumerate the Notes container with an absolute path so TCC can
+        // identify this signed binary. There is no public API to grant
+        // Full Disk Access; the how-to is shown when the user clicks
+        // Open Settings.
+        _ = hasNotesDatabaseAccess()
+    }
+
+    func openFullDiskAccessHelp() {
+        requestFullDiskAccess()
+        showFullDiskAccessHelp = true
     }
     
     func hasFullDiskAccess() -> Bool {
-        let path = NSHomeDirectory() + "/Library/Group Containers/group.com.apple.notes/"
-        return FileManager.default.isReadableFile(atPath: path)
+        hasNotesDatabaseAccess()
     }
     
     func checkPermission() {
@@ -271,16 +271,10 @@ struct LicensePermissionsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding([.bottom], 5)
             
-            HStack(alignment: .top) {
+            HStack(alignment: .center) {
                 Image(systemName: "info.circle")
-                    .padding(.top, 2)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Apple Notes Exporter needs Full Disk Access to read your Notes database.")
-                    Text("The app often does not appear in the Privacy list on its own. In System Settings > Privacy & Security > Full Disk Access, click +, or drag Apple Notes Exporter.app from Finder (or the Applications folder) into the list. Use this exact copy of the app, not a different build.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Apple Notes Exporter needs Full Disk Access to read your Notes database.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 
                 if fullDiskPermissionGranted {
                     HStack{
@@ -299,9 +293,7 @@ struct LicensePermissionsView: View {
                             .foregroundColor(.red)
                     }
                     Button("Open Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        openFullDiskAccessHelp()
                     }
                 }
             }
@@ -331,6 +323,16 @@ struct LicensePermissionsView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .alert(isPresented: $showFullDiskAccessHelp) {
+            Alert(
+                title: Text("Enable Full Disk Access"),
+                message: Text("The app often does not appear in the Privacy list on its own. In System Settings > Privacy & Security > Full Disk Access, click +, or drag Apple Notes Exporter.app from Finder (or the Applications folder) into the list. Use this exact copy of the app, not a different build."),
+                primaryButton: .default(Text("Open Settings")) {
+                    FullDiskAccess.openSystemSettings()
+                },
+                secondaryButton: .cancel(Text("Later"))
+            )
+        }
         .onAppear {
             startPermissionCheckLoop()
         }

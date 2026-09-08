@@ -125,9 +125,9 @@ class ExportViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    init(repository: NotesRepository = DatabaseNotesRepository(), databasePath: String = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite") {
+    init(repository: NotesRepository = DatabaseNotesRepository(), databasePath: String = defaultNotesDatabasePath()) {
         self.repository = repository
-        self.databasePath = databasePath
+        self.databasePath = resolvedFilePath(databasePath)
         self.configurations = ExportConfigurations.load()
     }
 

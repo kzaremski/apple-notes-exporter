@@ -290,7 +290,7 @@ enum MCPToolHandlers {
         // Constrain writes to the user's home directory or /tmp. This prevents prompt-injection
         // attacks via adversarial note content from steering the AI agent into writing files to
         // sensitive system locations like /Library/LaunchAgents or /etc.
-        let homeDir = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+        let homeDir = userHomeDirectoryPath()
         let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory()).standardizedFileURL.path
         let outputPath = outputURL.path
         let isAllowed = outputPath == homeDir || outputPath.hasPrefix(homeDir + "/")

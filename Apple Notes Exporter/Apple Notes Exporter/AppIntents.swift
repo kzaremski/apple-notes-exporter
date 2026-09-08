@@ -122,7 +122,7 @@ struct ExportNotesIntent: AppIntent {
         try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
 
         let repo = DatabaseNotesRepository()
-        let databasePath = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
+        let databasePath = defaultNotesDatabasePath()
 
         // Fetch data
         let accounts = try await repo.fetchAccounts()

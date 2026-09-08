@@ -20,6 +20,7 @@
 
 import Foundation
 import OSLog
+import Darwin
 
 // MARK: - Logger Categories
 
@@ -27,6 +28,45 @@ extension Logger {
     private static var subsystem = Bundle.main.bundleIdentifier ?? "com.zaremski.AppleNotesExporter"
     static let noteQuery = Logger(subsystem: subsystem, category: "notequery")
     static let noteExport = Logger(subsystem: subsystem, category: "noteexport")
+}
+
+// MARK: - Notes database paths and TCC probe
+
+/// Login-user home directory. `NSHomeDirectory()` can point at a container
+/// in helper or sandbox contexts, which then fails to match the path TCC uses
+/// for Full Disk Access.
+func userHomeDirectoryPath() -> String {
+    if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir {
+        return URL(fileURLWithFileSystemRepresentation: dir, isDirectory: true, relativeTo: nil)
+            .standardizedFileURL.path
+    }
+    return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).standardizedFileURL.path
+}
+
+/// Expand tildes and standardize so TCC and sqlite see a canonical absolute path.
+func resolvedFilePath(_ path: String) -> String {
+    URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path
+}
+
+/// Absolute path to the live Apple Notes store.
+func defaultNotesDatabasePath() -> String {
+    resolvedFilePath(
+        userHomeDirectoryPath() + "/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
+    )
+}
+
+/// List the Notes group container using an absolute path.
+/// That I/O is what registers this process with TCC; `isReadableFile` is not enough,
+/// and there is no public API to grant Full Disk Access.
+func hasNotesDatabaseAccess(at databasePath: String = defaultNotesDatabasePath()) -> Bool {
+    let absoluteDB = resolvedFilePath(databasePath)
+    let container = URL(fileURLWithPath: absoluteDB).deletingLastPathComponent().path
+    do {
+        _ = try FileManager.default.contentsOfDirectory(atPath: container)
+        return true
+    } catch {
+        return false
+    }
 }
 
 // MARK: - String Extensions for Escaping

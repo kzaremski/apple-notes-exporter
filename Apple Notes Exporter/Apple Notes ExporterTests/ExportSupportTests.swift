@@ -373,6 +373,22 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertTrue(name.hasSuffix(".html"))
     }
 
+    // MARK: - Notes database path resolution
+
+    func test_resolvedFilePath_expandsTildeToAbsolute() {
+        let resolved = resolvedFilePath("~/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite")
+        XCTAssertFalse(resolved.contains("~"))
+        XCTAssertTrue(resolved.hasPrefix("/"))
+        XCTAssertTrue(resolved.hasSuffix("/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"))
+        XCTAssertEqual(resolved, defaultNotesDatabasePath())
+    }
+
+    func test_userHomeDirectoryPath_isAbsolute() {
+        let home = userHomeDirectoryPath()
+        XCTAssertTrue(home.hasPrefix("/"))
+        XCTAssertFalse(home.contains("~"))
+    }
+
     func test_buildInternalLinkPathMap_reservesIndexHtml() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ane-linkmap-\(UUID().uuidString)")

@@ -208,9 +208,7 @@ struct AppleNotesExporterView: View {
     // revoked since the last launch (e.g. user toggled it off in System Settings).
     @State private var showLicensePermissionsView: Bool = {
         let licenseAccepted = UserDefaults.standard.bool(forKey: "licenseAcceptedGPLv3")
-        let notesDBDir = NSHomeDirectory() + "/Library/Group Containers/group.com.apple.notes/"
-        let hasFDA = FileManager.default.isReadableFile(atPath: notesDBDir)
-        return !licenseAccepted || !hasFDA
+        return !licenseAccepted || !hasNotesDatabaseAccess()
     }()
     @State private var showNoteSelectorView: Bool = false
     @State private var showFormatOptionsView: Bool = false

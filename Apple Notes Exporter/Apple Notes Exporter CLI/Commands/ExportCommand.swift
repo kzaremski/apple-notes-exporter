@@ -164,7 +164,7 @@ struct ExportCommand: AsyncParsableCommand {
             )
         }
 
-        let engine = CLIExportEngine(databasePath: dbOptions.db, configurations: configs)
+        let engine = CLIExportEngine(databasePath: dbOptions.resolvedDB, configurations: configs)
 
         // Fetch all notes then apply filters
         let (accounts, folders, allNotes): ([NotesAccount], [NotesFolder], [NotesNote])
