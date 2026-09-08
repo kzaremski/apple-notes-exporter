@@ -301,8 +301,7 @@ class ExportViewModel: ObservableObject {
             defer { self.internalLinkMap = [:] }
 
             // Check if we should concatenate all notes into a single file
-            // Only MD and TXT support concatenation
-            let canConcatenate = format == .markdown || format == .txt
+            let canConcatenate = format.supportsConcatenation
             if configurations.concatenateOutput && canConcatenate {
                 try await exportNotesConcatenated(
                     notesWithPaths,

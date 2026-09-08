@@ -388,22 +388,41 @@ struct AppleNotesExporterView: View {
                 .padding(.bottom, titleBottomPadding)
             
             HStack(spacing: 8) {
+                let canConcatenate = ExportFormat(rawValue: outputFormat)?.supportsConcatenation ?? false
+                let isZip = exportViewModel.configurations.zipOutput
+                let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
+
                 OutputContainerButton(
                     title: "Folder",
                     icon: "folder",
-                    isSelected: !exportViewModel.configurations.zipOutput
+                    isSelected: !isZip && !isSingle
                 ) {
                     exportViewModel.configurations.zipOutput = false
+                    exportViewModel.configurations.concatenateOutput = false
                     exportViewModel.saveConfigurations()
                 }
                 OutputContainerButton(
                     title: "ZIP Archive",
                     icon: "doc.zipper",
-                    isSelected: exportViewModel.configurations.zipOutput
+                    isSelected: isZip
                 ) {
                     exportViewModel.configurations.zipOutput = true
+                    exportViewModel.configurations.concatenateOutput = false
                     // A sync manifest has to live in a folder that persists
                     // between runs, so it cannot travel inside an archive.
+                    exportViewModel.configurations.incrementalSync = false
+                    showSyncWarning = false
+                    exportViewModel.saveConfigurations()
+                }
+                OutputContainerButton(
+                    title: "Single File",
+                    icon: "doc.text",
+                    isSelected: isSingle,
+                    isEnabled: canConcatenate,
+                    disabledHelp: "\(outputFormat) is a packaged format, so its notes cannot be joined into one file."
+                ) {
+                    exportViewModel.configurations.concatenateOutput = true
+                    exportViewModel.configurations.zipOutput = false
                     exportViewModel.configurations.incrementalSync = false
                     showSyncWarning = false
                     exportViewModel.saveConfigurations()
@@ -420,7 +439,8 @@ struct AppleNotesExporterView: View {
                         return outputPath + "/\(ExportViewModel.zipRootName).zip"
                     }
                     guard outputPath != "" else { return "Choose an output folder" }
-                    let canConcat = ["MD", "TXT"].contains(outputFormat) && exportViewModel.configurations.concatenateOutput
+                    let supportsConcat = ExportFormat(rawValue: outputFormat)?.supportsConcatenation ?? false
+                    let canConcat = supportsConcat && exportViewModel.configurations.concatenateOutput
                     return outputPath + (canConcat ? "/Exported Notes.\(outputFormat.lowercased())" : "")
                 }()).frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
@@ -466,13 +486,6 @@ struct AppleNotesExporterView: View {
                 )
 
                 OutputOptionRow(
-                    title: "Concatenate into single file",
-                    help: "Join every note into one file instead of writing one file per note. Markdown and plain text only, and cannot be combined with incremental sync.",
-                    isOn: $exportViewModel.configurations.concatenateOutput,
-                    isEnabled: ["MD", "TXT"].contains(outputFormat) && !exportViewModel.configurations.incrementalSync
-                )
-
-                OutputOptionRow(
                     title: "Incremental sync",
                     help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
                     isOn: $exportViewModel.configurations.incrementalSync,
@@ -491,7 +504,10 @@ struct AppleNotesExporterView: View {
             }
             .onChange(of: outputFormat) { newFormat in
                 // Auto-disable concatenation when switching to a format that doesn't support it
-                if !["MD", "TXT"].contains(newFormat) && exportViewModel.configurations.concatenateOutput {
+                let supportsConcat = ExportFormat(rawValue: newFormat)?.supportsConcatenation ?? false
+                if !supportsConcat && exportViewModel.configurations.concatenateOutput {
+                    // Fall back to Folder rather than leaving a selection the
+                    // new format cannot honour.
                     exportViewModel.configurations.concatenateOutput = false
                     exportViewModel.saveConfigurations()
                 }
@@ -785,6 +801,8 @@ private struct OutputContainerButton: View {
     let title: String
     let icon: String
     let isSelected: Bool
+    var isEnabled: Bool = true
+    var disabledHelp: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -802,6 +820,8 @@ private struct OutputContainerButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isSelected ? SwiftUI.Color.accentColor : SwiftUI.Color.clear)
@@ -810,6 +830,8 @@ private struct OutputContainerButton: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(isSelected ? SwiftUI.Color.clear : SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
         )
+        .help(isEnabled ? "" : (disabledHelp ?? ""))
         .animation(.easeInOut(duration: 0.15), value: isSelected)
+        .animation(.easeInOut(duration: 0.15), value: isEnabled)
     }
 }

@@ -522,6 +522,15 @@ enum ExportFormat: String, CaseIterable {
         rawValue.lowercased()
     }
 
+    /// Whether every note can be joined into one file.
+    ///
+    /// The packaged formats (PDF, DOCX, ODT, EPUB) are containers with their
+    /// own internal structure, so there is nothing meaningful to concatenate.
+    /// Single source of truth for the GUI selector and the CLI flag, which
+    /// previously disagreed: the GUI allowed only MD and TXT while the CLI
+    /// accepted any format and would happily write a DOCX into a text file.
+    var supportsConcatenation: Bool { !isBinaryFormat }
+
     /// Whether this format produces binary (Data) output instead of text (String)
     var isBinaryFormat: Bool {
         switch self {

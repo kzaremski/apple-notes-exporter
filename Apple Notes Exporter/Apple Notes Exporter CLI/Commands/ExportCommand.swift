@@ -132,6 +132,13 @@ struct ExportCommand: AsyncParsableCommand {
             throw ExitCode(2)
         }
 
+        if concatenate && !exportFormat.supportsConcatenation {
+            CLIOutput.writeError(.incompatibleOptions(
+                "--concatenate is not available for \(exportFormat.rawValue): it is a packaged format with its own internal structure, so there is nothing to join."
+            ))
+            throw ExitCode(2)
+        }
+
         // A sync manifest has to persist between runs in a folder, so it
         // cannot travel inside an archive.
         if zip && incremental {
