@@ -305,4 +305,103 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertEqual(result.count, 2)
         XCTAssertEqual(Set(result.map { $0.id }), ["1", "3"])
     }
+
+    // MARK: - matchingFolderIds
+
+    private func folder(_ id: String, name: String, parent: String? = nil) -> NotesFolder {
+        NotesFolder(id: id, name: name, parentId: parent, accountId: "1")
+    }
+
+    func test_matchingFolderIds_nameSubstringIncludesDescendants() {
+        let folders = [
+            folder("10", name: "Recipes"),
+            folder("11", name: "Soups", parent: "10"),
+            folder("12", name: "Work"),
+        ]
+        XCTAssertEqual(matchingFolderIds(filter: "Recipes", folders: folders), ["10", "11"])
+        XCTAssertEqual(matchingFolderIds(filter: "Work", folders: folders), ["12"])
+    }
+
+    func test_matchingFolderIds_exactIdIncludesDescendants() {
+        let folders = [
+            folder("10", name: "Recipes"),
+            folder("11", name: "Soups", parent: "10"),
+            folder("13", name: "Broth", parent: "11"),
+        ]
+        XCTAssertEqual(matchingFolderIds(filter: "10", folders: folders), ["10", "11", "13"])
+        XCTAssertEqual(matchingFolderIds(filter: "11", folders: folders), ["11", "13"])
+    }
+
+    func test_matchingFolderIds_unknownReturnsEmpty() {
+        let folders = [folder("10", name: "Recipes")]
+        XCTAssertTrue(matchingFolderIds(filter: "nope", folders: folders).isEmpty)
+        XCTAssertTrue(matchingFolderIds(filter: "  ", folders: folders).isEmpty)
+    }
+
+    // MARK: - HTML folder indexes
+
+    func test_writeHTMLFolderIndex_listsNotesAndSubfolders() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-index-\(UUID().uuidString)")
+        let recipes = root.appendingPathComponent("Recipes")
+        let soups = recipes.appendingPathComponent("Soups")
+        try FileManager.default.createDirectory(at: soups, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try "<p>Chili</p>".write(to: recipes.appendingPathComponent("Chili.html"), atomically: true, encoding: .utf8)
+        try "<p>Broth</p>".write(to: soups.appendingPathComponent("Broth.html"), atomically: true, encoding: .utf8)
+
+        try writeHTMLFolderIndexes(underRoot: root)
+
+        let recipesIndex = try String(contentsOf: recipes.appendingPathComponent("index.html"), encoding: .utf8)
+        XCTAssertTrue(recipesIndex.contains(htmlFolderIndexMarker))
+        XCTAssertTrue(recipesIndex.contains("Chili.html"))
+        XCTAssertTrue(recipesIndex.contains("Soups/index.html"))
+
+        let soupsIndex = try String(contentsOf: soups.appendingPathComponent("index.html"), encoding: .utf8)
+        XCTAssertTrue(soupsIndex.contains("Broth.html"))
+    }
+
+    func test_generateUniqueExportFilename_reservesIndexHtml() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-index-name-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let name = generateUniqueExportFilename(baseName: "index", extension: "html", inDirectory: dir)
+        XCTAssertNotEqual(name.lowercased(), "index.html")
+        XCTAssertTrue(name.hasSuffix(".html"))
+    }
+
+    func test_buildInternalLinkPathMap_reservesIndexHtml() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-linkmap-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let note = NotesNote(
+            id: "1",
+            title: "index",
+            plaintext: "body",
+            htmlBody: nil,
+            creationDate: Date(),
+            modificationDate: Date(),
+            folderId: "f",
+            accountId: "a",
+            attachments: []
+        )
+        let map = buildInternalLinkPathMap(
+            allNotes: [note],
+            notesWithPaths: [(note: note, folderURL: dir)],
+            outputRoot: dir,
+            format: .html,
+            addDatePrefix: false,
+            dateFormat: "yyyy-MM-dd",
+            existingManifest: nil
+        )
+        guard let rel = map["1"] else {
+            return XCTFail("expected a path mapping for the note")
+        }
+        XCTAssertNotEqual((rel as NSString).lastPathComponent.lowercased(), "index.html")
+    }
 }

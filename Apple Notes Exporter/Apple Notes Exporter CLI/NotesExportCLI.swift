@@ -57,7 +57,8 @@ struct NotesExportCLI: AsyncParsableCommand {
         discussion: """
         Headless companion to the Apple Notes Exporter macOS app. Reads the
         local Notes database directly (no AppleScript, no UI), and supports
-        filtering by account, folder, title, and modification date.
+        filtering by account, folder (name or id, including subfolders),
+        title, and modification date.
 
         Full Disk Access is required. In System Settings > Privacy & Security
         > Full Disk Access, add your Terminal app (Terminal.app, iTerm, etc.)

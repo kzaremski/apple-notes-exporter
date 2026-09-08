@@ -91,7 +91,7 @@ struct ExportNotesIntent: AppIntent {
     @Parameter(title: "Output Folder", description: "Path to the output directory (e.g. ~/Desktop/notes).")
     var outputPath: String
 
-    @Parameter(title: "Folder", description: "Only export notes from this folder (case-insensitive). Leave empty for all folders.", default: nil)
+    @Parameter(title: "Folder", description: "Only export notes from this folder (name substring or exact id, including subfolders). Leave empty for all folders.", default: nil)
     var folderFilter: String?
 
     @Parameter(title: "Account", description: "Only export notes from this account (case-insensitive). Leave empty for all accounts.", default: nil)
@@ -138,9 +138,7 @@ struct ExportNotesIntent: AppIntent {
         }
 
         if let folderName = folderFilter, !folderName.isEmpty {
-            let matchingIds = Set(folders
-                .filter { $0.name.localizedCaseInsensitiveCompare(folderName) == .orderedSame }
-                .map { $0.id })
+            let matchingIds = matchingFolderIds(filter: folderName, folders: folders)
             notes = notes.filter { matchingIds.contains($0.folderId) }
         }
 
@@ -189,7 +187,7 @@ struct ExportNotesIntent: AppIntent {
                     baseFilename = note.sanitizedFileName
                 }
 
-                let filename = generateUniqueExportFilename(baseName: baseFilename, ext: exportFormat.fileExtension, inDirectory: folderURL)
+                let filename = generateUniqueExportFilename(baseName: baseFilename, extension: exportFormat.fileExtension, inDirectory: folderURL)
                 let fileURL = folderURL.appendingPathComponent(filename)
                 let uniqueBaseName = filename.replacingOccurrences(of: ".\(exportFormat.fileExtension)", with: "")
 
@@ -252,6 +250,10 @@ struct ExportNotesIntent: AppIntent {
                 failCount += 1
                 Logger.noteExport.error("Shortcut export failed for '\(note.title)': \(error.localizedDescription)")
             }
+        }
+
+        if exportFormat == .html {
+            try? writeHTMLFolderIndexes(underRoot: outputURL)
         }
 
         let summary = "\(successCount) notes exported as \(exportFormat.rawValue). \(failCount > 0 ? "\(failCount) failed." : "")"

@@ -32,6 +32,29 @@ struct ZIPArchive {
         let path: String       // Relative path inside the archive (e.g. "word/document.xml")
         let data: Data         // Uncompressed content
         let compress: Bool     // true = DEFLATE, false = STORE
+        /// ZIP "version needed to extract". STORE can use 10 (1.0); DEFLATE needs 20 (2.0).
+        /// EPUB OCF requires 10 on the uncompressed mimetype entry or Apple Books rejects the file.
+        let versionNeeded: UInt16
+        /// Override MS-DOS time. EPUB OCF / Apple Books want 0 on the mimetype entry.
+        let dosTime: UInt16?
+        /// Override MS-DOS date. EPUB OCF / Apple Books want 0 on the mimetype entry.
+        let dosDate: UInt16?
+
+        init(
+            path: String,
+            data: Data,
+            compress: Bool,
+            versionNeeded: UInt16 = 20,
+            dosTime: UInt16? = nil,
+            dosDate: UInt16? = nil
+        ) {
+            self.path = path
+            self.data = data
+            self.compress = compress
+            self.versionNeeded = versionNeeded
+            self.dosTime = dosTime
+            self.dosDate = dosDate
+        }
     }
 
     /// Build a complete ZIP file from the given entries and return the raw bytes.
@@ -66,14 +89,16 @@ struct ZIPArchive {
             let crc = crc32Checksum(entry.data)
             let uncompressedSize = UInt32(entry.data.count)
             let compressedSize = UInt32(compressedData.count)
+            let entryTime = entry.dosTime ?? dosTime
+            let entryDate = entry.dosDate ?? dosDate
 
             // -- Local file header --
             fileData.appendUInt32(0x04034b50)           // Local file header signature
-            fileData.appendUInt16(20)                    // Version needed (2.0)
+            fileData.appendUInt16(entry.versionNeeded)   // Version needed
             fileData.appendUInt16(0)                     // General purpose bit flag
             fileData.appendUInt16(method)                // Compression method
-            fileData.appendUInt16(dosTime)               // Last mod file time
-            fileData.appendUInt16(dosDate)               // Last mod file date
+            fileData.appendUInt16(entryTime)             // Last mod file time
+            fileData.appendUInt16(entryDate)             // Last mod file date
             fileData.appendUInt32(crc)                   // CRC-32
             fileData.appendUInt32(compressedSize)        // Compressed size
             fileData.appendUInt32(uncompressedSize)      // Uncompressed size
@@ -85,11 +110,11 @@ struct ZIPArchive {
             // -- Central directory header --
             centralDirectory.appendUInt32(0x02014b50)           // Central directory file header signature
             centralDirectory.appendUInt16(20)                    // Version made by
-            centralDirectory.appendUInt16(20)                    // Version needed
+            centralDirectory.appendUInt16(entry.versionNeeded)   // Version needed
             centralDirectory.appendUInt16(0)                     // General purpose bit flag
             centralDirectory.appendUInt16(method)                // Compression method
-            centralDirectory.appendUInt16(dosTime)               // Last mod file time
-            centralDirectory.appendUInt16(dosDate)               // Last mod file date
+            centralDirectory.appendUInt16(entryTime)             // Last mod file time
+            centralDirectory.appendUInt16(entryDate)             // Last mod file date
             centralDirectory.appendUInt32(crc)                   // CRC-32
             centralDirectory.appendUInt32(compressedSize)        // Compressed size
             centralDirectory.appendUInt32(uncompressedSize)      // Uncompressed size

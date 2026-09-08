@@ -279,6 +279,10 @@ class ExportViewModel: ObservableObject {
                 log("✓ Sync manifest saved")
             }
 
+            if format == .html {
+                try writeHTMLFolderIndexes(underRoot: outputURL)
+            }
+
             // Export completed successfully
             let successfulNotes = notesToExport.count - failedNotesCount
             exportState = .completed(ExportStatistics(

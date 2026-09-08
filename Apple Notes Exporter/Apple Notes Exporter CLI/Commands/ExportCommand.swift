@@ -59,7 +59,7 @@ struct ExportCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Filter by account name (partial match, case-insensitive).")
     var account: String?
 
-    @Option(name: .long, help: "Filter by folder name (partial match, case-insensitive).")
+    @Option(name: .long, help: "Filter by folder name (partial, case-insensitive) or exact folder id. Includes notes in matching subfolders.")
     var folder: String?
 
     @Option(name: .long, help: "Filter notes whose title contains this string (case-insensitive).")
@@ -191,8 +191,8 @@ struct ExportCommand: AsyncParsableCommand {
             filtered = filtered.filter { matchingIds.contains($0.accountId) }
         }
 
-        if let folderFilter = folder?.lowercased() {
-            let matchingIds = folders.filter { $0.name.lowercased().contains(folderFilter) }.map { $0.id }
+        if let folderFilter = folder {
+            let matchingIds = matchingFolderIds(filter: folderFilter, folders: folders)
             filtered = filtered.filter { matchingIds.contains($0.folderId) }
         }
 

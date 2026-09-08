@@ -31,7 +31,7 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 ## Export Formats
 
 ### Rich / document formats
-* **HTML** - Native format returned by the Apple Notes database. Images included inline via base64 embed syntax. **Configurable:** font family, font size, margins.
+* **HTML** - Native format returned by the Apple Notes database. Images included inline via base64 embed syntax. Each exported folder also gets an `index.html` listing the notes and subfolders so the tree is browsable in a web browser. **Configurable:** font family, font size, margins.
 * **PDF** - Generated from HTML, preserves all formatting and images. **Configurable:** font family, font size, margins, page size (Letter, A4, A5, Legal, Tabloid).
 * **TEX** - LaTeX format for typesetting. Notes can be compiled individually or combined. **Configurable:** custom template with placeholders for title, dates, author, and content.
 * **MD** - Markdown format. Useful for moving to other Markdown-based apps like Obsidian. Images included inline via base64 embed syntax.
@@ -39,7 +39,7 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 * **TXT** - Plain text, no formatting or images.
 * **DOCX** - Microsoft Word format for Office and Google Docs.
 * **ODT** - OpenDocument text for LibreOffice and other open-source editors.
-* **EPUB** - E-book format for Kindle, Apple Books, and other e-readers.
+* **EPUB** - E-book format for Kindle, Apple Books, and other e-readers. Archives follow the EPUB 3 OCF layout (uncompressed `mimetype` first) so Apple Books can open them.
 
 ### Structured / data formats
 * **JSON** - Structured note data for APIs and data processing.
@@ -71,7 +71,7 @@ notes-export list-notes --folder Work
 notes-export export --output ~/Desktop/notes --format markdown --account iCloud
 ```
 
-Built with Swift ArgumentParser. JSON output on stdout for piping into other tools, progress and errors on stderr. Supports filtering by account, folder, title, and modification date, plus incremental sync.
+Built with Swift ArgumentParser. JSON output on stdout for piping into other tools, progress and errors on stderr. Supports filtering by account, folder (name substring or exact folder id, including subfolders), title, and modification date, plus incremental sync.
 
 ### Apple Shortcuts (App Intents)
 
@@ -82,6 +82,8 @@ Three actions are available in the Shortcuts app under "Apple Notes Exporter":
 * **List Folders** - Returns a list of folders, optionally filtered by account.
 
 Run them from Siri, automations, or any Shortcuts flow.
+
+Unsigned Debug builds (Xcode Run) often fail to register with Shortcuts (`linkd` error 4097). Use a signed build, typically the copy in `/Applications`, and grant Full Disk Access to that same binary.
 
 ### Model Context Protocol server (`notes-export-mcp`)
 

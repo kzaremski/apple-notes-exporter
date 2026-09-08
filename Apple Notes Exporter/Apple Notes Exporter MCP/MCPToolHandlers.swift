@@ -58,7 +58,7 @@ enum MCPToolHandlers {
                     "account": .object(["type": .string("string"),
                         "description": .string("Account name filter (partial match).")]),
                     "folder": .object(["type": .string("string"),
-                        "description": .string("Folder name filter (partial match).")]),
+                        "description": .string("Folder name (partial, case-insensitive) or exact folder id. Includes notes in matching subfolders.")]),
                     "title_contains": .object(["type": .string("string"),
                         "description": .string("Title substring filter (case-insensitive).")]),
                     "modified_after": .object(["type": .string("string"),
@@ -93,7 +93,7 @@ enum MCPToolHandlers {
                     "account": .object(["type": .string("string"),
                         "description": .string("Account name filter (partial match).")]),
                     "folder": .object(["type": .string("string"),
-                        "description": .string("Folder name filter (partial match).")]),
+                        "description": .string("Folder name (partial, case-insensitive) or exact folder id. Includes notes in matching subfolders.")]),
                     "title_contains": .object(["type": .string("string"),
                         "description": .string("Title substring filter.")]),
                     "modified_after": .object(["type": .string("string"),
@@ -219,8 +219,8 @@ enum MCPToolHandlers {
             let ids = accounts.filter { $0.name.lowercased().contains(accountFilter) }.map { $0.id }
             filtered = filtered.filter { ids.contains($0.accountId) }
         }
-        if let folderFilter = args["folder"]?.stringValue?.lowercased() {
-            let ids = folders.filter { $0.name.lowercased().contains(folderFilter) }.map { $0.id }
+        if let folderFilter = args["folder"]?.stringValue {
+            let ids = matchingFolderIds(filter: folderFilter, folders: folders)
             filtered = filtered.filter { ids.contains($0.folderId) }
         }
         if let tc = args["title_contains"]?.stringValue?.lowercased() {
@@ -362,8 +362,8 @@ enum MCPToolHandlers {
             let ids = accounts.filter { $0.name.lowercased().contains(accountFilter) }.map { $0.id }
             filtered = filtered.filter { ids.contains($0.accountId) }
         }
-        if let folderFilter = args["folder"]?.stringValue?.lowercased() {
-            let ids = folders.filter { $0.name.lowercased().contains(folderFilter) }.map { $0.id }
+        if let folderFilter = args["folder"]?.stringValue {
+            let ids = matchingFolderIds(filter: folderFilter, folders: folders)
             filtered = filtered.filter { ids.contains($0.folderId) }
         }
         if let tc = args["title_contains"]?.stringValue?.lowercased() {

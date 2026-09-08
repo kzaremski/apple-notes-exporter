@@ -2313,18 +2313,17 @@ private struct HTMLToODFParser {
 
 private struct HTMLToEPUBConverter {
     static func convert(_ note: NotesNote) -> Data {
-        let noteId = note.id.replacingOccurrences(of: "/", with: "-")
-
         let isoFormatter = DateFormatter()
         isoFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
         isoFormatter.timeZone = TimeZone(identifier: "UTC")
 
-        // Build XHTML chapter content
+        // Build XHTML chapter content. Note HTML is HTML5-ish (unclosed <br>,
+        // named entities); Apple Books parses chapters as XML and rejects that.
         let bodyContent: String
         if let html = note.htmlBody,
            let bodyStart = html.range(of: "<body>"),
            let bodyEnd = html.range(of: "</body>") {
-            bodyContent = String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
+            bodyContent = xhtmlifyHTMLFragment(String(html[bodyStart.upperBound..<bodyEnd.lowerBound]))
         } else {
             bodyContent = "<p>\(HTMLToXMLConverter.escapeXML(note.plaintext))</p>"
         }
@@ -2347,12 +2346,13 @@ private struct HTMLToEPUBConverter {
         </html>
         """
 
-        // OPF package document
+        // OPF package document. urn:uuid: is only valid for actual UUIDs;
+        // Core Data PKs use a separate URI so Apple Books does not reject the book.
         let opfXML = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
           <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-            <dc:identifier id="uid">urn:uuid:\(noteId)</dc:identifier>
+            <dc:identifier id="uid">\(epubIdentifier(for: note))</dc:identifier>
             <dc:title>\(HTMLToXMLConverter.escapeXML(note.title))</dc:title>
             <dc:language>en</dc:language>
             <dc:date>\(isoFormatter.string(from: note.creationDate))</dc:date>
@@ -2401,8 +2401,9 @@ private struct HTMLToEPUBConverter {
         let mimetypeData = Data("application/epub+zip".utf8)
 
         let entries: [ZIPArchive.Entry] = [
-            // mimetype MUST be first entry and MUST be STORED (not compressed) per EPUB spec
-            .init(path: "mimetype", data: mimetypeData, compress: false),
+            // mimetype MUST be first, STORED, extra-field-free, ZIP 1.0, and
+            // epoch-zero timestamp so the payload starts at offset 38 (OCF / Apple Books).
+            .init(path: "mimetype", data: mimetypeData, compress: false, versionNeeded: 10, dosTime: 0, dosDate: 0),
             .init(path: "META-INF/container.xml", data: Data(containerXML.utf8), compress: true),
             .init(path: "OEBPS/content.opf", data: Data(opfXML.utf8), compress: true),
             .init(path: "OEBPS/nav.xhtml", data: Data(navXHTML.utf8), compress: true),
@@ -2410,5 +2411,50 @@ private struct HTMLToEPUBConverter {
         ]
 
         return ZIPArchive.build(entries: entries)
+    }
+
+    /// Unique identifier for the OPF package. Prefer the note's ZIDENTIFIER UUID.
+    static func epubIdentifier(for note: NotesNote) -> String {
+        let raw = note.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isUUID(raw) {
+            return "urn:uuid:\(raw.lowercased())"
+        }
+        let safe = note.id.replacingOccurrences(of: "/", with: "-")
+        return "urn:ane:note:\(safe)"
+    }
+
+    private static func isUUID(_ value: String) -> Bool {
+        guard value.count == 36 else { return false }
+        let pattern = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+        return value.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    /// Make an HTML fragment well-formed enough for application/xhtml+xml.
+    /// Closes HTML void tags and replaces &nbsp; (not defined in XML without a DTD).
+    static func xhtmlifyHTMLFragment(_ html: String) -> String {
+        var result = html.replacingOccurrences(of: "&nbsp;", with: "&#160;")
+        let voids = "area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr"
+        let pattern = "<(\(voids))(\\s[^>]*)?\\s*/?\\s*>"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return result
+        }
+        let ns = result as NSString
+        let matches = regex.matches(in: result, range: NSRange(location: 0, length: ns.length))
+        for match in matches.reversed() {
+            let tag = ns.substring(with: match.range(at: 1)).lowercased()
+            var attrs = ""
+            if match.numberOfRanges > 2, match.range(at: 2).location != NSNotFound {
+                attrs = ns.substring(with: match.range(at: 2))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if attrs.hasSuffix("/") {
+                    attrs = String(attrs.dropLast()).trimmingCharacters(in: .whitespaces)
+                }
+            }
+            let replacement = attrs.isEmpty ? "<\(tag) />" : "<\(tag) \(attrs) />"
+            if let range = Range(match.range, in: result) {
+                result.replaceSubrange(range, with: replacement)
+            }
+        }
+        return result
     }
 }

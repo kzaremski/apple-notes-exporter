@@ -247,6 +247,10 @@ func buildInternalLinkPathMap(
 
         let folderKey = folderURL.standardizedFileURL.path
         var used = reservedByFolder[folderKey] ?? []
+        // HTML exports write index.html as a folder listing; never let a note claim that name.
+        if format == .html {
+            used.insert("index.html")
+        }
 
         var filename = "\(baseName).\(format.fileExtension)"
         var counter = 2
@@ -396,7 +400,9 @@ func buildExportFolderPath(folderId: String, folderLookup: [String: NotesFolder]
 /// Generate a unique filename by appending a counter suffix if a collision exists.
 func generateUniqueExportFilename(baseName: String, extension ext: String, inDirectory directory: URL) -> String {
     let initial = "\(baseName).\(ext)"
-    if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(initial).path) {
+    // HTML exports write index.html as a folder listing; never let a note claim that name.
+    let reserved = ext.lowercased() == "html" && initial.lowercased() == "index.html"
+    if !reserved && !FileManager.default.fileExists(atPath: directory.appendingPathComponent(initial).path) {
         return initial
     }
     var counter = 2
@@ -456,6 +462,140 @@ let nonFileAttachmentPrefixes: [String] = [
     "com.apple.notes.inlinementionattachment",
     "public.url"
 ]
+
+/// Folder IDs matching `filter` by exact id or case-insensitive name substring,
+/// plus every descendant of those folders.
+func matchingFolderIds(filter: String, folders: [NotesFolder]) -> Set<String> {
+    let needle = filter.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !needle.isEmpty else { return [] }
+    let lowered = needle.lowercased()
+
+    var matched = Set(folders.filter { folder in
+        folder.id.caseInsensitiveCompare(needle) == .orderedSame
+            || folder.name.lowercased().contains(lowered)
+    }.map(\.id))
+
+    guard !matched.isEmpty else { return [] }
+
+    var childrenByParent: [String: [String]] = [:]
+    for folder in folders {
+        if let parent = folder.parentId {
+            childrenByParent[parent, default: []].append(folder.id)
+        }
+    }
+
+    var stack = Array(matched)
+    while let current = stack.popLast() {
+        for child in childrenByParent[current] ?? [] {
+            if matched.insert(child).inserted {
+                stack.append(child)
+            }
+        }
+    }
+    return matched
+}
+
+/// Marker comment written into generated folder index.html files so a later
+/// export can tell them apart from a note that happened to be titled "index".
+let htmlFolderIndexMarker = "apple-notes-exporter-folder-index"
+
+/// Write an `index.html` listing in each directory under `root` that contains
+/// exported HTML notes or subfolders. Skips `* (Attachments)` directories.
+func writeHTMLFolderIndexes(underRoot root: URL) throws {
+    let fm = FileManager.default
+    var dirs: [URL] = [root]
+    let keys: [URLResourceKey] = [.isDirectoryKey]
+    if let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else { continue }
+            if url.lastPathComponent.hasSuffix(" (Attachments)") {
+                enumerator.skipDescendants()
+                continue
+            }
+            dirs.append(url)
+        }
+    }
+    dirs.sort { $0.path.split(separator: "/").count > $1.path.split(separator: "/").count }
+    for dir in dirs {
+        try writeHTMLFolderIndex(inFolder: dir)
+    }
+}
+
+/// Write a single folder's `index.html` listing sibling HTML notes and subfolders.
+func writeHTMLFolderIndex(inFolder folderURL: URL) throws {
+    let fm = FileManager.default
+    let contents = (try? fm.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+
+    var subfolders: [URL] = []
+    var notes: [URL] = []
+    for url in contents {
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+        if values?.isDirectory == true {
+            if !url.lastPathComponent.hasSuffix(" (Attachments)") {
+                subfolders.append(url)
+            }
+            continue
+        }
+        if url.pathExtension.lowercased() == "html" && url.lastPathComponent.lowercased() != "index.html" {
+            notes.append(url)
+        }
+    }
+
+    let indexURL = folderURL.appendingPathComponent("index.html")
+    if fm.fileExists(atPath: indexURL.path),
+       let existing = try? String(contentsOf: indexURL, encoding: .utf8),
+       !existing.contains(htmlFolderIndexMarker) {
+        // A note was exported as index.html (older builds). Move it aside.
+        let renamed = generateUniqueExportFilename(baseName: "index", extension: "html", inDirectory: folderURL)
+        try fm.moveItem(at: indexURL, to: folderURL.appendingPathComponent(renamed))
+        notes.append(folderURL.appendingPathComponent(renamed))
+    }
+
+    notes.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    subfolders.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+
+    guard !notes.isEmpty || !subfolders.isEmpty else { return }
+
+    func href(_ filename: String) -> String {
+        let encoded = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
+        return encoded.htmlEscaped
+    }
+
+    var items: [String] = []
+    for sub in subfolders {
+        let name = sub.lastPathComponent.htmlEscaped
+        items.append("    <li><a href=\"\(href(sub.lastPathComponent))/index.html\">\(name)/</a></li>")
+    }
+    for note in notes {
+        let name = note.deletingPathExtension().lastPathComponent.htmlEscaped
+        items.append("    <li><a href=\"\(href(note.lastPathComponent))\">\(name)</a></li>")
+    }
+
+    let folderName = folderURL.lastPathComponent.htmlEscaped
+    let html = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>\(folderName)</title>
+      <!-- \(htmlFolderIndexMarker) -->
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 2em; line-height: 1.5; }
+        h1 { font-size: 1.4em; }
+        ul { padding-left: 1.2em; }
+      </style>
+    </head>
+    <body>
+      <h1>\(folderName)</h1>
+      <ul>
+    \(items.joined(separator: "\n"))
+      </ul>
+    </body>
+    </html>
+    """
+    try html.write(to: indexURL, atomically: true, encoding: .utf8)
+}
 
 /// Filter attachments to only include exportable file attachments.
 func filterFileAttachments(_ attachments: [NotesAttachment]) -> [NotesAttachment] {

@@ -111,6 +111,9 @@ actor CLIExportEngine {
                 var updatedManifest = await syncTracker!.getManifest()
                 updatedManifest.lastSync = Date()
                 try updatedManifest.save(to: outputURL)
+                if format == .html && !configurations.concatenateOutput {
+                    try writeHTMLFolderIndexes(underRoot: outputURL)
+                }
                 return ExportResult(
                     success: true, exported: 0, skipped: notes.count, failed: 0, failedAttachments: 0,
                     outputDirectory: outputURL.path, format: format.fileExtension,
@@ -196,6 +199,10 @@ actor CLIExportEngine {
             }
             let finalManifest = await syncTracker.getManifest()
             try finalManifest.save(to: outputURL)
+        }
+
+        if format == .html && !configurations.concatenateOutput {
+            try writeHTMLFolderIndexes(underRoot: outputURL)
         }
 
         let stats = await tracker.getStats()
