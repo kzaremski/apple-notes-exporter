@@ -184,7 +184,6 @@
 		2596C4D52A1F1DEE00EFF4F3 /* Apple-Notes-Exporter-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Apple-Notes-Exporter-Info.plist"; sourceTree = SOURCE_ROOT; };
 		25A01F0A2E8F3EEF00C7D9FA /* notestore.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = notestore.pb.swift; sourceTree = "<group>"; };
 		25A01F112E8F3FBE00C7D9FA /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
-		25EB771F2BFA9E2600A35E62 /* ScriptingBridge.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ScriptingBridge.framework; path = System/Library/Frameworks/ScriptingBridge.framework; sourceTree = SDKROOT; };
 		4DE68A68DD8DB569C0E58F0F /* NotesNote+Export.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "NotesNote+Export.swift"; path = "Models/NotesNote+Export.swift"; sourceTree = "<group>"; };
 		5E296FC967ECC48BECE58F68 /* HTMLAttachmentProcessor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HTMLAttachmentProcessor.swift; sourceTree = "<group>"; };
 		A703BDEDC79C3484E6F80575 /* TableParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TableParser.swift; sourceTree = "<group>"; };
@@ -387,7 +386,6 @@
 			children = (
 				250816952F527BBB00CD5778 /* libsqlite3.tbd */,
 				25A01F112E8F3FBE00C7D9FA /* libz.tbd */,
-				25EB771F2BFA9E2600A35E62 /* ScriptingBridge.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";

@@ -119,33 +119,3 @@ func zipDirectory(inputDirectory: URL, outputZipFile: URL) {
         }
     }
 }
-
-// MARK: - Date Parsing
-
-func appleDateStringToDate(inputString: String) -> Date {
-    // Possible date formats used by AppleScript/Apple Notes
-    let dateFormats = [
-        "EEEE, MMMM d, yyyy 'at' h:mm:ss a",  // Monday, June 21, 2021 at 10:40:09 PM
-        "EEEE, MMM d, yyyy 'at' h:mm:ss a",   // Mon, Jun 21, 2021 at 10:40:09 PM
-        "EEEE, MMM d, yyyy, h:mm:ss a",       // Mon, Jun 21, 2021, 10:40:09 PM
-        "MMMM d, yyyy 'at' h:mm:ss a",        // June 21, 2021 at 10:40:09 PM
-        "MMM d, yyyy 'at' h:mm:ss a",         // Jun 21, 2021 at 10:40:09 PM
-        "MMMM d, yyyy, h:mm:ss a",            // June 21, 2021, 10:40:09 PM
-        "MMM d, yyyy, h:mm:ss a"              // Jun 21, 2021, 10:40:09 PM
-    ]
-
-    // Attempt to parse the date using different formats and locales
-    for format in dateFormats {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = format
-        dateFormatter.locale = Locale(identifier: "en_US_POSIX") // POSIX locale for consistency
-        dateFormatter.timeZone = TimeZone.current
-
-        if let date = dateFormatter.date(from: inputString) {
-            return date
-        }
-    }
-
-    // Return current date if no format matched
-    return Date()
-}
