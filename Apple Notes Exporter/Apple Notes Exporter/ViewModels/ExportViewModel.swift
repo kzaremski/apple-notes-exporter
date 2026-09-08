@@ -143,6 +143,11 @@ class ExportViewModel: ObservableObject {
     /// Root name used for both the staging folder and the archive.
     static let zipRootName = exportArchiveRootName
 
+    /// What the finished export actually produced: the archive for a zip
+    /// export, otherwise the output folder. The archive name can differ from
+    /// the destination the user picked, so the UI cannot infer it.
+    @Published var lastExportArtifactURL: URL?
+
 
     func exportNotes(
         _ notes: [NotesNote],
@@ -155,6 +160,7 @@ class ExportViewModel: ObservableObject {
         exportLog = []
         failedNotesCount = 0
         failedAttachmentsCount = 0
+        lastExportArtifactURL = nil
         let startTime = Date()
 
         // A zip export writes the tree into a staging folder next to where the
@@ -353,6 +359,8 @@ class ExportViewModel: ObservableObject {
                 try? FileManager.default.removeItem(at: outputURL)
                 log("✓ Wrote \(archiveURL.lastPathComponent)")
             }
+
+            lastExportArtifactURL = makeZip ? archiveURL : outputURL
 
             // Export completed successfully
             let successfulNotes = notesToExport.count - failedNotesCount
