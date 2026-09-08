@@ -32,6 +32,8 @@ enum CLIError: Error {
     /// A --folder value matched no folder. Selecting nothing must not silently
     /// widen to selecting everything.
     case unknownFolder(requested: [String], available: [String])
+    /// Two flags that cannot be used together.
+    case incompatibleOptions(String)
 
     var exitCode: Int32 {
         switch self {
@@ -42,6 +44,7 @@ enum CLIError: Error {
         case .repositoryError:        return 2
         case .fileSystemError:        return 1
         case .unknownFolder:          return 2
+        case .incompatibleOptions:    return 2
         }
     }
 
@@ -54,6 +57,7 @@ enum CLIError: Error {
         case .repositoryError:           return "repositoryError"
         case .fileSystemError:           return "fileSystemError"
         case .unknownFolder:             return "unknownFolder"
+        case .incompatibleOptions:       return "incompatibleOptions"
         }
     }
 
@@ -71,6 +75,8 @@ enum CLIError: Error {
             return "Failed while reading Notes: \(detail)"
         case .fileSystemError(let detail):
             return "Failed while writing to disk: \(detail)"
+        case .incompatibleOptions(let detail):
+            return detail
         case .unknownFolder(let requested, let available):
             let missing = requested.map { "'\($0)'" }.joined(separator: ", ")
             let plural = requested.count == 1 ? "No folder matches" : "No folders match"

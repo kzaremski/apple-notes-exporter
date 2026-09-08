@@ -141,22 +141,8 @@ class ExportViewModel: ObservableObject {
 
     /// Export notes to the specified output directory
     /// Root name used for both the staging folder and the archive.
-    static let zipRootName = "Apple Notes Export"
+    static let zipRootName = exportArchiveRootName
 
-    /// A path in `directory` that does not collide with anything already there.
-    private func uniqueURL(in directory: URL, baseName: String, extension ext: String?) -> URL {
-        func candidate(_ name: String) -> URL {
-            let url = directory.appendingPathComponent(name)
-            return ext.map { url.appendingPathExtension($0) } ?? url
-        }
-        var url = candidate(baseName)
-        var counter = 2
-        while FileManager.default.fileExists(atPath: url.path), counter <= 1000 {
-            url = candidate("\(baseName) (\(counter))")
-            counter += 1
-        }
-        return url
-    }
 
     func exportNotes(
         _ notes: [NotesNote],
@@ -184,17 +170,9 @@ class ExportViewModel: ObservableObject {
         let archiveURL: URL
         let outputURL: URL
         if makeZip {
-            if destinationURL.pathExtension.lowercased() == "zip" {
-                archiveURL = destinationURL
-            } else {
-                archiveURL = uniqueURL(
-                    in: destinationURL, baseName: Self.zipRootName, extension: "zip"
-                )
-            }
-            let rootName = archiveURL.deletingPathExtension().lastPathComponent
-            outputURL = uniqueURL(
-                in: archiveURL.deletingLastPathComponent(), baseName: rootName, extension: nil
-            )
+            let locations = archiveExportLocations(destination: destinationURL)
+            archiveURL = locations.archive
+            outputURL = locations.staging
         } else {
             archiveURL = destinationURL
             outputURL = destinationURL

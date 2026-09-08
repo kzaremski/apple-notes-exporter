@@ -555,6 +555,68 @@ func healManifestPaths(
     return healed
 }
 
+// MARK: - Archive Output
+
+/// Default root name for a zip export: both the folder inside the archive and
+/// the archive itself when the user has not named one.
+let exportArchiveRootName = "Apple Notes Export"
+
+/// Zip `sourceURL` (a directory) to `destinationURL`.
+///
+/// NSFileCoordinator's .forUploading intent is what Finder's "Compress" uses,
+/// so the archive matches what a user would produce by hand. Synchronous and
+/// throwing: the caller needs to know whether the artifact was actually
+/// written before it reports success and deletes the staging directory.
+func zipDirectory(at sourceURL: URL, to destinationURL: URL) throws {
+    let coordinator = NSFileCoordinator()
+    var coordinationError: NSError?
+    var writeError: Error?
+
+    coordinator.coordinate(readingItemAt: sourceURL, options: [.forUploading], error: &coordinationError) { zippedURL in
+        do {
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+            try FileManager.default.copyItem(at: zippedURL, to: destinationURL)
+        } catch {
+            writeError = error
+        }
+    }
+
+    if let coordinationError { throw coordinationError }
+    if let writeError { throw writeError }
+}
+
+/// A path in `directory` that collides with nothing already there.
+func uniqueExportURL(in directory: URL, baseName: String, extension ext: String?) -> URL {
+    func candidate(_ name: String) -> URL {
+        let url = directory.appendingPathComponent(name)
+        return ext.map { url.appendingPathExtension($0) } ?? url
+    }
+    var url = candidate(baseName)
+    var counter = 2
+    while FileManager.default.fileExists(atPath: url.path), counter <= 1000 {
+        url = candidate("\(baseName) (\(counter))")
+        counter += 1
+    }
+    return url
+}
+
+/// Resolve where a zip export should stage its files and write its archive.
+///
+/// `destination` is either the archive the user named or a folder to put one
+/// in. The archive's own name becomes the root folder inside it.
+func archiveExportLocations(destination: URL) -> (staging: URL, archive: URL) {
+    let archive = destination.pathExtension.lowercased() == "zip"
+        ? destination
+        : uniqueExportURL(in: destination, baseName: exportArchiveRootName, extension: "zip")
+    let rootName = archive.deletingPathExtension().lastPathComponent
+    let staging = uniqueExportURL(
+        in: archive.deletingLastPathComponent(), baseName: rootName, extension: nil
+    )
+    return (staging, archive)
+}
+
 /// Generate a unique filename by appending a counter suffix if a collision exists.
 func generateUniqueExportFilename(baseName: String, extension ext: String, inDirectory directory: URL) -> String {
     let initial = "\(baseName).\(ext)"

@@ -95,29 +95,3 @@ func createDirectoryIfNotExists(location: URL) {
 
     }
 }
-
-/// Zip `sourceURL` (a directory) to `destinationURL`.
-///
-/// NSFileCoordinator's .forUploading intent is what Finder's "Compress" uses,
-/// so the archive matches what a user would produce by hand. Synchronous and
-/// throwing: the caller needs to know whether the artifact was actually
-/// written before it reports success and deletes the staging directory.
-func zipDirectory(at sourceURL: URL, to destinationURL: URL) throws {
-    let coordinator = NSFileCoordinator()
-    var coordinationError: NSError?
-    var writeError: Error?
-
-    coordinator.coordinate(readingItemAt: sourceURL, options: [.forUploading], error: &coordinationError) { zippedURL in
-        do {
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
-                try FileManager.default.removeItem(at: destinationURL)
-            }
-            try FileManager.default.copyItem(at: zippedURL, to: destinationURL)
-        } catch {
-            writeError = error
-        }
-    }
-
-    if let coordinationError { throw coordinationError }
-    if let writeError { throw writeError }
-}

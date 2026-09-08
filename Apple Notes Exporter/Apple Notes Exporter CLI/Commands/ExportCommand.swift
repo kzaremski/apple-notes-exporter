@@ -42,6 +42,10 @@ struct ExportCommand: AsyncParsableCommand {
         Incremental sync (--incremental) writes a sync manifest to the
         output directory so subsequent runs only re-export changed notes.
         Use --reset-sync to force a full re-export.
+
+        --zip delivers the same export as one archive. Pass --output ending in
+        .zip to name it, or a directory to get "Apple Notes Export.zip" inside.
+        File dates are preserved inside the archive.
         """
     )
 
@@ -99,6 +103,9 @@ struct ExportCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "Concatenate all notes into a single output file.")
     var concatenate: Bool = false
 
+    @Flag(name: .long, help: "Deliver the export as a single .zip. --output may name the archive or a folder to put one in. Not compatible with --incremental.")
+    var zip: Bool = false
+
     @Flag(name: .long, help: "Incremental sync: only export new or changed notes.")
     var incremental: Bool = false
 
@@ -125,8 +132,29 @@ struct ExportCommand: AsyncParsableCommand {
             throw ExitCode(2)
         }
 
-        // Resolve and create output directory
-        let outputURL = URL(fileURLWithPath: (output as NSString).expandingTildeInPath).standardizedFileURL
+        // A sync manifest has to persist between runs in a folder, so it
+        // cannot travel inside an archive.
+        if zip && incremental {
+            CLIOutput.writeError(.incompatibleOptions(
+                "--zip cannot be combined with --incremental: the sync manifest has to persist in a folder between runs."
+            ))
+            throw ExitCode(2)
+        }
+
+        // Resolve the destination. With --zip the export is staged in a folder
+        // beside the archive and the archive replaces it at the end, so the
+        // directory the user pointed at never holds loose note files.
+        let destinationURL = URL(fileURLWithPath: (output as NSString).expandingTildeInPath).standardizedFileURL
+        let archiveURL: URL?
+        let outputURL: URL
+        if zip {
+            let locations = archiveExportLocations(destination: destinationURL)
+            archiveURL = locations.archive
+            outputURL = locations.staging
+        } else {
+            archiveURL = nil
+            outputURL = destinationURL
+        }
         do {
             try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
         } catch {
@@ -272,11 +300,34 @@ struct ExportCommand: AsyncParsableCommand {
                     CLIOutput.writeProgress(current, total)
                 }
             )
-            CLIOutput.writeJSON(result)
-            if result.failed > 0 {
+            var reported = result
+            if let archiveURL {
+                if verbose { CLIOutput.writeStderr("Creating \(archiveURL.lastPathComponent)...") }
+                do {
+                    try zipDirectory(at: outputURL, to: archiveURL)
+                    try? FileManager.default.removeItem(at: outputURL)
+                } catch {
+                    try? FileManager.default.removeItem(at: outputURL)
+                    CLIOutput.writeError(.fileSystemError("Could not write \(archiveURL.path): \(error.localizedDescription)"))
+                    throw ExitCode(1)
+                }
+                reported = CLIExportEngine.ExportResult(
+                    success: result.success,
+                    exported: result.exported,
+                    skipped: result.skipped,
+                    failed: result.failed,
+                    failedAttachments: result.failedAttachments,
+                    outputDirectory: archiveURL.path,
+                    format: result.format,
+                    durationSeconds: result.durationSeconds
+                )
+            }
+            CLIOutput.writeJSON(reported)
+            if reported.failed > 0 {
                 throw ExitCode(1)
             }
         } catch let error as CLIError {
+            if zip { try? FileManager.default.removeItem(at: outputURL) }
             CLIOutput.writeError(error)
             throw ExitCode(error.exitCode)
         }
