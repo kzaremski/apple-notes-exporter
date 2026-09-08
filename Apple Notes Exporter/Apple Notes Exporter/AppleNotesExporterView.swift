@@ -172,6 +172,18 @@ struct AppleNotesExporterView: View {
     /**
      Select the output folder.
      */
+    /// Forget the chosen destination when the container changes.
+    ///
+    /// The three containers do not mean the same thing by "output": ZIP names
+    /// a file, the other two name a directory. Carrying a path across a switch
+    /// leaves a value the new mode has to reinterpret, so the user picks again
+    /// with the right panel.
+    func clearOutputPathIfContainerChanged(wasZip: Bool, wasSingle: Bool, nowZip: Bool, nowSingle: Bool) {
+        guard wasZip != nowZip || wasSingle != nowSingle else { return }
+        outputPath = ""
+        outputURL = nil
+    }
+
     func selectOutputFolder() {
         // A zip export produces one file, so the user names that file rather
         // than picking a directory to be filled.
@@ -398,6 +410,8 @@ struct AppleNotesExporterView: View {
                     icon: "folder",
                     isSelected: !isZip && !isSingle
                 ) {
+                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
+                                                      nowZip: false, nowSingle: false)
                     exportViewModel.configurations.zipOutput = false
                     exportViewModel.configurations.concatenateOutput = false
                     exportViewModel.saveConfigurations()
@@ -407,6 +421,8 @@ struct AppleNotesExporterView: View {
                     icon: "doc.zipper",
                     isSelected: isZip
                 ) {
+                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
+                                                      nowZip: true, nowSingle: false)
                     exportViewModel.configurations.zipOutput = true
                     exportViewModel.configurations.concatenateOutput = false
                     // A sync manifest has to live in a folder that persists
@@ -422,6 +438,8 @@ struct AppleNotesExporterView: View {
                     isEnabled: canConcatenate,
                     disabledHelp: "\(outputFormat) is a packaged format, so its notes cannot be joined into one file."
                 ) {
+                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
+                                                      nowZip: false, nowSingle: true)
                     exportViewModel.configurations.concatenateOutput = true
                     exportViewModel.configurations.zipOutput = false
                     exportViewModel.configurations.incrementalSync = false
