@@ -130,7 +130,16 @@ enum MCPToolHandlers {
                         "enum": .array([.string("System"), .string("Serif"), .string("Sans-Serif"), .string("Monospace")])
                     ]),
                     "font_size": .object(["type": .string("number"),
-                        "description": .string("Font size in points (default: 14).")])
+                        "description": .string("Font size in points (default: 14).")]),
+                    "date_format": .object([
+                        "type": .string("string"),
+                        "description": .string("Date format for the filename prefix. Only used with add_date_prefix."),
+                        "enum": .array([.string("iso"), .string("us"), .string("eu")])
+                    ]),
+                    "concatenate": .object(["type": .string("boolean"),
+                        "description": .string("Join every note into a single file. Not available for the packaged formats (pdf, docx, odt, epub), and not compatible with incremental.")]),
+                    "zip": .object(["type": .string("boolean"),
+                        "description": .string("Deliver the export as one .zip. 'output' may name the archive or a directory to receive it. Not compatible with incremental.")])
                 ]),
                 "required": .array([.string("output"), .string("format")])
             ])
@@ -322,8 +331,31 @@ enum MCPToolHandlers {
             return errorText("Output path '\(outputStr)' is outside the user's home directory. For safety, the MCP server only writes under $HOME or /tmp.")
         }
 
+        let wantsZip = args["zip"]?.boolValue ?? false
+        let wantsIncremental = args["incremental"]?.boolValue ?? false
+        if wantsZip && wantsIncremental {
+            return errorText("'zip' cannot be combined with 'incremental': the sync manifest has to persist in a folder between runs.")
+        }
+        if (args["concatenate"]?.boolValue ?? false) && !exportFormat.supportsConcatenation {
+            return errorText("'concatenate' is not available for \(exportFormat.rawValue): it is a packaged format with its own internal structure, so there is nothing to join.")
+        }
+
+        // With zip the export is staged in a folder beside the archive and the
+        // archive replaces it, so the caller's directory never holds loose
+        // note files. The staging path stays inside the checked output path.
+        let archiveURL: URL?
+        let workingURL: URL
+        if wantsZip {
+            let locations = archiveExportLocations(destination: outputURL)
+            archiveURL = locations.archive
+            workingURL = locations.staging
+        } else {
+            archiveURL = nil
+            workingURL = outputURL
+        }
+
         do {
-            try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workingURL, withIntermediateDirectories: true)
         } catch {
             return errorText("Cannot create output directory '\(outputStr)'.")
         }
@@ -334,6 +366,14 @@ enum MCPToolHandlers {
         configs.sharedAttachmentsFolder = args["shared_attachments"]?.boolValue ?? false
         configs.addDateToFilename  = args["add_date_prefix"]?.boolValue ?? false
         configs.incrementalSync    = args["incremental"]?.boolValue ?? false
+        configs.concatenateOutput  = args["concatenate"]?.boolValue ?? false
+        // Same three tokens the CLI's --date-format accepts.
+        switch args["date_format"]?.stringValue?.lowercased() {
+        case "us": configs.filenameDateFormat = .usDate
+        case "eu": configs.filenameDateFormat = .euDate
+        case "iso": configs.filenameDateFormat = .iso
+        default: break
+        }
 
         if let ff = args["font_family"]?.stringValue,
            let fontFamily = HTMLConfiguration.FontFamily(rawValue: ff) {
@@ -362,7 +402,7 @@ enum MCPToolHandlers {
 
         // Reset sync manifest if requested
         if args["reset_sync"]?.boolValue == true {
-            let manifestURL = outputURL.appendingPathComponent(SyncManifest.filename)
+            let manifestURL = workingURL.appendingPathComponent(SyncManifest.filename)
             try? FileManager.default.removeItem(at: manifestURL)
         }
 
@@ -425,16 +465,37 @@ enum MCPToolHandlers {
         do {
             let result = try await engine.exportNotes(
                 filtered,
-                toDirectory: outputURL,
+                toDirectory: workingURL,
                 format: exportFormat,
                 includeAttachments: configs.includeAttachments,
                 verbose: false,
+                allKnownNoteIds: Set(allNotes.map(\.id)),
                 progressHandler: { _, _ in }
             )
-            return jsonText(result)
+            guard let archiveURL else { return jsonText(result) }
+
+            do {
+                try zipDirectory(at: workingURL, to: archiveURL)
+                try? FileManager.default.removeItem(at: workingURL)
+            } catch {
+                try? FileManager.default.removeItem(at: workingURL)
+                return errorText("Could not write \(archiveURL.path): \(error.localizedDescription)")
+            }
+            return jsonText(CLIExportEngine.ExportResult(
+                success: result.success,
+                exported: result.exported,
+                skipped: result.skipped,
+                failed: result.failed,
+                failedAttachments: result.failedAttachments,
+                outputDirectory: archiveURL.path,
+                format: result.format,
+                durationSeconds: result.durationSeconds
+            ))
         } catch let error as CLIError {
+            if archiveURL != nil { try? FileManager.default.removeItem(at: workingURL) }
             return errorText(error.message)
         } catch {
+            if archiveURL != nil { try? FileManager.default.removeItem(at: workingURL) }
             return errorText(error.localizedDescription)
         }
     }
