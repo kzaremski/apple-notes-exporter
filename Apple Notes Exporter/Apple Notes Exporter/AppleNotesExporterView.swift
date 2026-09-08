@@ -140,6 +140,9 @@ struct AppleNotesExporterView: View {
             self.showAlert = true
             return
         }
+        // A destination left over from a different container would fail late
+        // and confusingly, so treat it as unset here.
+        normalizeOutputPathForContainer()
         // No output folder or file chosen
         if self.outputPath == "" {
             self.activeAlert = .noOutput
@@ -180,6 +183,21 @@ struct AppleNotesExporterView: View {
     /// with the right panel.
     func clearOutputPathIfContainerChanged(wasZip: Bool, wasSingle: Bool, nowZip: Bool, nowSingle: Bool) {
         guard wasZip != nowZip || wasSingle != nowSingle else { return }
+        outputPath = ""
+        outputURL = nil
+    }
+
+    /// Drop a stored destination the current container cannot use.
+    ///
+    /// outputPath is persisted, so clearing it only when the container changes
+    /// is not enough: an archive path chosen in a previous session comes back
+    /// on the next launch even if Folder is now selected, and the export then
+    /// tries to create a directory where that .zip file already sits. A folder
+    /// path under ZIP is fine, since the archive is named inside it.
+    func normalizeOutputPathForContainer() {
+        guard !outputPath.isEmpty,
+              !exportViewModel.configurations.zipOutput,
+              outputPath.lowercased().hasSuffix(".zip") else { return }
         outputPath = ""
         outputURL = nil
     }
@@ -594,7 +612,9 @@ struct AppleNotesExporterView: View {
         .onAppear {
             // Initialize sync warning state from persisted config
             showSyncWarning = exportViewModel.configurations.incrementalSync
-            // Restore output URL from persisted path
+            // Restore output URL from persisted path, discarding one the
+            // current container cannot use.
+            normalizeOutputPathForContainer()
             if !outputPath.isEmpty {
                 outputURL = URL(fileURLWithPath: outputPath)
             }
