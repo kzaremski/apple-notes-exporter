@@ -1216,7 +1216,8 @@ class ExportViewModel: ObservableObject {
             modificationDate: note.modificationDate,
             folderId: note.folderId,
             accountId: note.accountId,
-            attachments: note.attachments
+            attachments: note.attachments,
+            identifier: note.identifier
         )
     }
 
@@ -1398,7 +1399,7 @@ class ExportViewModel: ObservableObject {
 
         for note in notes {
             let accountKey = sanitizeExportFilename(accountLookup[note.accountId] ?? "Unknown Account")
-            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup)
+            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup, accountId: note.accountId)
             hierarchy[accountKey, default: [:]][folderPath, default: []].append(note)
         }
 

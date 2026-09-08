@@ -111,6 +111,7 @@ typedef struct {
 typedef struct {
     int64_t     pk;
     char       *title;
+    char       *identifier;       /* ZIDENTIFIER UUID; used in applenotes:note/ links */
     char       *folder_title;
     char       *account_name;
     char       *account_identifier;

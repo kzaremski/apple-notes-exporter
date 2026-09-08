@@ -700,7 +700,7 @@ actor CLIExportEngine {
         for note in notes {
             let accountName = accountLookup[note.accountId] ?? "Unknown Account"
             let accountKey = sanitizeExportFilename(accountName)
-            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup)
+            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup, accountId: note.accountId)
 
             result[accountKey, default: [:]][folderPath, default: []].append(note)
         }

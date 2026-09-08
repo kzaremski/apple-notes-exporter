@@ -170,6 +170,36 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertEqual(result, html)
     }
 
+    func test_rewriteInternalLinks_looksUpUUIDNotCoreDataPK() {
+        let pk = "42"
+        let uuid = "1d1d6543-df39-9275-9a7a-827db983efc0"
+        let map = [
+            pk: "iCloud/Notes/Target.md",
+            uuid: "iCloud/Notes/Target.md"
+        ]
+        let html = "<a href='applenotes:note/\(uuid)?ownerIdentifier=foo'>Target</a>"
+        let result = rewriteInternalLinks(
+            html: html,
+            currentNoteRelativePath: "iCloud/Notes/Source.md",
+            noteIdToRelativePath: map
+        )
+        XCTAssertTrue(result.contains("Target.md"), "Expected UUID lookup, got: \(result)")
+        XCTAssertFalse(result.contains("applenotes:note"))
+    }
+
+    func test_buildExportFolderPath_missingFolderUsesAccountNotesFolder() {
+        let notesFolder = NotesFolder(id: "10", name: "Notes", parentId: "1", accountId: "1")
+        let lookup = ["10": notesFolder]
+        let path = buildExportFolderPath(folderId: "", folderLookup: lookup, accountId: "1")
+        XCTAssertEqual(path, "Notes")
+    }
+
+    func test_buildExportFolderPath_missingFolderWithoutAccountStillNotes() {
+        let path = buildExportFolderPath(folderId: "missing", folderLookup: [:], accountId: nil)
+        XCTAssertEqual(path, "Notes")
+        XCTAssertNotEqual(path, "Unknown Folder")
+    }
+
     func test_rewriteInternalLinks_multipleLinks() {
         let id1 = "1d1d6543-df39-9275-9a7a-827db983efc0"
         let id2 = "2e2e7654-ef40-a386-ab8b-938ec094f0d1"

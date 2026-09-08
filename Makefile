@@ -252,6 +252,12 @@ release-export:
 		-archivePath "$(RELEASE_DIR)/Apple Notes Exporter.xcarchive" \
 		-exportPath "$(RELEASE_DIR)/Export" \
 		-exportOptionsPlist "$(RELEASE_DIR)/ExportOptions.plist"
+	@echo "🔐 Verifying signatures..."
+	@APP="$(RELEASE_DIR)/Export/$(APP_NAME)"; \
+		codesign --verify --deep --strict --verbose=2 "$$APP"; \
+		codesign --verify --strict --verbose=2 "$$APP/Contents/SharedSupport/notes-export"; \
+		codesign --verify --strict --verbose=2 "$$APP/Contents/SharedSupport/notes-export-mcp"; \
+		spctl --assess --type execute --verbose "$$APP" || true
 	@echo "✅ Exported to $(RELEASE_DIR)/Export/$(APP_NAME)"
 
 release-notarize:

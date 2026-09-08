@@ -98,6 +98,8 @@ struct NotesNote: NotesItem {
     let folderId: String
     let accountId: String
     let attachments: [NotesAttachment]
+    /// ZIDENTIFIER UUID used in applenotes:note/ links. Empty for legacy notes.
+    var identifier: String = ""
 
     var name: String { title }
     var description: String { title }

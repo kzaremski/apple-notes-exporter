@@ -158,7 +158,7 @@ struct ExportNotesIntent: AppIntent {
         var hierarchy: [(accountName: String, folderPath: String, note: NotesNote)] = []
         for note in notes {
             let acctName = sanitizeFileNameString(accountNames[note.accountId] ?? "Unknown Account")
-            let fPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup)
+            let fPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup, accountId: note.accountId)
             hierarchy.append((accountName: acctName, folderPath: fPath, note: note))
         }
 

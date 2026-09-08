@@ -515,7 +515,8 @@ static void _prepare_statements(ane_db *db)
             "note.%s AS FOLDER_ID, "
             "%s AS ACCOUNT_FK, "
             "data.ZDATA, "
-            "%s%s "
+            "%s%s, "
+            "note.ZIDENTIFIER "
             "FROM ZICCLOUDSYNCINGOBJECT note "
             "LEFT JOIN ZICNOTEDATA data ON note.Z_PK = data.ZNOTE "
             "WHERE 1=1 AND (note.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
@@ -537,7 +538,8 @@ static void _prepare_statements(ane_db *db)
             "note.%s AS FOLDER_ID, "
             "%s AS ACCOUNT_FK, "
             "data.ZDATA, "
-            "%s%s "
+            "%s%s, "
+            "note.ZIDENTIFIER "
             "FROM ZICCLOUDSYNCINGOBJECT note "
             "LEFT JOIN ZICNOTEDATA data ON note.Z_PK = data.ZNOTE "
             "WHERE 1=1 AND (note.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
@@ -1263,6 +1265,9 @@ static ane_note *_fetch_notes_impl(ane_db *db, sqlite3_stmt *stmt,
             ? sqlite3_column_int(stmt, 8)
             : 0;
 
+        /* ZIDENTIFIER -- last column (8 without password, 9 with) */
+        n->identifier = _strdup_col(stmt, has_password ? 9 : 8);
+
         (*count)++;
     }
 
@@ -1421,6 +1426,7 @@ ane_note *ane_fetch_notes_in_range(ane_db *db,
         n->is_password_protected = has_password
             ? sqlite3_column_int(stmt, 8)
             : 0;
+        n->identifier = _strdup_col(stmt, has_password ? 9 : 8);
 
         (*count)++;
     }
@@ -2763,6 +2769,7 @@ void ane_free_notes(ane_note *notes, size_t count)
     if (!notes) return;
     for (size_t i = 0; i < count; i++) {
         free(notes[i].title);
+        free(notes[i].identifier);
         free(notes[i].folder_title);
         free(notes[i].account_name);
         free(notes[i].account_identifier);

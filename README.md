@@ -172,6 +172,8 @@ The latest download is available from the Github "Releases" tab.
 
 Make sure that you have "App Store and Identified Developers" set as your app install sources in the "Privacy & Security" section of System Settings in MacOS.
 
+**Full Disk Access:** the app will not show up in the Full Disk Access list by itself (especially on older macOS). Open System Settings > Privacy & Security > Full Disk Access, click +, and choose Apple Notes Exporter, or drag the .app from Finder / Applications into the list. Grant access to the copy you actually run (the Debug build from Xcode is a different binary than the one in /Applications).
+
 **As of Version 0.4 Build 5, we are distributing a notarized executable.** *For older versions, go to the "Privacy & Security" pane of System Settings and click "Open Anyway" under the "Security" section towards the bottom of the pane. See Apple's article https://support.apple.com/en-us/HT202491 if you need more help or a better explanation on how to make an exception for the app to run.*
 
 ## Acknowledgements

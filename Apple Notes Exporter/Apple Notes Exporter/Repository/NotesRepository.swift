@@ -317,7 +317,8 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                         modificationDate: modificationDate,
                         folderId: n.folder_pk >= 0 ? "\(n.folder_pk)" : "",
                         accountId: n.account_pk >= 0 ? "\(n.account_pk)" : "",
-                        attachments: attachments
+                        attachments: attachments,
+                        identifier: n.identifier != nil ? String(cString: n.identifier) : ""
                     ))
                 }
 

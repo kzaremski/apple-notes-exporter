@@ -464,7 +464,7 @@ private struct HTMLToOrgConverter {
         body = body.replacingOccurrences(of: "</pre>", with: "\n#+END_SRC\n")
 
         // Convert links
-        body = body.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+        body = body.replacingOccurrences(of: "<a href=[\"']([^\"']*)[\"'][^>]*>([^<]*)</a>",
                                          with: "[[$1][$2]]",
                                          options: .regularExpression)
 
@@ -557,7 +557,7 @@ private struct HTMLToRSTConverter {
         body = body.replacingOccurrences(of: "</pre>", with: "\n")
 
         // Convert links
-        body = body.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+        body = body.replacingOccurrences(of: "<a href=[\"']([^\"']*)[\"'][^>]*>([^<]*)</a>",
                                          with: "`$2 <$1>`_",
                                          options: .regularExpression)
 
@@ -648,7 +648,7 @@ private struct HTMLToAsciiDocConverter {
         body = body.replacingOccurrences(of: "</pre>", with: "\n----\n")
 
         // Convert links
-        body = body.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+        body = body.replacingOccurrences(of: "<a href=[\"']([^\"']*)[\"'][^>]*>([^<]*)</a>",
                                          with: "$1[$2]",
                                          options: .regularExpression)
 
@@ -824,7 +824,7 @@ private struct HTMLToPlainTextConverter {
         }
 
         // Handle anchor tags specially to preserve URLs
-        result = result.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+        result = result.replacingOccurrences(of: "<a href=[\"']([^\"']*)[\"'][^>]*>([^<]*)</a>",
                                             with: "$2 ($1)",
                                             options: .regularExpression)
 
@@ -880,7 +880,7 @@ private struct HTMLToMarkdownConverter {
         result = result.replacingOccurrences(of: "</s>", with: "~~")
 
         // Convert links
-        result = result.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+        result = result.replacingOccurrences(of: "<a href=[\"']([^\"']*)[\"'][^>]*>([^<]*)</a>",
                                             with: "[$2]($1)",
                                             options: .regularExpression)
 
@@ -1223,7 +1223,7 @@ private struct HTMLToLatexConverter {
         result = result.replacingOccurrences(of: "</s>", with: "}")
 
         // Convert links
-        result = result.replacingOccurrences(of: "<a href='([^']*)'[^>]*>([^<]*)</a>",
+        result = result.replacingOccurrences(of: "<a href=[\"']([^\"']*)[\"'][^>]*>([^<]*)</a>",
                                             with: "\\href{$1}{$2}",
                                             options: .regularExpression)
 

@@ -258,12 +258,18 @@ func buildInternalLinkPathMap(
         reservedByFolder[folderKey] = used
 
         let fullPath = folderURL.appendingPathComponent(filename).standardizedFileURL.path
+        let rel: String
         if fullPath.hasPrefix(rootPath + "/") {
-            map[note.id] = String(fullPath.dropFirst(rootPath.count + 1))
+            rel = String(fullPath.dropFirst(rootPath.count + 1))
         } else if fullPath == rootPath {
-            map[note.id] = filename
+            rel = filename
         } else {
-            map[note.id] = folderURL.appendingPathComponent(filename).path
+            rel = folderURL.appendingPathComponent(filename).path
+        }
+        // Links in note bodies use ZIDENTIFIER (UUID), not the Core Data PK.
+        map[note.id] = rel
+        if !note.identifier.isEmpty {
+            map[note.identifier] = rel
         }
     }
 
@@ -361,17 +367,30 @@ func sanitizeExportFilename(_ name: String) -> String {
 }
 
 /// Build a relative folder path by walking up the parent folder chain.
-func buildExportFolderPath(folderId: String, folderLookup: [String: NotesFolder]) -> String {
-    guard let folder = folderLookup[folderId] else {
-        return sanitizeExportFilename("Unknown Folder")
+func buildExportFolderPath(folderId: String, folderLookup: [String: NotesFolder], accountId: String? = nil) -> String {
+    if let folder = folderLookup[folderId] {
+        var components: [String] = [sanitizeExportFilename(folder.name)]
+        var currentParentId = folder.parentId
+        while let parentId = currentParentId, let parentFolder = folderLookup[parentId] {
+            components.insert(sanitizeExportFilename(parentFolder.name), at: 0)
+            currentParentId = parentFolder.parentId
+        }
+        return components.joined(separator: "/")
     }
-    var components: [String] = [sanitizeExportFilename(folder.name)]
-    var currentParentId = folder.parentId
-    while let parentId = currentParentId, let parentFolder = folderLookup[parentId] {
-        components.insert(sanitizeExportFilename(parentFolder.name), at: 0)
-        currentParentId = parentFolder.parentId
+
+    // Unfiled / epoch notes often have a missing ZFOLDER. Apple Notes shows
+    // them in the account's default "Notes" folder; incremental and full
+    // export should do the same rather than creating "Unknown Folder".
+    if let accountId, !accountId.isEmpty {
+        if let notesFolder = folderLookup.values.first(where: { folder in
+            folder.accountId == accountId
+                && folder.name.compare("Notes", options: .caseInsensitive) == .orderedSame
+                && (folder.parentId == nil || folder.parentId == accountId)
+        }) {
+            return sanitizeExportFilename(notesFolder.name)
+        }
     }
-    return components.joined(separator: "/")
+    return sanitizeExportFilename("Notes")
 }
 
 /// Generate a unique filename by appending a counter suffix if a collision exists.
@@ -451,7 +470,8 @@ func noteWithHTML(_ note: NotesNote, html: String) -> NotesNote {
         id: note.id, title: note.title, plaintext: note.plaintext,
         htmlBody: html, creationDate: note.creationDate,
         modificationDate: note.modificationDate, folderId: note.folderId,
-        accountId: note.accountId, attachments: note.attachments
+        accountId: note.accountId, attachments: note.attachments,
+        identifier: note.identifier
     )
 }
 
