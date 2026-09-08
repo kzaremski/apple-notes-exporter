@@ -658,7 +658,7 @@ private struct OptionHelpTip: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(HelpTipButtonStyle(isActive: isShowingHelp))
-        .popover(isPresented: $isShowingHelp, arrowEdge: .bottom) {
+        .popover(isPresented: $isShowingHelp, arrowEdge: .trailing) {
             Text(text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
