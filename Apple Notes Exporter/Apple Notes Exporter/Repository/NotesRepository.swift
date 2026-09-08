@@ -91,6 +91,11 @@ enum RepositoryError: Error, LocalizedError {
 class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
     let databasePath: String
     private let dbLock = NSLock()
+    /// Apple's libsqlite3 is compiled SQLITE_CONFIG_MULTITHREAD and asserts if
+    /// a connection is used off the thread that opened it. All C parser calls
+    /// stay on this queue so loadNotes' parallel fetches cannot share the
+    /// snapshot handle across threads.
+    private let dbQueue = DispatchQueue(label: "com.zaremski.AppleNotesExporter.notestore", qos: .userInitiated)
     private var cachedDB: OpaquePointer?
 
     /// Initialize with custom database path (useful for testing)
@@ -99,12 +104,14 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
     }
 
     deinit {
-        dbLock.lock()
-        if let db = cachedDB {
-            ane_close(db)
-            cachedDB = nil
+        dbQueue.sync {
+            dbLock.lock()
+            if let db = cachedDB {
+                ane_close(db)
+                cachedDB = nil
+            }
+            dbLock.unlock()
         }
-        dbLock.unlock()
     }
 
     // MARK: - Internal C Handle Helpers
@@ -128,19 +135,21 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
     }
 
     func invalidateCache() {
-        dbLock.lock()
-        if let db = cachedDB {
-            ane_close(db)
-            cachedDB = nil
+        dbQueue.sync {
+            dbLock.lock()
+            if let db = cachedDB {
+                ane_close(db)
+                cachedDB = nil
+            }
+            dbLock.unlock()
         }
-        dbLock.unlock()
     }
 
     // MARK: - Fetch Methods
 
     func fetchAccounts() async throws -> [NotesAccount] {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            self.dbQueue.async {
                 guard let db = self.openDB() else {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
@@ -188,7 +197,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
 
     func fetchFolders() async throws -> [NotesFolder] {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            self.dbQueue.async {
                 guard let db = self.openDB() else {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
@@ -224,7 +233,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
 
     func fetchNotes() async throws -> [NotesNote] {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            self.dbQueue.async {
                 guard let db = self.openDB() else {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
@@ -319,7 +328,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
 
     func fetchAttachment(id: String) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            self.dbQueue.async {
                 guard let db = self.openDB() else {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
@@ -345,7 +354,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
 
     func fetchGalleryChildren(galleryId: String, accountId: String?) async throws -> [GalleryChild] {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            self.dbQueue.async {
                 guard let db = self.openDB() else {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
@@ -382,7 +391,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
 
     func fetchAttachmentFilename(id: String) async -> String? {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            self.dbQueue.async {
                 guard let db = self.openDB() else {
                     continuation.resume(returning: nil)
                     return
@@ -432,7 +441,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
 
     func generateHTML(forNoteId noteId: String) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            self.dbQueue.async {
                 guard let db = self.openDB() else {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return

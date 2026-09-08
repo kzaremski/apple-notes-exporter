@@ -788,7 +788,8 @@ static sqlite3 *_open_consistent_snapshot(const char *live_path,
     snprintf(snap_path, sizeof(snap_path), "%s/NoteStore.sqlite", dir_tmpl);
 
     sqlite3 *snap = NULL;
-    if (sqlite3_open(snap_path, &snap) != SQLITE_OK) {
+    int snap_flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
+    if (sqlite3_open_v2(snap_path, &snap, snap_flags, NULL) != SQLITE_OK) {
         if (snap) sqlite3_close(snap);
         rmdir(dir_tmpl);
         return live;
