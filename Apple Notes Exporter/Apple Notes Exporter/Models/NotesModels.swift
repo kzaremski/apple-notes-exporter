@@ -232,8 +232,41 @@ struct NotesHierarchy {
         sortBy: NoteSortOption = .dateModified,
         foldersOnTop: Bool = true
     ) -> NotesHierarchy {
+        let accountIds = Set(accounts.map { $0.id })
+        let folderIds = Set(folders.map { $0.id })
+
+        // Infer a missing folder account from notes in that folder, then
+        // the first real account. Treat a parent that is not a known folder
+        // or account as a root (CloudKit often stores the parent only in
+        // ZSERVERRECORDDATA, leaving ZPARENT empty or dangling).
+        let normalizedFolders: [NotesFolder] = folders.map { folder in
+            var accountId = folder.accountId
+            if !accountIds.contains(accountId) {
+                if let inferred = notes.first(where: {
+                    $0.folderId == folder.id && accountIds.contains($0.accountId)
+                })?.accountId {
+                    accountId = inferred
+                } else if let first = accounts.first {
+                    accountId = first.id
+                }
+            }
+            var parentId = folder.parentId
+            if let parent = parentId,
+               parent != accountId,
+               !folderIds.contains(parent),
+               !accountIds.contains(parent) {
+                parentId = nil
+            }
+            return NotesFolder(
+                id: folder.id,
+                name: folder.name,
+                parentId: parentId,
+                accountId: accountId
+            )
+        }
+
         let accountNodes = accounts.map { account in
-            let accountFolders = folders.filter { $0.accountId == account.id }
+            let accountFolders = normalizedFolders.filter { $0.accountId == account.id }
             let rootFolders = accountFolders.filter { $0.parentId == nil || $0.parentId == account.id }
 
             // Group root folders by name to merge duplicates
@@ -241,7 +274,7 @@ struct NotesHierarchy {
             for folder in rootFolders {
                 groupedFolders[folder.name, default: []].append(folder)
             }
-            let folderNodes = groupedFolders.map { (name, foldersWithSameName) in
+            var folderNodes = groupedFolders.map { (name, foldersWithSameName) in
                 buildMergedFolderNode(folders: foldersWithSameName, allFolders: accountFolders, notes: notes, sortBy: sortBy, foldersOnTop: foldersOnTop)
             }
             // Sort root folders based on sort option
@@ -249,10 +282,45 @@ struct NotesHierarchy {
                 sortFolders(folder1, folder2, by: sortBy)
             }
 
+            // Notes whose folder is missing from this account still belong
+            // here if their accountId matches (or no account matched).
+            var placedNoteIds = Set<String>()
+            for node in folderNodes {
+                placedNoteIds.formUnion(collectNoteIds(from: node))
+            }
+            let unfiled = notes.filter { note in
+                !placedNoteIds.contains(note.id)
+                    && (note.accountId == account.id
+                        || (!accountIds.contains(note.accountId) && account.id == accounts.first?.id))
+            }
+            .sorted { sortNotes($0, $1, by: sortBy) }
+
+            if !unfiled.isEmpty {
+                let unfiledFolder = NotesFolder(
+                    id: "unfiled-\(account.id)",
+                    name: "Unfiled",
+                    parentId: nil,
+                    accountId: account.id
+                )
+                folderNodes.append(FolderNode(
+                    folder: unfiledFolder,
+                    subfolders: [],
+                    notes: unfiled
+                ))
+            }
+
             return AccountNode(account: account, folders: folderNodes)
         }
 
         return NotesHierarchy(accounts: accountNodes)
+    }
+
+    private static func collectNoteIds(from node: FolderNode) -> Set<String> {
+        var ids = Set(node.notes.map { $0.id })
+        for subfolder in node.subfolders {
+            ids.formUnion(collectNoteIds(from: subfolder))
+        }
+        return ids
     }
 
     /// Build a merged folder node from multiple folders with the same name

@@ -49,6 +49,9 @@ protocol NotesRepository {
 
     /// Build complete hierarchy of accounts, folders, and notes
     func fetchHierarchy(sortBy: NoteSortOption, foldersOnTop: Bool) async throws -> NotesHierarchy
+
+    /// Drop any cached NoteStore snapshot so the next fetch reopens the live file.
+    func invalidateCache()
 }
 
 // MARK: - Gallery Child
@@ -87,17 +90,50 @@ enum RepositoryError: Error, LocalizedError {
 /// Concrete implementation using the C AppleNotesKit parser
 class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
     let databasePath: String
+    private let dbLock = NSLock()
+    private var cachedDB: OpaquePointer?
 
     /// Initialize with custom database path (useful for testing)
     init(databasePath: String = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite") {
         self.databasePath = databasePath
     }
 
+    deinit {
+        dbLock.lock()
+        if let db = cachedDB {
+            ane_close(db)
+            cachedDB = nil
+        }
+        dbLock.unlock()
+    }
+
     // MARK: - Internal C Handle Helpers
 
-    /// Open a C parser handle. Caller must call ane_close() when done.
+    /// Shared snapshot handle. Copied from the live NoteStore (WAL-aware) on
+    /// first use so concurrent fetches do not each copy a tens-of-MB file.
     private func openDB() -> OpaquePointer? {
-        return ane_open(databasePath)
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        if cachedDB == nil {
+            cachedDB = ane_open(databasePath)
+            if let db = cachedDB {
+                let version = Int(ane_get_version(db).rawValue)
+                Logger.noteQuery.info("Opened NoteStore snapshot, schema version \(version)")
+                ane_prefetch_attachments(db)
+            } else {
+                Logger.noteQuery.error("ane_open failed for \(self.databasePath)")
+            }
+        }
+        return cachedDB
+    }
+
+    func invalidateCache() {
+        dbLock.lock()
+        if let db = cachedDB {
+            ane_close(db)
+            cachedDB = nil
+        }
+        dbLock.unlock()
     }
 
     // MARK: - Fetch Methods
@@ -109,7 +145,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
                 }
-                defer { ane_close(db) }
+                // Shared snapshot handle; closed in deinit.
 
                 var count: Int = 0
                 guard let raw = ane_fetch_accounts(db, &count), count > 0 else {
@@ -157,7 +193,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
                 }
-                defer { ane_close(db) }
+                // Shared snapshot handle; closed in deinit.
 
                 var count: Int = 0
                 guard let raw = ane_fetch_folders(db, &count), count > 0 else {
@@ -177,7 +213,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                         id: "\(f.pk)",
                         name: title,
                         parentId: f.parent_pk >= 0 ? "\(f.parent_pk)" : nil,
-                        accountId: "\(f.account_pk)"
+                        accountId: f.account_pk >= 0 ? "\(f.account_pk)" : ""
                     ))
                 }
 
@@ -193,7 +229,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
                 }
-                defer { ane_close(db) }
+                // Shared snapshot handle; closed in deinit.
 
                 var count: Int = 0
                 guard let raw = ane_fetch_notes(db, &count), count > 0 else {
@@ -270,8 +306,8 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                         htmlBody: nil,  // Generated on-demand during export
                         creationDate: creationDate,
                         modificationDate: modificationDate,
-                        folderId: "\(n.folder_pk)",
-                        accountId: "\(n.account_pk)",
+                        folderId: n.folder_pk >= 0 ? "\(n.folder_pk)" : "",
+                        accountId: n.account_pk >= 0 ? "\(n.account_pk)" : "",
                         attachments: attachments
                     ))
                 }
@@ -288,7 +324,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
                 }
-                defer { ane_close(db) }
+                // Shared snapshot handle; closed in deinit.
 
                 // Use the C parser's full attachment resolution chain
                 guard let result = ane_fetch_attachment(db, id, nil) else {
@@ -314,7 +350,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
                 }
-                defer { ane_close(db) }
+                // Shared snapshot handle; closed in deinit.
 
                 ane_prefetch_attachments(db)
 
@@ -351,7 +387,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                     continuation.resume(returning: nil)
                     return
                 }
-                defer { ane_close(db) }
+                // Shared snapshot handle; closed in deinit.
 
                 // Try the prefetch cache first for O(1) lookup
                 let cached = ane_lookup_attachment(db, id)
@@ -401,7 +437,7 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                     continuation.resume(throwing: RepositoryError.databaseUnavailable)
                     return
                 }
-                defer { ane_close(db) }
+                // Shared snapshot handle; closed in deinit.
 
                 guard let noteIdInt = Int64(noteId) else {
                     continuation.resume(throwing: RepositoryError.itemNotFound(noteId))
@@ -526,6 +562,8 @@ class MockNotesRepository: NotesRepository {
             foldersOnTop: foldersOnTop
         )
     }
+
+    func invalidateCache() {}
 
     // MARK: - Mock Data Helpers
 

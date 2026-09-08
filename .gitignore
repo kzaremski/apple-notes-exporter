@@ -43,6 +43,7 @@ Pods/
 build.log
 build-cli.log
 build-mcp.log
+test.log
 
 # Test output
 *.profraw

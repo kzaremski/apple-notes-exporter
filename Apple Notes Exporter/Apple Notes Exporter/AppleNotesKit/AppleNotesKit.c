@@ -31,6 +31,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <time.h>
+#include <unistd.h>
+#include <errno.h>
 
 /* ── Prepared statement IDs ─────────────────────────────────── */
 
@@ -58,6 +60,7 @@ enum {
     STMT_FALLBACK_PDF_GEN,        /* ZFALLBACKPDFGENERATION by UUID */
     STMT_MERGEABLE_DATA,          /* ZMERGEABLEDATA/ZMERGEABLEDATA1 */
     STMT_VALIDATE_ATT_OWNER,      /* attachment ownership check */
+    STMT_ACCOUNTS_FALLBACK,       /* ZNAME-based account discovery */
     /* Legacy iOS 8 statements */
     STMT_LEGACY_ACCOUNTS,
     STMT_LEGACY_FOLDERS,
@@ -144,6 +147,7 @@ static void _att_map_free(_att_map *map)
 struct ane_db {
     sqlite3      *sqlite;
     char         *db_path;
+    char         *snapshot_path;  /* temp copy from sqlite3_backup, or NULL if live */
     ane_version   version;
 
     /* Column cache from ZICCLOUDSYNCINGOBJECT (modern) */
@@ -343,7 +347,6 @@ static ane_version _detect_version(ane_db *db)
 /* ── Forward declarations for column resolution ────────────── */
 
 static const char *_resolve_account_col(const ane_db *db);
-static const char *_resolve_folder_account_col(const ane_db *db);
 static const char *_resolve_title_col(const ane_db *db);
 static const char *_resolve_creation_date_col(const ane_db *db);
 static const char *_resolve_modification_date_col(const ane_db *db);
@@ -351,6 +354,8 @@ static const char *_resolve_folder_col(const ane_db *db);
 static const char *_resolve_mergeable_data_col(const ane_db *db);
 static const char *_resolve_uti_col(const ane_db *db);
 static const char *_resolve_folder_title_col(const ane_db *db);
+static void _note_account_sql(const ane_db *db, const char *prefix, char *buf, size_t buflen);
+static void _folder_account_sql(const ane_db *db, char *buf, size_t buflen);
 
 /* ── Prepared statement cache ───────────────────────────────── */
 /* Statements are prepared once at open() with schema-specific   */
@@ -365,8 +370,11 @@ static void _prepare_statements(ane_db *db)
     const char *creation_col = _resolve_creation_date_col(db);
     const char *modification_col = _resolve_modification_date_col(db);
     const char *folder_col = _resolve_folder_col(db);
-    const char *account_col = _resolve_account_col(db);
-    const char *folder_account_col = _resolve_folder_account_col(db);
+    char note_account_expr[256];
+    char folder_account_expr[256];
+    _note_account_sql(db, "note.", note_account_expr, sizeof(note_account_expr));
+    _folder_account_sql(db, folder_account_expr, sizeof(folder_account_expr));
+    const char *folder_account_col = folder_account_expr;
     const char *mergeable_col = _resolve_mergeable_data_col(db);
     const char *uti_col = _resolve_uti_col(db);
     /* Some attachments (e.g. com.apple.paper.doc.pdf) only populate
@@ -448,9 +456,23 @@ static void _prepare_statements(ane_db *db)
         has_account_type ? ", ZACCOUNTTYPE" : "");
     sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_ACCOUNTS], NULL);
 
+    /* STMT_ACCOUNTS_FALLBACK -- parser uses ZNAME IS NOT NULL rather than
+     * the ICAccount entity, which has been renamed across schema versions. */
+    snprintf(sql, sizeof(sql),
+        "SELECT  Z_PK, ZIDENTIFIER, ZNAME%s "
+        "FROM ZICCLOUDSYNCINGOBJECT "
+        "WHERE ZNAME IS NOT NULL AND ZIDENTIFIER IS NOT NULL "
+        "AND (ZMARKEDFORDELETION IS NULL OR ZMARKEDFORDELETION = 0) "
+        "AND (Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICAccount') "
+        "     OR ZIDENTIFIER = 'LocalAccount' "
+        "     OR Z_ENT IN (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME LIKE '%%Account')) /*ank*/;",
+        has_account_type ? ", ZACCOUNTTYPE" : "");
+    sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_ACCOUNTS_FALLBACK], NULL);
+
     /* STMT_FOLDERS -- uses folder_title_col which probes ICFolder entities
      * separately from the note title column, since on macOS 15+ folders use
-     * ZTITLE2 while notes use ZTITLE1. */
+     * ZTITLE2 while notes use ZTITLE1. Account is COALESCE(ZOWNER, ZACCOUNT, ...)
+     * so a NULL ZOWNER does not become PK 0. */
     snprintf(sql, sizeof(sql),
         "SELECT  Z_PK, %s AS TITLE, ZPARENT, %s AS ACCOUNT_ID "
         "FROM ZICCLOUDSYNCINGOBJECT "
@@ -482,26 +504,27 @@ static void _prepare_statements(ane_db *db)
             has_pinned ? "ZICCLOUDSYNCINGOBJECT.ZISPINNED" : "0 AS ZISPINNED",
             has_password ? ", ZICCLOUDSYNCINGOBJECT.ZPASSWORDPROTECTED" : "");
     } else {
-        /* iOS 12+: standard two-table join */
+        /* iOS 12+: LEFT JOIN so notes without a downloaded body still appear.
+         * Match ICNote OR any row that has ZICNOTEDATA (entity name has moved).
+         * Locked notes are included; the Swift layer surfaces them even if the
+         * protobuf cannot be decoded. */
         snprintf(sql, sizeof(sql),
             "SELECT  note.Z_PK, %s AS TITLE, "
             "note.%s AS CREATION_DATE, "
             "note.%s AS MODIFICATION_DATE, "
             "note.%s AS FOLDER_ID, "
-            "%s%s, "
+            "%s AS ACCOUNT_FK, "
             "data.ZDATA, "
             "%s%s "
             "FROM ZICCLOUDSYNCINGOBJECT note "
             "LEFT JOIN ZICNOTEDATA data ON note.Z_PK = data.ZNOTE "
-            "WHERE 1=1 AND note.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
-            "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0)"
-            "%s /*ank*/;",
+            "WHERE 1=1 AND (note.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
+            "              OR data.Z_PK IS NOT NULL) "
+            "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0) /*ank*/;",
             title_col, creation_col, modification_col, folder_col,
-            account_col ? "note." : "",
-            account_col ? account_col : "NULL",
+            note_account_expr,
             has_pinned ? "note.ZISPINNED" : "0 AS ZISPINNED",
-            has_password ? ", note.ZPASSWORDPROTECTED" : "",
-            has_password ? " AND (note.ZPASSWORDPROTECTED IS NULL OR note.ZPASSWORDPROTECTED = 0)" : "");
+            has_password ? ", note.ZPASSWORDPROTECTED" : "");
     }
     sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_NOTES], NULL);
 
@@ -512,22 +535,20 @@ static void _prepare_statements(ane_db *db)
             "note.%s AS CREATION_DATE, "
             "note.%s AS MODIFICATION_DATE, "
             "note.%s AS FOLDER_ID, "
-            "%s%s, "
+            "%s AS ACCOUNT_FK, "
             "data.ZDATA, "
             "%s%s "
             "FROM ZICCLOUDSYNCINGOBJECT note "
             "LEFT JOIN ZICNOTEDATA data ON note.Z_PK = data.ZNOTE "
-            "WHERE 1=1 AND note.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
+            "WHERE 1=1 AND (note.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICNote') "
+            "              OR data.Z_PK IS NOT NULL) "
             "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0) "
-            "AND note.%s >= ? AND note.%s <= ?"
-            "%s /*ank*/;",
+            "AND note.%s >= ? AND note.%s <= ? /*ank*/;",
             title_col, creation_col, modification_col, folder_col,
-            account_col ? "note." : "",
-            account_col ? account_col : "NULL",
+            note_account_expr,
             has_pinned ? "note.ZISPINNED" : "0 AS ZISPINNED",
             has_password ? ", note.ZPASSWORDPROTECTED" : "",
-            modification_col, modification_col,
-            has_password ? " AND (note.ZPASSWORDPROTECTED IS NULL OR note.ZPASSWORDPROTECTED = 0)" : "");
+            modification_col, modification_col);
         sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_NOTES_RANGE], NULL);
     }
 
@@ -537,13 +558,13 @@ static void _prepare_statements(ane_db *db)
         "att.ZIDENTIFIER, acct.ZIDENTIFIER AS ZACCOUNTIDENTIFIER "
         "FROM ZICCLOUDSYNCINGOBJECT att "
         "LEFT JOIN ZICCLOUDSYNCINGOBJECT note ON att.ZNOTE = note.Z_PK "
-        "LEFT JOIN ZICCLOUDSYNCINGOBJECT acct ON note.%s = acct.Z_PK "
+        "LEFT JOIN ZICCLOUDSYNCINGOBJECT acct ON (%s) = acct.Z_PK "
         "WHERE 1=1 AND att.ZIDENTIFIER = ? "
         "AND att.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICAttachment') "
         "AND (att.ZMARKEDFORDELETION IS NULL OR att.ZMARKEDFORDELETION = 0) "
         "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0 OR att.ZNOTE IS NULL) /*ank*/;",
         uti_coalesce_att,
-        account_col ? account_col : "Z_PK");
+        note_account_expr);
     sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_ATTACHMENT], NULL);
 
     /* STMT_MEDIA */
@@ -615,14 +636,14 @@ static void _prepare_statements(ane_db *db)
         "FROM ZICCLOUDSYNCINGOBJECT att "
         "LEFT JOIN ZICCLOUDSYNCINGOBJECT media ON att.ZMEDIA = media.Z_PK "
         "LEFT JOIN ZICCLOUDSYNCINGOBJECT note ON att.ZNOTE = note.Z_PK "
-        "LEFT JOIN ZICCLOUDSYNCINGOBJECT acct ON note.%s = acct.Z_PK "
+        "LEFT JOIN ZICCLOUDSYNCINGOBJECT acct ON (%s) = acct.Z_PK "
         "WHERE 1=1 AND att.Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICAttachment') "
         "AND (att.ZMARKEDFORDELETION IS NULL OR att.ZMARKEDFORDELETION = 0) "
         "AND (note.ZMARKEDFORDELETION IS NULL OR note.ZMARKEDFORDELETION = 0 OR att.ZNOTE IS NULL) /*ank*/;",
         uti_coalesce_att,
         has_user_title ? ", att.ZUSERTITLE" : "",
         has_size_dims ? ", att.ZSIZEHEIGHT, att.ZSIZEWIDTH" : "",
-        account_col ? account_col : "Z_PK");
+        note_account_expr);
     sqlite3_prepare_v2(db->sqlite, sql, -1,
         &db->stmts[STMT_PREFETCH_ATTACHMENTS], NULL);
 
@@ -653,13 +674,21 @@ static void _prepare_statements(ane_db *db)
     }
 
     /* STMT_THUMBNAILS -- thumbnail metadata for a parent attachment */
-    snprintf(sql, sizeof(sql),
-        "SELECT  Z_PK, ZIDENTIFIER, ZHEIGHT, ZWIDTH "
-        "FROM ZICCLOUDSYNCINGOBJECT "
-        "WHERE ZATTACHMENT = ? "
-        "ORDER BY (ZHEIGHT * ZWIDTH) ASC /*ank*/;");
-    sqlite3_prepare_v2(db->sqlite, sql, -1,
-        &db->stmts[STMT_THUMBNAILS], NULL);
+    {
+        const char *thumb_parent = _has_column(db, "ZPARENTATTACHMENT")
+            ? "ZPARENTATTACHMENT"
+            : (_has_column(db, "ZATTACHMENT") ? "ZATTACHMENT" : NULL);
+        if (thumb_parent) {
+            snprintf(sql, sizeof(sql),
+                "SELECT  Z_PK, ZIDENTIFIER, ZHEIGHT, ZWIDTH "
+                "FROM ZICCLOUDSYNCINGOBJECT "
+                "WHERE %s = ? "
+                "ORDER BY (ZHEIGHT * ZWIDTH) ASC /*ank*/;",
+                thumb_parent);
+            sqlite3_prepare_v2(db->sqlite, sql, -1,
+                &db->stmts[STMT_THUMBNAILS], NULL);
+        }
+    }
 
     /* STMT_GENERATION -- 5-column generation resolution by Z_PK */
     if (db->version >= ANE_VERSION_IOS17) {
@@ -722,13 +751,103 @@ static void _finalize_statements(ane_db *db)
 
 /* ── Lifecycle ─────────────────────────────────────────────── */
 
+static sqlite3 *_open_readonly(const char *path)
+{
+    sqlite3 *handle = NULL;
+    int flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_URI;
+    if (sqlite3_open_v2(path, &handle, flags, NULL) != SQLITE_OK) {
+        if (handle) sqlite3_close(handle);
+        return NULL;
+    }
+    sqlite3_busy_timeout(handle, 5000);
+    sqlite3_exec(handle, "PRAGMA query_only = ON;", NULL, NULL, NULL);
+    return handle;
+}
+
+/* Copy live NoteStore (including WAL) into a temp file via sqlite3_backup.
+ * Notes.app holds the live DB open; reading a snapshot avoids torn pages
+ * and SQLITE_BUSY during export. Falls back to the live handle on failure. */
+static sqlite3 *_open_consistent_snapshot(const char *live_path,
+                                          char **out_snapshot_path)
+{
+    *out_snapshot_path = NULL;
+
+    sqlite3 *live = _open_readonly(live_path);
+    if (!live) return NULL;
+
+    const char *tmpdir = getenv("TMPDIR");
+    if (!tmpdir || !*tmpdir) tmpdir = "/tmp";
+
+    char dir_tmpl[ANE_BUF_PATH];
+    snprintf(dir_tmpl, sizeof(dir_tmpl), "%s/ane-notestore-XXXXXX", tmpdir);
+    if (!mkdtemp(dir_tmpl)) {
+        return live;
+    }
+
+    char snap_path[ANE_BUF_PATH];
+    snprintf(snap_path, sizeof(snap_path), "%s/NoteStore.sqlite", dir_tmpl);
+
+    sqlite3 *snap = NULL;
+    if (sqlite3_open(snap_path, &snap) != SQLITE_OK) {
+        if (snap) sqlite3_close(snap);
+        rmdir(dir_tmpl);
+        return live;
+    }
+
+    sqlite3_backup *backup = sqlite3_backup_init(snap, "main", live, "main");
+    if (!backup) {
+        sqlite3_close(snap);
+        unlink(snap_path);
+        rmdir(dir_tmpl);
+        return live;
+    }
+
+    int rc;
+    int tries = 0;
+    do {
+        rc = sqlite3_backup_step(backup, -1);
+        if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+            sqlite3_sleep(100);
+            tries++;
+        }
+    } while ((rc == SQLITE_BUSY || rc == SQLITE_LOCKED) && tries < 50);
+
+    sqlite3_backup_finish(backup);
+    sqlite3_close(live);
+
+    if (rc != SQLITE_DONE) {
+        sqlite3_close(snap);
+        unlink(snap_path);
+        rmdir(dir_tmpl);
+        return _open_readonly(live_path);
+    }
+
+    sqlite3_busy_timeout(snap, 5000);
+    *out_snapshot_path = strdup(snap_path);
+    return snap;
+}
+
+static void _remove_snapshot(char *snapshot_path)
+{
+    if (!snapshot_path) return;
+    unlink(snapshot_path);
+    /* parent dir is .../ane-notestore-XXXXXX */
+    char *slash = strrchr(snapshot_path, '/');
+    if (slash) {
+        *slash = '\0';
+        rmdir(snapshot_path);
+        *slash = '/';
+    }
+    free(snapshot_path);
+}
+
 ane_db *ane_open(const char *db_path)
 {
+    char default_path[ANE_BUF_PATH];
     if (!db_path) {
         const char *home = getenv("HOME");
         if (!home) return NULL;
 
-        char default_path[ANE_BUF_PATH];
         snprintf(default_path, sizeof(default_path),
             "%s/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite",
             home);
@@ -744,8 +863,8 @@ ane_db *ane_open(const char *db_path)
         return NULL;
     }
 
-    if (sqlite3_open_v2(db->db_path, &db->sqlite,
-                         SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) {
+    db->sqlite = _open_consistent_snapshot(db->db_path, &db->snapshot_path);
+    if (!db->sqlite) {
         free(db->db_path);
         free(db);
         return NULL;
@@ -776,6 +895,8 @@ void ane_close(ane_db *db)
 
     if (db->sqlite)
         sqlite3_close(db->sqlite);
+
+    _remove_snapshot(db->snapshot_path);
 
     if (db->columns) {
         for (size_t i = 0; i < db->column_count; i++)
@@ -817,9 +938,20 @@ int ane_is_valid(const ane_db *db)
 
 static const char *_resolve_account_col(const ane_db *db)
 {
+    /* Version-specific owner column, matching apple_cloud_notes_parser.
+     * Higher-numbered ZACCOUNT* columns exist together and mean different
+     * things (shared folders, etc.); newest-wins is wrong. */
+    if (db->version >= ANE_VERSION_IOS16 && _has_column(db, "ZACCOUNT7"))
+        return "ZACCOUNT7";
+    if (db->version == ANE_VERSION_IOS15 && _has_column(db, "ZACCOUNT4"))
+        return "ZACCOUNT4";
+    if (db->version >= ANE_VERSION_IOS13 && db->version < ANE_VERSION_IOS15
+        && _has_column(db, "ZACCOUNT3"))
+        return "ZACCOUNT3";
+    if (db->version <= ANE_VERSION_IOS12 && _has_column(db, "ZACCOUNT2"))
+        return "ZACCOUNT2";
+
     if (_has_column(db, "ZACCOUNT7"))  return "ZACCOUNT7";
-    if (_has_column(db, "ZACCOUNT6"))  return "ZACCOUNT6";
-    if (_has_column(db, "ZACCOUNT5"))  return "ZACCOUNT5";
     if (_has_column(db, "ZACCOUNT4"))  return "ZACCOUNT4";
     if (_has_column(db, "ZACCOUNT3"))  return "ZACCOUNT3";
     if (_has_column(db, "ZACCOUNT2"))  return "ZACCOUNT2";
@@ -827,12 +959,51 @@ static const char *_resolve_account_col(const ane_db *db)
     return NULL;
 }
 
-static const char *_resolve_folder_account_col(const ane_db *db)
+/* COALESCE(prefix+c0, prefix+c1, ...) of columns that exist. Writes into buf.
+ * If none exist, writes "NULL". */
+static void _sql_coalesce(const ane_db *db, char *buf, size_t buflen,
+                          const char *prefix, const char **cols, size_t ncols)
 {
-    if (_has_column(db, "ZOWNER"))     return "ZOWNER";
-    if (_has_column(db, "ZACCOUNT"))   return "ZACCOUNT";
-    if (_has_column(db, "ZACCOUNT2"))  return "ZACCOUNT2";
-    return "Z_PK";
+    char inner[768];
+    inner[0] = '\0';
+    int n = 0;
+    for (size_t i = 0; i < ncols; i++) {
+        if (!_has_column(db, cols[i])) continue;
+        if (n > 0) strncat(inner, ", ", sizeof(inner) - strlen(inner) - 1);
+        char piece[96];
+        snprintf(piece, sizeof(piece), "%s%s", prefix ? prefix : "", cols[i]);
+        strncat(inner, piece, sizeof(inner) - strlen(inner) - 1);
+        n++;
+    }
+    if (n == 0) {
+        snprintf(buf, buflen, "NULL");
+    } else if (n == 1) {
+        snprintf(buf, buflen, "%s", inner);
+    } else {
+        snprintf(buf, buflen, "COALESCE(%s)", inner);
+    }
+}
+
+static void _note_account_sql(const ane_db *db, const char *prefix,
+                              char *buf, size_t buflen)
+{
+    /* Preferred column first, then parser fallbacks so a NULL owner
+     * still resolves (common for iCloud notes after a device transfer). */
+    const char *preferred = _resolve_account_col(db);
+    const char *all[] = {
+        preferred ? preferred : "ZACCOUNT7",
+        "ZACCOUNT7", "ZACCOUNT4", "ZACCOUNT3", "ZACCOUNT2", "ZACCOUNT"
+    };
+    _sql_coalesce(db, buf, buflen, prefix, all, sizeof(all) / sizeof(all[0]));
+}
+
+static void _folder_account_sql(const ane_db *db, char *buf, size_t buflen)
+{
+    const char *cols[] = {
+        "ZOWNER", "ZACCOUNT", "ZACCOUNT4", "ZACCOUNT3",
+        "ZACCOUNT2", "ZACCOUNT7"
+    };
+    _sql_coalesce(db, buf, buflen, "", cols, sizeof(cols) / sizeof(cols[0]));
 }
 
 static const char *_resolve_title_col(const ane_db *db)
@@ -940,32 +1111,48 @@ ane_account *ane_fetch_accounts(ane_db *db, size_t *count)
         : db->stmts[STMT_ACCOUNTS];
     if (!stmt) return NULL;
 
+    /* If the ICAccount entity query returns nothing, retry with the looser
+     * ZNAME-based discovery the Ruby parser uses. */
+
     int has_account_type = !is_legacy && _has_column(db, "ZACCOUNTTYPE");
 
-    sqlite3_reset(stmt);
+    sqlite3_stmt *try_stmts[2];
+    int ntry = 0;
+    try_stmts[ntry++] = stmt;
+    if (!is_legacy && db->stmts[STMT_ACCOUNTS_FALLBACK]
+        && db->stmts[STMT_ACCOUNTS_FALLBACK] != stmt) {
+        try_stmts[ntry++] = db->stmts[STMT_ACCOUNTS_FALLBACK];
+    }
 
     size_t capacity = 16;
     ane_account *accounts = (ane_account *)calloc(capacity, sizeof(ane_account));
     if (!accounts) return NULL;
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        if (*count >= capacity) {
-            capacity *= 2;
-            ane_account *na = (ane_account *)realloc(accounts,
-                capacity * sizeof(ane_account));
-            if (!na) break;
-            accounts = na;
+    for (int t = 0; t < ntry; t++) {
+        stmt = try_stmts[t];
+        sqlite3_reset(stmt);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            if (*count >= capacity) {
+                capacity *= 2;
+                ane_account *na = (ane_account *)realloc(accounts,
+                    capacity * sizeof(ane_account));
+                if (!na) break;
+                accounts = na;
+            }
+
+            ane_account *a = &accounts[*count];
+            a->pk = sqlite3_column_int64(stmt, 0);
+            a->identifier = _strdup_col(stmt, 1);
+            a->name = _strdup_col(stmt, 2);
+            a->account_type = has_account_type
+                ? sqlite3_column_int(stmt, 3)
+                : -1;
+
+            (*count)++;
         }
 
-        ane_account *a = &accounts[*count];
-        a->pk = sqlite3_column_int64(stmt, 0);
-        a->identifier = _strdup_col(stmt, 1);
-        a->name = _strdup_col(stmt, 2);
-        a->account_type = has_account_type
-            ? sqlite3_column_int(stmt, 3)
-            : -1;
-
-        (*count)++;
+        if (*count > 0) break;
     }
 
     return accounts;
@@ -1006,7 +1193,12 @@ ane_folder *ane_fetch_folders(ane_db *db, size_t *count)
             : (sqlite3_column_type(stmt, 2) == SQLITE_NULL
                 ? -1
                 : sqlite3_column_int64(stmt, 2));
-        f->account_pk = sqlite3_column_int64(stmt, is_legacy ? 2 : 3);
+        {
+            int acct_col = is_legacy ? 2 : 3;
+            f->account_pk = (sqlite3_column_type(stmt, acct_col) == SQLITE_NULL)
+                ? -1
+                : sqlite3_column_int64(stmt, acct_col);
+        }
         f->account_id = NULL;  /* resolved later by caller */
 
         (*count)++;
@@ -2195,6 +2387,31 @@ ane_attachment_data *ane_fetch_attachment(ane_db *db,
             free(media_filename);
         }
         break;
+    }
+
+    /* If the full media file is missing, use the largest thumbnail
+     * (apple_cloud_notes_parser does the same). */
+    if (!result) {
+        sqlite3_stmt *pk_stmt = db->stmts[STMT_GALLERY_PK];
+        if (pk_stmt) {
+            sqlite3_reset(pk_stmt);
+            sqlite3_bind_text(pk_stmt, 1, identifier, -1, SQLITE_STATIC);
+            if (sqlite3_step(pk_stmt) == SQLITE_ROW) {
+                int64_t att_pk = sqlite3_column_int64(pk_stmt, 0);
+                size_t nthumb = 0;
+                ane_thumbnail *thumbs = ane_fetch_thumbnails(db, att_pk, &nthumb);
+                if (thumbs && nthumb > 0) {
+                    const char *thumb_id = thumbs[nthumb - 1].identifier;
+                    if (thumb_id) {
+                        result = ane_fetch_fallback_image(db, thumb_id,
+                                                          effective_acct);
+                    }
+                    ane_free_thumbnails(thumbs, nthumb);
+                } else if (thumbs) {
+                    ane_free_thumbnails(thumbs, nthumb);
+                }
+            }
+        }
     }
 
     /* Set UTI on result if we have one */

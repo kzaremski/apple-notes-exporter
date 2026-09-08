@@ -1,7 +1,7 @@
 # Apple Notes Exporter - Makefile
 # For terminal-based development workflow
 
-.PHONY: help build run clean logs test test-formats rebuild install icon \
+.PHONY: help build run clean logs test test-ui test-formats rebuild install icon \
         release release-archive release-export release-notarize release-zip release-clean
 
 # Configuration
@@ -17,6 +17,12 @@ ICONSET_DIR = Apple Notes Exporter/Apple Notes Exporter/Assets.xcassets/AppIcon.
 
 # Code signing flags for local dev builds without a valid cert.
 UNSIGNED = CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+# xcodebuild needs the full Xcode toolchain. If xcode-select is pointing at
+# Command Line Tools, send every xcodebuild invocation to Xcode.app instead.
+ifeq ($(shell xcode-select -p 2>/dev/null),/Library/Developer/CommandLineTools)
+  export DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
+endif
 
 # Release configuration. The notary profile must be set up once on this
 # machine via:
@@ -46,7 +52,8 @@ help:
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make rebuild      - Clean and build"
 	@echo "  make logs         - Stream app logs (run in separate terminal)"
-	@echo "  make test         - Run unit tests"
+	@echo "  make test         - Run unit tests (skips UI tests; unsigned Debug)"
+	@echo "  make test-ui      - Run UI tests (needs a signed runner)"
 	@echo "  make test-formats - Export a sample note via the embedded CLI to every format"
 	@echo "                      OUTPUT=/path FILTER=title FORMATS=\"pdf html\""
 	@echo "  make install      - Build and install to /Applications"
@@ -148,13 +155,39 @@ logs-process:
 	@echo "📋 Streaming logs for process '$(SCHEME)'..."
 	log stream --process "$(SCHEME)"
 
-# Run unit tests
+# Run unit tests. UI tests are excluded: the unsigned UITest runner exits
+# before bootstrapping (xcodebuild: "Test crashed with signal kill").
 test:
-	@echo "🧪 Running tests..."
+	@echo "🧪 Running unit tests..."
+	@set -o pipefail && xcodebuild test \
+		-project "$(PROJECT)" \
+		-scheme "$(SCHEME)" \
+		-destination 'platform=macOS' \
+		-derivedDataPath "$(BUILD_DIR)" \
+		-only-testing:"Apple Notes ExporterTests" \
+		$(UNSIGNED) \
+		2>&1 | tee test.log | grep -E "error:|warning:|passed on|failed on|TEST SUCCEEDED|TEST FAILED|^/" || true
+	@if grep -q "TEST FAILED" test.log 2>/dev/null; then \
+		echo ""; \
+		echo "❌ Tests failed:"; \
+		grep -E "failed on|error:" test.log | head -20; \
+		exit 1; \
+	elif grep -q "TEST SUCCEEDED" test.log 2>/dev/null; then \
+		echo "✅ Tests passed"; \
+	else \
+		echo "❌ xcodebuild did not report TEST SUCCEEDED (see test.log)"; \
+		exit 1; \
+	fi
+
+test-ui:
+	@echo "🧪 Running UI tests..."
 	xcodebuild test \
 		-project "$(PROJECT)" \
 		-scheme "$(SCHEME)" \
-		-derivedDataPath "$(BUILD_DIR)"
+		-destination 'platform=macOS' \
+		-derivedDataPath "$(BUILD_DIR)" \
+		-only-testing:"Apple Notes ExporterUITests" \
+		$(UNSIGNED)
 
 # Build release version (used by `install`; not a distributable artifact).
 release-build:
