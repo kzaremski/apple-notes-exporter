@@ -360,7 +360,7 @@ actor CLIExportEngine {
         }
 
         let concatenated = contentParts.joined(separator: separator)
-        let filename = "Exported Notes.\(format.fileExtension)"
+        let filename = "\(concatenatedFileBaseName).\(format.fileExtension)"
         let fileURL = outputURL.appendingPathComponent(filename)
         try concatenated.write(to: fileURL, atomically: true, encoding: .utf8)
     }

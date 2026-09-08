@@ -689,6 +689,36 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertFalse(path.isEmpty)
     }
 
+    // MARK: - single file destination
+
+    func test_concatenatedExportURL_usesTheFileTheUserNamed() {
+        let named = URL(fileURLWithPath: "/tmp/out/My Notes.md")
+        XCTAssertEqual(concatenatedExportURL(destination: named, format: .markdown), named)
+    }
+
+    func test_concatenatedExportURL_fallsBackToDefaultNameInADirectory() {
+        let dir = URL(fileURLWithPath: "/tmp/out")
+        XCTAssertEqual(
+            concatenatedExportURL(destination: dir, format: .markdown).lastPathComponent,
+            "\(concatenatedFileBaseName).md"
+        )
+    }
+
+    func test_concatenatedExportURL_ignoresAnExtensionForADifferentFormat() {
+        // A name left over from a previous format is not the file to write.
+        let stale = URL(fileURLWithPath: "/tmp/out/My Notes.md")
+        XCTAssertEqual(
+            concatenatedExportURL(destination: stale, format: .txt).lastPathComponent,
+            "\(concatenatedFileBaseName).txt"
+        )
+    }
+
+    func test_supportsConcatenation_excludesOnlyPackagedFormats() {
+        let blocked = ExportFormat.allCases.filter { !$0.supportsConcatenation }
+        XCTAssertEqual(Set(blocked), Set([.pdf, .docx, .odt, .epub]))
+        XCTAssertEqual(ExportFormat.allCases.filter(\.supportsConcatenation).count, 14)
+    }
+
     // MARK: - ENEX / ENML
 
     private func enexNote(html: String, title: String = "Note") -> NotesNote {

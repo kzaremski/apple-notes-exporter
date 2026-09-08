@@ -557,6 +557,19 @@ func healManifestPaths(
 
 // MARK: - Archive Output
 
+/// Default base name for a single-file (concatenated) export.
+let concatenatedFileBaseName = "Exported Notes"
+
+/// Where a single-file export should write.
+///
+/// `destination` is either the file the user named or a directory to put one
+/// in, mirroring how a zip destination is resolved.
+func concatenatedExportURL(destination: URL, format: ExportFormat) -> URL {
+    destination.pathExtension.lowercased() == format.fileExtension
+        ? destination
+        : destination.appendingPathComponent("\(concatenatedFileBaseName).\(format.fileExtension)")
+}
+
 /// Default root name for a zip export: both the folder inside the archive and
 /// the archive itself when the user has not named one.
 let exportArchiveRootName = "Apple Notes Export"

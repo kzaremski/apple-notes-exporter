@@ -195,21 +195,52 @@ struct AppleNotesExporterView: View {
     /// tries to create a directory where that .zip file already sits. A folder
     /// path under ZIP is fine, since the archive is named inside it.
     func normalizeOutputPathForContainer() {
-        guard !outputPath.isEmpty,
-              !exportViewModel.configurations.zipOutput,
-              outputPath.lowercased().hasSuffix(".zip") else { return }
+        guard !outputPath.isEmpty else { return }
+        let ext = (outputPath as NSString).pathExtension.lowercased()
+        // Only extensions this app produces are treated as a filename; a
+        // directory legitimately called "my.notes" must not be discarded.
+        let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(["zip"])
+
+        let isZip = exportViewModel.configurations.zipOutput
+        let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
+
+        let stale: Bool
+        if isZip {
+            stale = ours.contains(ext) && ext != "zip"
+        } else if isSingle {
+            // The extension has to match the format being written, so
+            // switching MD to TXT invalidates the stored name too.
+            stale = ours.contains(ext) && ext != ExportFormat(rawValue: outputFormat)?.fileExtension
+        } else {
+            stale = ours.contains(ext)
+        }
+        guard stale else { return }
         outputPath = ""
         outputURL = nil
     }
 
-    func selectOutputFolder() {
-        // A zip export produces one file, so the user names that file rather
-        // than picking a directory to be filled.
+    /// The filename and type to offer in a save panel, or nil when the
+    /// container writes into a directory instead.
+    func savePanelTarget() -> (name: String, type: UTType?)? {
         if exportViewModel.configurations.zipOutput {
+            return ("\(ExportViewModel.zipRootName).zip", .zip)
+        }
+        guard exportViewModel.configurations.concatenateOutput,
+              let format = ExportFormat(rawValue: outputFormat) else { return nil }
+        let ext = format.fileExtension
+        // Not every export extension maps to a registered type (adoc, enex and
+        // friends); leaving it unset just means the panel does not filter.
+        return ("\(concatenatedFileBaseName).\(ext)", UTType(filenameExtension: ext))
+    }
+
+    func selectOutputFolder() {
+        // ZIP and Single File both produce exactly one file, so the user names
+        // that file rather than picking a directory to be filled.
+        if let (suggestedName, contentType) = savePanelTarget() {
             let savePanel = NSSavePanel()
-            savePanel.allowedContentTypes = [.zip]
+            if let contentType { savePanel.allowedContentTypes = [contentType] }
             savePanel.canCreateDirectories = true
-            savePanel.nameFieldStringValue = "\(ExportViewModel.zipRootName).zip"
+            savePanel.nameFieldStringValue = suggestedName
             savePanel.prompt = "Choose"
             savePanel.begin { response in
                 if response == .OK, let exportURL = savePanel.url {
@@ -468,17 +499,25 @@ struct AppleNotesExporterView: View {
             .padding(.bottom, 6)
 
             HStack() {
-                Image(systemName: exportViewModel.configurations.zipOutput ? "doc.zipper" : "folder")
+                Image(systemName: exportViewModel.configurations.zipOutput
+                        ? "doc.zipper"
+                        : (exportViewModel.configurations.concatenateOutput ? "doc.text" : "folder"))
                 Text({
                     if exportViewModel.configurations.zipOutput {
                         guard outputPath != "" else { return "Choose where to save the archive" }
                         if outputPath.lowercased().hasSuffix(".zip") { return outputPath }
                         return outputPath + "/\(ExportViewModel.zipRootName).zip"
                     }
+                    let format = ExportFormat(rawValue: outputFormat)
+                    let single = exportViewModel.configurations.concatenateOutput
+                        && (format?.supportsConcatenation ?? false)
+                    if single, let ext = format?.fileExtension {
+                        guard outputPath != "" else { return "Choose where to save the file" }
+                        if outputPath.lowercased().hasSuffix("." + ext) { return outputPath }
+                        return outputPath + "/\(concatenatedFileBaseName).\(ext)"
+                    }
                     guard outputPath != "" else { return "Choose an output folder" }
-                    let supportsConcat = ExportFormat(rawValue: outputFormat)?.supportsConcatenation ?? false
-                    let canConcat = supportsConcat && exportViewModel.configurations.concatenateOutput
-                    return outputPath + (canConcat ? "/Exported Notes.\(outputFormat.lowercased())" : "")
+                    return outputPath
                 }()).frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -494,19 +533,26 @@ struct AppleNotesExporterView: View {
             }
 
             VStack(spacing: outputOptionRowSpacing) {
-                OutputOptionRow(
-                    title: "Add date to filename",
-                    help: "Prefix each exported file with the note's creation date, so files sort chronologically.",
-                    isOn: $exportViewModel.configurations.addDateToFilename
-                ) {
-                    Picker("", selection: $exportViewModel.configurations.filenameDateFormat) {
-                        ForEach(FilenameDateFormat.allCases, id: \.self) { format in
-                            Text(format.displayName).tag(format)
+                let isZip = exportViewModel.configurations.zipOutput
+                let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
+
+                // One file the user already named: there is no per-note
+                // filename for a date to prefix.
+                if !isSingle {
+                    OutputOptionRow(
+                        title: "Add date to filename",
+                        help: "Prefix each exported file with the note's creation date, so files sort chronologically.",
+                        isOn: $exportViewModel.configurations.addDateToFilename
+                    ) {
+                        Picker("", selection: $exportViewModel.configurations.filenameDateFormat) {
+                            ForEach(FilenameDateFormat.allCases, id: \.self) { format in
+                                Text(format.displayName).tag(format)
+                            }
                         }
+                        .frame(width: 210)
+                        .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
+                        .disabled(!exportViewModel.configurations.addDateToFilename)
                     }
-                    .frame(width: 210)
-                    .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
-                    .disabled(!exportViewModel.configurations.addDateToFilename)
                 }
 
                 OutputOptionRow(
@@ -522,13 +568,15 @@ struct AppleNotesExporterView: View {
                     isEnabled: exportViewModel.configurations.includeAttachments
                 )
 
-                OutputOptionRow(
-                    title: "Incremental sync",
-                    help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
-                    isOn: $exportViewModel.configurations.incrementalSync,
-                    isEnabled: !exportViewModel.configurations.concatenateOutput
-                        && !exportViewModel.configurations.zipOutput
-                )
+                // A manifest has to persist in a folder between runs, so it
+                // cannot travel inside an archive or a single joined file.
+                if !isSingle && !isZip {
+                    OutputOptionRow(
+                        title: "Incremental sync",
+                        help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
+                        isOn: $exportViewModel.configurations.incrementalSync
+                    )
+                }
             }
             .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.filenameDateFormat) { _ in exportViewModel.saveConfigurations() }
@@ -542,6 +590,7 @@ struct AppleNotesExporterView: View {
             .onChange(of: outputFormat) { newFormat in
                 // Auto-disable concatenation when switching to a format that doesn't support it
                 let supportsConcat = ExportFormat(rawValue: newFormat)?.supportsConcatenation ?? false
+                normalizeOutputPathForContainer()
                 if !supportsConcat && exportViewModel.configurations.concatenateOutput {
                     // Fall back to Folder rather than leaving a selection the
                     // new format cannot honour.

@@ -592,8 +592,12 @@ class ExportViewModel: ObservableObject {
         }
 
         // Write the single concatenated file
-        let filename = "Exported Notes.\(format.fileExtension)"
-        let fileURL = outputURL.appendingPathComponent(filename)
+        // The destination may be the file the user named in the save panel, or
+        // a directory to put the default name in.
+        let fileURL = concatenatedExportURL(destination: outputURL, format: format)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
 
         if format == .pdf {
             // For PDF, the concatenated content is HTML — render it
@@ -620,7 +624,7 @@ class ExportViewModel: ObservableObject {
             try concatenated.write(to: fileURL, atomically: true, encoding: .utf8)
         }
 
-        log("✓ Exported concatenated file: \(filename)")
+        log("✓ Exported concatenated file: \(fileURL.lastPathComponent)")
     }
 
     /// Export a single note concurrently (non-throwing wrapper for TaskGroup)
