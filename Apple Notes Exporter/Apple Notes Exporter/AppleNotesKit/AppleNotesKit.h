@@ -106,6 +106,9 @@ typedef struct {
     int64_t     parent_pk;        /* Z_PK of parent folder, -1 if root */
     int64_t     account_pk;       /* Z_PK of owning account */
     char       *account_id;       /* ZIDENTIFIER of owning account */
+    char       *identifier;       /* ZIDENTIFIER of the folder itself; Apple marks
+                                   * the account default folder "DefaultFolder-*".
+                                   * NULL when the schema has no ZIDENTIFIER. */
 } ane_folder;
 
 typedef struct {

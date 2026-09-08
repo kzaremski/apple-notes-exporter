@@ -76,6 +76,11 @@ struct NotesFolder: NotesItem {
     let name: String
     let parentId: String?
     let accountId: String
+    /// ZIDENTIFIER of the folder. Apple marks each account's default folder
+    /// with a "DefaultFolder" prefix ("DefaultFolder-CloudKit" on iCloud),
+    /// which is how we find it without depending on the localized name.
+    /// Empty when the schema predates the column.
+    var identifier: String = ""
 
     var description: String { name }
 
@@ -83,6 +88,11 @@ struct NotesFolder: NotesItem {
 
     /// Check if this is a root-level folder (no parent)
     var isRootFolder: Bool { parentId == nil }
+
+    /// True when Apple flags this as the account's default ("Notes") folder.
+    var isDefaultFolder: Bool {
+        identifier.range(of: "DefaultFolder", options: .caseInsensitive) != nil
+    }
 }
 
 // MARK: - Note
@@ -265,7 +275,8 @@ struct NotesHierarchy {
                 id: folder.id,
                 name: folder.name,
                 parentId: parentId,
-                accountId: accountId
+                accountId: accountId,
+                identifier: folder.identifier
             )
         }
 
@@ -300,17 +311,39 @@ struct NotesHierarchy {
             .sorted { sortNotes($0, $1, by: sortBy) }
 
             if !unfiled.isEmpty {
-                let unfiledFolder = NotesFolder(
-                    id: "unfiled-\(account.id)",
-                    name: "Unfiled",
-                    parentId: nil,
-                    accountId: account.id
-                )
-                folderNodes.append(FolderNode(
-                    folder: unfiledFolder,
-                    subfolders: [],
-                    notes: unfiled
-                ))
+                // Show loose notes where the exporter will actually write them:
+                // the account's default folder. A separate "Unfiled" node here
+                // would disagree with the exported tree on disk.
+                var accountFolderLookup: [String: NotesFolder] = [:]
+                for folder in accountFolders { accountFolderLookup[folder.id] = folder }
+                let defaultFolder = defaultNotesFolder(forAccount: account.id, in: accountFolderLookup)
+
+                let existingIndex = defaultFolder.flatMap { target in
+                    folderNodes.firstIndex { $0.folder.id == target.id || $0.folder.name == target.name }
+                }
+
+                if let index = existingIndex {
+                    // Root folders sharing a name are already merged into one
+                    // node, so fold the loose notes into that same node.
+                    let node = folderNodes[index]
+                    folderNodes[index] = FolderNode(
+                        folder: node.folder,
+                        subfolders: node.subfolders,
+                        notes: (node.notes + unfiled).sorted { sortNotes($0, $1, by: sortBy) }
+                    )
+                } else {
+                    let placeholder = NotesFolder(
+                        id: "unfiled-\(account.id)",
+                        name: defaultFolder?.name ?? fallbackNotesFolderName,
+                        parentId: nil,
+                        accountId: account.id
+                    )
+                    folderNodes.append(FolderNode(
+                        folder: placeholder,
+                        subfolders: [],
+                        notes: unfiled
+                    ))
+                }
             }
 
             return AccountNode(account: account, folders: folderNodes)

@@ -228,7 +228,8 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
                         id: "\(f.pk)",
                         name: title,
                         parentId: f.parent_pk >= 0 ? "\(f.parent_pk)" : nil,
-                        accountId: f.account_pk >= 0 ? "\(f.account_pk)" : ""
+                        accountId: f.account_pk >= 0 ? "\(f.account_pk)" : "",
+                        identifier: f.identifier != nil ? String(cString: f.identifier) : ""
                     ))
                 }
 

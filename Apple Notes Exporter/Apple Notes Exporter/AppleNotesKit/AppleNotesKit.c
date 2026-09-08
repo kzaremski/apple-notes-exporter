@@ -474,12 +474,14 @@ static void _prepare_statements(ane_db *db)
      * ZTITLE2 while notes use ZTITLE1. Account is COALESCE(ZOWNER, ZACCOUNT, ...)
      * so a NULL ZOWNER does not become PK 0. */
     snprintf(sql, sizeof(sql),
-        "SELECT  Z_PK, %s AS TITLE, ZPARENT, %s AS ACCOUNT_ID "
+        "SELECT  Z_PK, %s AS TITLE, ZPARENT, %s AS ACCOUNT_ID%s "
         "FROM ZICCLOUDSYNCINGOBJECT "
         "WHERE 1=1 AND Z_ENT = (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICFolder') "
         "AND (ZMARKEDFORDELETION IS NULL OR ZMARKEDFORDELETION = 0) "
         "AND %s IS NOT NULL /*ank*/;",
-        folder_title_col, folder_account_col, folder_title_col);
+        folder_title_col, folder_account_col,
+        _has_column(db, "ZIDENTIFIER") ? ", ZIDENTIFIER" : "",
+        folder_title_col);
     sqlite3_prepare_v2(db->sqlite, sql, -1, &db->stmts[STMT_FOLDERS], NULL);
 
     /* STMT_NOTES -- varies by iOS version */
@@ -1202,6 +1204,11 @@ ane_folder *ane_fetch_folders(ane_db *db, size_t *count)
                 : sqlite3_column_int64(stmt, acct_col);
         }
         f->account_id = NULL;  /* resolved later by caller */
+        /* ZIDENTIFIER is appended last and only when the schema has it, so the
+         * column count tells us whether it is there without tracking flags. */
+        f->identifier = (!is_legacy && sqlite3_column_count(stmt) > 4)
+            ? _strdup_col(stmt, 4)
+            : NULL;
 
         (*count)++;
     }
@@ -2762,6 +2769,7 @@ void ane_free_folders(ane_folder *folders, size_t count)
     for (size_t i = 0; i < count; i++) {
         free(folders[i].title);
         free(folders[i].account_id);
+        free(folders[i].identifier);
     }
     free(folders);
 }

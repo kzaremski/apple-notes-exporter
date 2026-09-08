@@ -602,4 +602,190 @@ final class ExportSupportTests: XCTestCase {
         }
         XCTAssertNotEqual((rel as NSString).lastPathComponent.lowercased(), "index.html")
     }
+
+    // MARK: - defaultNotesFolder / localized default folder
+
+    private func note(_ id: String, folder: String, account: String = "1") -> NotesNote {
+        NotesNote(
+            id: id, title: "Note \(id)", plaintext: "", htmlBody: nil,
+            creationDate: Date(), modificationDate: Date(),
+            folderId: folder, accountId: account, attachments: []
+        )
+    }
+
+    func test_buildExportFolderPath_defaultFolderMarkerBeatsLocalizedName() {
+        // A German library: the default folder is "Notizen", so a name match on
+        // "Notes" would miss it and invent an English folder that isn't there.
+        let localized = NotesFolder(
+            id: "10", name: "Notizen", parentId: nil, accountId: "1",
+            identifier: "DefaultFolder-CloudKit"
+        )
+        let other = NotesFolder(id: "11", name: "Arbeit", parentId: nil, accountId: "1")
+        let lookup = ["10": localized, "11": other]
+
+        let path = buildExportFolderPath(folderId: "", folderLookup: lookup, accountId: "1")
+        XCTAssertEqual(path, "Notizen")
+    }
+
+    func test_buildExportFolderPath_defaultFolderOfOtherAccountIsNotBorrowed() {
+        let theirs = NotesFolder(
+            id: "10", name: "Notes", parentId: nil, accountId: "2",
+            identifier: "DefaultFolder-CloudKit"
+        )
+        let path = buildExportFolderPath(folderId: "", folderLookup: ["10": theirs], accountId: "1")
+        XCTAssertEqual(path, "Notes", "should fall back, not reuse another account's folder")
+    }
+
+    func test_buildExportFolderPath_resolutionIsStableAcrossCalls() {
+        // Dictionary iteration order is not stable, so a library with more than
+        // one marked folder must still resolve the same way every run or the
+        // sync manifest thrashes.
+        var lookup: [String: NotesFolder] = [:]
+        for id in ["30", "10", "20"] {
+            lookup[id] = NotesFolder(
+                id: id, name: "Notes \(id)", parentId: nil, accountId: "1",
+                identifier: "DefaultFolder-CloudKit"
+            )
+        }
+        let results = (0..<20).map { _ in
+            buildExportFolderPath(folderId: "", folderLookup: lookup, accountId: "1")
+        }
+        XCTAssertEqual(Set(results).count, 1, "expected one stable answer, got \(Set(results))")
+    }
+
+    func test_buildExportFolderPath_nestedFolderKeepsFullPath() {
+        let parent = NotesFolder(id: "10", name: "Recipes", parentId: nil, accountId: "1")
+        let child = NotesFolder(id: "11", name: "Soups", parentId: "10", accountId: "1")
+        let path = buildExportFolderPath(
+            folderId: "11", folderLookup: ["10": parent, "11": child], accountId: "1"
+        )
+        XCTAssertEqual(path, "Recipes/Soups")
+    }
+
+    func test_buildExportFolderPath_cyclicParentChainTerminates() {
+        // A self-parenting ZPARENT would otherwise spin forever.
+        let a = NotesFolder(id: "10", name: "A", parentId: "11", accountId: "1")
+        let b = NotesFolder(id: "11", name: "B", parentId: "10", accountId: "1")
+        let path = buildExportFolderPath(
+            folderId: "10", folderLookup: ["10": a, "11": b], accountId: "1"
+        )
+        XCTAssertFalse(path.isEmpty)
+    }
+
+    // MARK: - healManifestPaths
+
+    private func makeTempDirectory() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-heal-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        return dir
+    }
+
+    private func writeFile(_ relativePath: String, under root: URL) throws {
+        let url = root.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try Data("x".utf8).write(to: url)
+    }
+
+    func test_healManifestPaths_dropsEntryStrandedInUnknownFolder() throws {
+        let root = try makeTempDirectory()
+        let stale = "iCloud/Unknown Folder/2001-01-01.html"
+        try writeFile(stale, under: root)
+
+        var manifest = SyncManifest(lastSync: Date(), notes: [
+            "1": SyncManifest.SyncedNoteEntry(
+                modificationDate: Date(), exportedPath: stale, attachmentPaths: []
+            )
+        ])
+        let notesFolder = NotesFolder(id: "10", name: "Notes", parentId: nil, accountId: "1")
+
+        let healed = healManifestPaths(
+            manifest: &manifest,
+            notes: [note("1", folder: "")],
+            accountLookup: ["1": "iCloud"],
+            folderLookup: ["10": notesFolder],
+            outputRoot: root
+        )
+
+        XCTAssertEqual(healed.map(\.noteId), ["1"])
+        XCTAssertNil(manifest.notes["1"], "entry should be dropped so the note re-exports")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: root.appendingPathComponent(stale).path),
+            "stale file should be deleted"
+        )
+    }
+
+    func test_healManifestPaths_keepsEntryWhenOnlyFilenameDiffers() throws {
+        let root = try makeTempDirectory()
+        // Collision suffixes are legitimate; only the directory should matter.
+        let path = "iCloud/Notes/Note 1 (2).html"
+        try writeFile(path, under: root)
+
+        var manifest = SyncManifest(lastSync: Date(), notes: [
+            "1": SyncManifest.SyncedNoteEntry(
+                modificationDate: Date(), exportedPath: path, attachmentPaths: []
+            )
+        ])
+        let notesFolder = NotesFolder(id: "10", name: "Notes", parentId: nil, accountId: "1")
+
+        let healed = healManifestPaths(
+            manifest: &manifest,
+            notes: [note("1", folder: "10")],
+            accountLookup: ["1": "iCloud"],
+            folderLookup: ["10": notesFolder],
+            outputRoot: root
+        )
+
+        XCTAssertTrue(healed.isEmpty)
+        XCTAssertNotNil(manifest.notes["1"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+    }
+
+    func test_healManifestPaths_relocatesNoteMovedBetweenFolders() throws {
+        let root = try makeTempDirectory()
+        let stale = "iCloud/Work/Note 1.html"
+        let attachment = "iCloud/Work/Note 1/image.png"
+        try writeFile(stale, under: root)
+        try writeFile(attachment, under: root)
+
+        var manifest = SyncManifest(lastSync: Date(), notes: [
+            "1": SyncManifest.SyncedNoteEntry(
+                modificationDate: Date(), exportedPath: stale, attachmentPaths: [attachment]
+            )
+        ])
+        let work = NotesFolder(id: "10", name: "Work", parentId: nil, accountId: "1")
+        let personal = NotesFolder(id: "11", name: "Personal", parentId: nil, accountId: "1")
+
+        // The note now lives in Personal.
+        let healed = healManifestPaths(
+            manifest: &manifest,
+            notes: [note("1", folder: "11")],
+            accountLookup: ["1": "iCloud"],
+            folderLookup: ["10": work, "11": personal],
+            outputRoot: root
+        )
+
+        XCTAssertEqual(healed.count, 1)
+        XCTAssertNil(manifest.notes["1"])
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: root.appendingPathComponent(attachment).path),
+            "attachments should be cleaned up alongside the note"
+        )
+    }
+
+    func test_healManifestPaths_ignoresNotesAbsentFromManifest() throws {
+        let root = try makeTempDirectory()
+        var manifest = SyncManifest(lastSync: Date(), notes: [:])
+        let healed = healManifestPaths(
+            manifest: &manifest,
+            notes: [note("1", folder: "10")],
+            accountLookup: ["1": "iCloud"],
+            folderLookup: [:],
+            outputRoot: root
+        )
+        XCTAssertTrue(healed.isEmpty)
+    }
 }

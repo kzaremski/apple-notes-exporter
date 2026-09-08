@@ -431,34 +431,115 @@ func sanitizeExportFilename(_ name: String) -> String {
     return name.components(separatedBy: invalidCharacters).joined(separator: "_")
 }
 
+/// Last-resort name when an account exposes no default folder at all. Only
+/// reached on libraries with no ZIDENTIFIER column and no folder named "Notes".
+let fallbackNotesFolderName = "Notes"
+
+/// The folder Apple Notes files an account's loose notes into: its default
+/// folder. Prefers Apple's "DefaultFolder" ZIDENTIFIER marker so this keeps
+/// working on localized libraries where the folder is called "Notizen" or
+/// "\u{5907}\u{5FD8}\u{5F55}", and falls back to a root folder literally named
+/// "Notes" for older schemas that carry no identifier.
+///
+/// Candidates are sorted by id so a library with more than one marked folder
+/// still resolves to the same folder on every run; export paths and the sync
+/// manifest both depend on this being stable.
+func defaultNotesFolder(forAccount accountId: String?, in folderLookup: [String: NotesFolder]) -> NotesFolder? {
+    guard let accountId, !accountId.isEmpty else { return nil }
+    let inAccount = folderLookup.values
+        .filter { $0.accountId == accountId }
+        .sorted { $0.id < $1.id }
+
+    if let marked = inAccount.first(where: { $0.isDefaultFolder }) {
+        return marked
+    }
+    return inAccount.first { folder in
+        folder.name.compare(fallbackNotesFolderName, options: .caseInsensitive) == .orderedSame
+            && (folder.parentId == nil || folder.parentId == accountId)
+    }
+}
+
+/// Join a folder to its ancestors, innermost last. Bounded so a self-parenting
+/// or cyclic ZPARENT chain cannot spin forever.
+private func folderPath(for folder: NotesFolder, in folderLookup: [String: NotesFolder]) -> String {
+    var components: [String] = [sanitizeExportFilename(folder.name)]
+    var currentParentId = folder.parentId
+    var depth = 0
+    while let parentId = currentParentId, let parentFolder = folderLookup[parentId], depth < 64 {
+        components.insert(sanitizeExportFilename(parentFolder.name), at: 0)
+        currentParentId = parentFolder.parentId
+        depth += 1
+    }
+    return components.joined(separator: "/")
+}
+
 /// Build a relative folder path by walking up the parent folder chain.
 func buildExportFolderPath(folderId: String, folderLookup: [String: NotesFolder], accountId: String? = nil, isDeleted: Bool = false) -> String {
     if isDeleted {
         return sanitizeExportFilename("Recently Deleted")
     }
     if let folder = folderLookup[folderId] {
-        var components: [String] = [sanitizeExportFilename(folder.name)]
-        var currentParentId = folder.parentId
-        while let parentId = currentParentId, let parentFolder = folderLookup[parentId] {
-            components.insert(sanitizeExportFilename(parentFolder.name), at: 0)
-            currentParentId = parentFolder.parentId
-        }
-        return components.joined(separator: "/")
+        return folderPath(for: folder, in: folderLookup)
     }
 
-    // Unfiled / epoch notes often have a missing ZFOLDER. Apple Notes shows
-    // them in the account's default "Notes" folder; incremental and full
-    // export should do the same rather than creating "Unknown Folder".
-    if let accountId, !accountId.isEmpty {
-        if let notesFolder = folderLookup.values.first(where: { folder in
-            folder.accountId == accountId
-                && folder.name.compare("Notes", options: .caseInsensitive) == .orderedSame
-                && (folder.parentId == nil || folder.parentId == accountId)
-        }) {
-            return sanitizeExportFilename(notesFolder.name)
-        }
+    // Unfiled / epoch notes often have a missing or dangling ZFOLDER. Apple
+    // Notes shows them in the account's default folder; full and incremental
+    // export both do the same rather than inventing an "Unknown Folder".
+    if let fallback = defaultNotesFolder(forAccount: accountId, in: folderLookup) {
+        return folderPath(for: fallback, in: folderLookup)
     }
-    return sanitizeExportFilename("Notes")
+    return sanitizeExportFilename(fallbackNotesFolderName)
+}
+
+/// Relative directory (account plus folder path) a note belongs in.
+func expectedExportDirectory(
+    for note: NotesNote,
+    accountLookup: [String: String],
+    folderLookup: [String: NotesFolder]
+) -> String {
+    let accountKey = sanitizeExportFilename(accountLookup[note.accountId] ?? "Unknown Account")
+    let folderPath = buildExportFolderPath(
+        folderId: note.folderId,
+        folderLookup: folderLookup,
+        accountId: note.accountId,
+        isDeleted: note.isDeleted
+    )
+    return "\(accountKey)/\(folderPath)"
+}
+
+/// Drop manifest entries whose files no longer sit where the current resolver
+/// would put them, deleting the stale files so the next pass re-exports them in
+/// the right place.
+///
+/// This repairs sync directories written by older versions, which parked
+/// unresolvable notes in "Unknown Folder" and then kept overwriting them there
+/// forever, and it also picks up notes the user has since moved between folders
+/// in Apple Notes. Only the directory is compared: the filename can legitimately
+/// differ by a collision suffix such as "Title (2).md".
+@discardableResult
+func healManifestPaths(
+    manifest: inout SyncManifest,
+    notes: [NotesNote],
+    accountLookup: [String: String],
+    folderLookup: [String: NotesFolder],
+    outputRoot: URL
+) -> [SyncManifest.PrunedNote] {
+    var healed: [SyncManifest.PrunedNote] = []
+    for note in notes {
+        guard let entry = manifest.notes[note.id] else { continue }
+        let storedDirectory = (entry.exportedPath as NSString).deletingLastPathComponent
+        let expectedDirectory = expectedExportDirectory(
+            for: note,
+            accountLookup: accountLookup,
+            folderLookup: folderLookup
+        )
+        guard storedDirectory != expectedDirectory else { continue }
+
+        deleteExportedNoteFiles(outputRoot: outputRoot, entry: entry)
+        manifest.notes.removeValue(forKey: note.id)
+        healed.append(SyncManifest.PrunedNote(noteId: note.id, entry: entry))
+    }
+    return healed
 }
 
 /// Generate a unique filename by appending a counter suffix if a collision exists.
@@ -591,6 +672,29 @@ func matchingFolderIds(
 
 func matchingFolderIds(filter: String, folders: [NotesFolder]) -> Set<String> {
     matchingFolderIds(filters: [filter], folders: folders, matchContains: false, includeDescendants: true)
+}
+
+/// Folder filters the user asked for that match no folder in the library.
+///
+/// An empty match set is indistinguishable from "no filter requested" once it
+/// reaches `selectedNotes`, so a mistyped `--folder` would otherwise select the
+/// whole library instead of nothing. Callers use this to fail loudly instead.
+/// The Recently Deleted smart folder is not a real folder row, so it never
+/// counts as unmatched.
+func unmatchedFolderFilters(
+    filters: [String],
+    folders: [NotesFolder],
+    matchContains: Bool = false
+) -> [String] {
+    parseListArgument(filters).filter { token in
+        if isRecentlyDeletedFolderName(token) { return false }
+        let lowered = token.lowercased()
+        return !folders.contains { folder in
+            folder.id.caseInsensitiveCompare(token) == .orderedSame
+                || folder.name.compare(token, options: .caseInsensitive) == .orderedSame
+                || (matchContains && folder.name.lowercased().contains(lowered))
+        }
+    }
 }
 
 func applyNoteSelection(
