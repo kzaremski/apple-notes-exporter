@@ -18,6 +18,7 @@
 //  along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
+import AppKit
 import SwiftUI
 import Foundation
 
@@ -635,8 +636,12 @@ struct BorderedProminentButtonStyle: ButtonStyle {
 /// Rows in Step 3 share a fixed height. Without it the row carrying the date
 /// picker is taller than the plain checkbox rows, so the gaps between the
 /// checkboxes read as uneven even though the stack spacing is uniform.
-private let outputOptionRowHeight: CGFloat = 26
-private let outputOptionRowSpacing: CGFloat = 4
+// Row pitch is height + spacing. The date picker is the tallest thing in any
+// row at roughly 22pt, so the height stays above that to avoid clipping it and
+// the gap is taken out of the spacing instead. Together these halve the visible
+// gap between checkboxes compared with the original 26 + 4.
+private let outputOptionRowHeight: CGFloat = 24
+private let outputOptionRowSpacing: CGFloat = 0
 
 /// A "?" affordance carrying a tooltip. Uses `.help`, so it appears on hover
 /// and is also exposed to VoiceOver rather than being purely decorative.
@@ -646,8 +651,31 @@ private struct OptionHelpTip: View {
     var body: some View {
         Image(systemName: "questionmark.circle")
             .foregroundColor(.secondary)
-            .help(text)
+            .overlay(ToolTipArea(text: text))
             .accessibilityLabel(Text(text))
+    }
+}
+
+/// Sets AppKit's `toolTip` on a transparent view laid over the icon.
+///
+/// SwiftUI's `.help` only reaches AppKit for views that are backed by a real
+/// control; on a plain `Image` no tracking area is installed and the tooltip
+/// never appears. `NSView.toolTip` installs its own tracking area, so the
+/// tooltip works regardless of what it is attached to.
+private struct ToolTipArea: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        view.toolTip = text
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        // Keep the tooltip in sync if the text ever becomes dynamic.
+        if nsView.toolTip != text {
+            nsView.toolTip = text
+        }
     }
 }
 
