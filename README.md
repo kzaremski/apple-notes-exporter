@@ -32,6 +32,11 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 * **Full Disk Access** registration uses an absolute path, and the app now explains how to add itself to the list if it does not appear.
 * **Database access is serialized**, fixing intermittent "no accounts found" failures in the GUI.
 * **EPUBs open in Apple Books** (correct EPUB 3 OCF layout), plus DOCX/ODT fixes.
+* **ZIP or Single File output.** Step 3 now picks how the export is delivered: a folder tree, one `.zip`, or a single joined file. ZIP and Single File let you name the file, and the CLI takes `--zip` and `--concatenate` with an `--output` that may name the archive or file directly. File dates are preserved inside archives.
+* **Single File works for 14 formats, not 2.** The GUI previously offered it for Markdown and plain text only, though it could always produce the rest. It is now available for every format except the packaged ones (PDF, DOCX, ODT, EPUB), and the CLI refuses those instead of writing a DOCX into a text file.
+* **ENEX imports into Evernote.** Images were left inline as base64, putting one note's content 22x over Evernote's 5 MB limit. They are now `<resource>` elements referenced by `<en-media>`, and the output validates against Evernote's own `enml2.dtd` and `evernote-export3.dtd`. Notes that still exceed the per-note size limit are called out in the export log.
+* **Shortcuts exposes the whole exporter.** The Export action carried its own cut-down copy of the export logic and offered 7 parameters; it now runs the same engine as the CLI with 29, plus new **List Notes** and **Sync Status** actions.
+* **MCP setup in the app.** Help > Connect to an AI Assistant shows the server path and a copyable Claude Desktop config. The server gains `get_note` for reading one note's real content in any text format, and `export_notes` now matches the CLI option for option.
 * **A working Help menu.** It previously raised "Help isn't available for Apple Notes Exporter"; it now links to the documentation, Full Disk Access setup, and the issue tracker.
 * **Mistyped folder filters fail loudly.** `--folder` with a name that matches nothing used to fall through to "no filter" and export the entire library; it now errors and lists the folders that do exist.
 * **Incremental sync no longer deletes filtered-out notes.** Pruning is judged against the whole library rather than the current run's selection, so exporting one folder into an existing sync directory does not remove the others.
@@ -88,15 +93,17 @@ notes-export list-notes --folder Work
 notes-export export --output ~/Desktop/notes --format markdown --account iCloud
 ```
 
-Built with Swift ArgumentParser. JSON output on stdout for piping into other tools, progress and errors on stderr. `--folder` takes an exact name or id (repeat or comma-separate for several) and includes subfolders; `--folder-contains` restores substring match; `--no-subfolders` turns descendants off. Combine `--folder` and `--notes` as a union. `--include-deleted` (or `--folder "Recently Deleted"`) exports trash. `--shared-attachments` dumps every file under `Attachments/` instead of a folder beside each note.
+Built with Swift ArgumentParser. JSON output on stdout for piping into other tools, progress and errors on stderr. `--zip` delivers the export as one archive and `--concatenate` as one file; in both cases `--output` may name the file itself or a directory to receive the default name. `--folder` takes an exact name or id (repeat or comma-separate for several) and includes subfolders; `--folder-contains` restores substring match; `--no-subfolders` turns descendants off. Combine `--folder` and `--notes` as a union. `--include-deleted` (or `--folder "Recently Deleted"`) exports trash. `--shared-attachments` dumps every file under `Attachments/` instead of a folder beside each note.
 
 ### Apple Shortcuts (App Intents)
 
-Three actions are available in the Shortcuts app under "Apple Notes Exporter":
+Five actions are available in the Shortcuts app under "Apple Notes Exporter":
 
-* **Export Notes** - Export selected notes to a chosen format and folder.
+* **Export Notes** - Every option the CLI has: format, folder and account filters, title and date filters, ZIP or single-file output, incremental sync, attachments and HTML indexes.
+* **List Notes** - Notes matching the same filters, for feeding into the rest of a shortcut.
 * **List Accounts** - Returns a list of available note accounts.
 * **List Folders** - Returns a list of folders, optionally filtered by account.
+* **Sync Status** - Reports the incremental sync state of a folder without opening the Notes database.
 
 Run them from Siri, automations, or any Shortcuts flow.
 
