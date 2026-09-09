@@ -19,11 +19,11 @@
 //
 
 import Foundation
-import OSLog
 
 // MARK: - Shared Constants (used by both GUI app and CLI)
 
-let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2"
+let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1"
+
 let OUTPUT_FORMATS: [String] = [
     "HTML",
     "PDF",
@@ -44,54 +44,3 @@ let OUTPUT_FORMATS: [String] = [
     "EPUB",
     "ENEX",
 ]
-let OUTPUT_TYPES: [String] = [
-    "Folder",
-    "TAR Archive",
-    "ZIP Archive",
-]
-// Page types
-let PAGE_US_LETTER: (width: Int, height: Int) = (612, 792)
-let PAGE_US_LEGAL: (width: Int, height: Int) = (612, 1008)
-let PAGE_US_TABLOID: (width: Int, height: Int) = (792, 1224)
-let PAGE_A4: (width: Int, height: Int) = (595, 842)
-
-// MARK: - Utility Functions
-
-func toFixed(_ number: Double, _ fractionDigits: Int) -> String {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .decimal
-    formatter.minimumFractionDigits = fractionDigits
-    formatter.maximumFractionDigits = fractionDigits
-    
-    return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
-}
-
-func timeRemainingFormatter(_ timeInterval: TimeInterval) -> String {
-    // Time formatter (for the time remaining)
-    let formatter = DateComponentsFormatter()
-    formatter.allowedUnits = [.hour, .minute, .second]
-    formatter.unitsStyle = .abbreviated
-    return formatter.string(from: timeInterval)!
-}
-
-func sanitizeFileNameString(_ inputFilename: String) -> String {
-    // Define CharacterSet of invalid characters which we will remove from the filenames
-    let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
-        .union(.newlines)
-        .union(.illegalCharacters)
-        .union(.controlCharacters)
-    // Filter out the illegal characters
-    return inputFilename.components(separatedBy: invalidCharacters).joined(separator: "")
-}
-
-func createDirectoryIfNotExists(location: URL) {
-    let fileManager = FileManager.default
-    if !fileManager.fileExists(atPath: location.path) {
-        do {
-            try fileManager.createDirectory(at: location, withIntermediateDirectories: false)
-        } catch {
-            Logger.noteExport.error("Error creating directory at \(location.absoluteString): \(error.localizedDescription)")
-        }
-
-    }
-}
