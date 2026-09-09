@@ -13,7 +13,7 @@ MacOS app written in Swift that bulk exports Apple Notes (including iCloud Notes
 
 Built by [Konstantin Zaremski](https://konstantin.zarem.ski)
 
-![Screenshot of version 2.0 of the Apple Notes Exporter](screenshots/v2.0.png)
+![Screenshot of version 2.1 of the Apple Notes Exporter](screenshots/v2.1.png)
 
 ## Purpose & Rationale
 
@@ -185,6 +185,8 @@ If you have notes in Gmail, Yahoo, Outlook, or other email accounts that you wan
 This limitation is due to the database-driven approach used in version 1.0, which queries the local Notes database directly. Email-based note accounts store their data differently and are not included in the same database structure that iCloud and On My Mac accounts use.
 
 ## Additional Screenshots
+
+The screenshots below are from v2.0; Step 3 gained the Folder / ZIP Archive / Single File selector in v2.1.
 
 **Note Selection**
 ![Note Selection](screenshots/v2.0_note_selection.png)
