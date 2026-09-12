@@ -553,6 +553,7 @@ struct AppleNotesExporterView: View {
                         .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
                         .disabled(!exportViewModel.configurations.addDateToFilename)
                     }
+                    .transition(.opacity)
                 }
 
                 OutputOptionRow(
@@ -576,6 +577,7 @@ struct AppleNotesExporterView: View {
                         help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
                         isOn: $exportViewModel.configurations.incrementalSync
                     )
+                    .transition(.opacity)
                 }
             }
             .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
@@ -619,7 +621,9 @@ struct AppleNotesExporterView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(SwiftUI.Color.orange.opacity(0.35), lineWidth: 1)
                     )
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    // Fade only. A .move transition slides this banner, and
+                    // everything below it, every time the option is toggled.
+                    .transition(.opacity)
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: showSyncWarning)
