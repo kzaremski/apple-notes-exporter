@@ -76,6 +76,11 @@ struct NotesFolder: NotesItem {
     let name: String
     let parentId: String?
     let accountId: String
+    /// ZIDENTIFIER of the folder. Apple marks each account's default folder
+    /// with a "DefaultFolder" prefix ("DefaultFolder-CloudKit" on iCloud),
+    /// which is how we find it without depending on the localized name.
+    /// Empty when the schema predates the column.
+    var identifier: String = ""
 
     var description: String { name }
 
@@ -83,6 +88,11 @@ struct NotesFolder: NotesItem {
 
     /// Check if this is a root-level folder (no parent)
     var isRootFolder: Bool { parentId == nil }
+
+    /// True when Apple flags this as the account's default ("Notes") folder.
+    var isDefaultFolder: Bool {
+        identifier.range(of: "DefaultFolder", options: .caseInsensitive) != nil
+    }
 }
 
 // MARK: - Note
@@ -98,6 +108,10 @@ struct NotesNote: NotesItem {
     let folderId: String
     let accountId: String
     let attachments: [NotesAttachment]
+    /// ZIDENTIFIER UUID used in applenotes:note/ links. Empty for legacy notes.
+    var identifier: String = ""
+    /// True when ZMARKEDFORDELETION is set (Recently Deleted).
+    var isDeleted: Bool = false
 
     var name: String { title }
     var description: String { title }
@@ -232,8 +246,42 @@ struct NotesHierarchy {
         sortBy: NoteSortOption = .dateModified,
         foldersOnTop: Bool = true
     ) -> NotesHierarchy {
+        let accountIds = Set(accounts.map { $0.id })
+        let folderIds = Set(folders.map { $0.id })
+
+        // Infer a missing folder account from notes in that folder, then
+        // the first real account. Treat a parent that is not a known folder
+        // or account as a root (CloudKit often stores the parent only in
+        // ZSERVERRECORDDATA, leaving ZPARENT empty or dangling).
+        let normalizedFolders: [NotesFolder] = folders.map { folder in
+            var accountId = folder.accountId
+            if !accountIds.contains(accountId) {
+                if let inferred = notes.first(where: {
+                    $0.folderId == folder.id && accountIds.contains($0.accountId)
+                })?.accountId {
+                    accountId = inferred
+                } else if let first = accounts.first {
+                    accountId = first.id
+                }
+            }
+            var parentId = folder.parentId
+            if let parent = parentId,
+               parent != accountId,
+               !folderIds.contains(parent),
+               !accountIds.contains(parent) {
+                parentId = nil
+            }
+            return NotesFolder(
+                id: folder.id,
+                name: folder.name,
+                parentId: parentId,
+                accountId: accountId,
+                identifier: folder.identifier
+            )
+        }
+
         let accountNodes = accounts.map { account in
-            let accountFolders = folders.filter { $0.accountId == account.id }
+            let accountFolders = normalizedFolders.filter { $0.accountId == account.id }
             let rootFolders = accountFolders.filter { $0.parentId == nil || $0.parentId == account.id }
 
             // Group root folders by name to merge duplicates
@@ -241,7 +289,7 @@ struct NotesHierarchy {
             for folder in rootFolders {
                 groupedFolders[folder.name, default: []].append(folder)
             }
-            let folderNodes = groupedFolders.map { (name, foldersWithSameName) in
+            var folderNodes = groupedFolders.map { (name, foldersWithSameName) in
                 buildMergedFolderNode(folders: foldersWithSameName, allFolders: accountFolders, notes: notes, sortBy: sortBy, foldersOnTop: foldersOnTop)
             }
             // Sort root folders based on sort option
@@ -249,10 +297,67 @@ struct NotesHierarchy {
                 sortFolders(folder1, folder2, by: sortBy)
             }
 
+            // Notes whose folder is missing from this account still belong
+            // here if their accountId matches (or no account matched).
+            var placedNoteIds = Set<String>()
+            for node in folderNodes {
+                placedNoteIds.formUnion(collectNoteIds(from: node))
+            }
+            let unfiled = notes.filter { note in
+                !placedNoteIds.contains(note.id)
+                    && (note.accountId == account.id
+                        || (!accountIds.contains(note.accountId) && account.id == accounts.first?.id))
+            }
+            .sorted { sortNotes($0, $1, by: sortBy) }
+
+            if !unfiled.isEmpty {
+                // Show loose notes where the exporter will actually write them:
+                // the account's default folder. A separate "Unfiled" node here
+                // would disagree with the exported tree on disk.
+                var accountFolderLookup: [String: NotesFolder] = [:]
+                for folder in accountFolders { accountFolderLookup[folder.id] = folder }
+                let defaultFolder = defaultNotesFolder(forAccount: account.id, in: accountFolderLookup)
+
+                let existingIndex = defaultFolder.flatMap { target in
+                    folderNodes.firstIndex { $0.folder.id == target.id || $0.folder.name == target.name }
+                }
+
+                if let index = existingIndex {
+                    // Root folders sharing a name are already merged into one
+                    // node, so fold the loose notes into that same node.
+                    let node = folderNodes[index]
+                    folderNodes[index] = FolderNode(
+                        folder: node.folder,
+                        subfolders: node.subfolders,
+                        notes: (node.notes + unfiled).sorted { sortNotes($0, $1, by: sortBy) }
+                    )
+                } else {
+                    let placeholder = NotesFolder(
+                        id: "unfiled-\(account.id)",
+                        name: defaultFolder?.name ?? fallbackNotesFolderName,
+                        parentId: nil,
+                        accountId: account.id
+                    )
+                    folderNodes.append(FolderNode(
+                        folder: placeholder,
+                        subfolders: [],
+                        notes: unfiled
+                    ))
+                }
+            }
+
             return AccountNode(account: account, folders: folderNodes)
         }
 
         return NotesHierarchy(accounts: accountNodes)
+    }
+
+    private static func collectNoteIds(from node: FolderNode) -> Set<String> {
+        var ids = Set(node.notes.map { $0.id })
+        for subfolder in node.subfolders {
+            ids.formUnion(collectNoteIds(from: subfolder))
+        }
+        return ids
     }
 
     /// Build a merged folder node from multiple folders with the same name
@@ -416,6 +521,15 @@ enum ExportFormat: String, CaseIterable {
     var fileExtension: String {
         rawValue.lowercased()
     }
+
+    /// Whether every note can be joined into one file.
+    ///
+    /// The packaged formats (PDF, DOCX, ODT, EPUB) are containers with their
+    /// own internal structure, so there is nothing meaningful to concatenate.
+    /// Single source of truth for the GUI selector and the CLI flag, which
+    /// previously disagreed: the GUI allowed only MD and TXT while the CLI
+    /// accepted any format and would happily write a DOCX into a text file.
+    var supportsConcatenation: Bool { !isBinaryFormat }
 
     /// Whether this format produces binary (Data) output instead of text (String)
     var isBinaryFormat: Bool {

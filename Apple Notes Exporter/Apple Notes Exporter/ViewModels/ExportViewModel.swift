@@ -125,9 +125,9 @@ class ExportViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    init(repository: NotesRepository = DatabaseNotesRepository(), databasePath: String = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite") {
+    init(repository: NotesRepository = DatabaseNotesRepository(), databasePath: String = defaultNotesDatabasePath()) {
         self.repository = repository
-        self.databasePath = databasePath
+        self.databasePath = resolvedFilePath(databasePath)
         self.configurations = ExportConfigurations.load()
     }
 
@@ -140,9 +140,18 @@ class ExportViewModel: ObservableObject {
     // MARK: - Export Operations
 
     /// Export notes to the specified output directory
+    /// Root name used for both the staging folder and the archive.
+    static let zipRootName = exportArchiveRootName
+
+    /// What the finished export actually produced: the archive for a zip
+    /// export, otherwise the output folder. The archive name can differ from
+    /// the destination the user picked, so the UI cannot infer it.
+    @Published var lastExportArtifactURL: URL?
+
+
     func exportNotes(
         _ notes: [NotesNote],
-        toDirectory outputURL: URL,
+        toDirectory destinationURL: URL,
         format: ExportFormat,
         includeAttachments: Bool = true
     ) async {
@@ -151,20 +160,84 @@ class ExportViewModel: ObservableObject {
         exportLog = []
         failedNotesCount = 0
         failedAttachmentsCount = 0
+        lastExportArtifactURL = nil
         let startTime = Date()
 
+        // A zip export writes the tree into a staging folder next to where the
+        // archive will land, so the archive has a single tidy root and the
+        // user's chosen folder is never littered with loose note files. The
+        // staging folder is removed once the archive exists.
+        let makeZip = configurations.zipOutput && !configurations.incrementalSync
+
+        // In zip mode the destination may be the archive the user named in the
+        // save panel, or a plain folder if they picked one before switching
+        // modes. Either way the archive's own name becomes the root folder
+        // inside it, so "Trip Notes.zip" expands to a "Trip Notes" folder.
+        let archiveURL: URL
+        let outputURL: URL
+        if makeZip {
+            let locations = archiveExportLocations(destination: destinationURL)
+            archiveURL = locations.archive
+            outputURL = locations.staging
+        } else {
+            archiveURL = destinationURL
+            outputURL = destinationURL
+        }
+
         do {
+            if makeZip {
+                try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+            }
             // Incremental sync: load existing manifest and filter to new/changed notes
             let isSync = configurations.incrementalSync
+            // Pruning must be judged against the whole library, not this run's
+            // selection, or exporting a subset would delete the files of every
+            // note the user did not happen to select this time.
+            let libraryNoteIds: Set<String>? = isSync
+                ? Set(((try? await repository.fetchNotes(includeDeleted: false)) ?? []).map(\.id))
+                : nil
             let existingManifest = isSync ? SyncManifest.load(from: outputURL) : nil
             let syncTracker: SyncManifestTracker?
 
             let notesToExport: [NotesNote]
-            if isSync, let manifest = existingManifest {
+            var activeManifest = existingManifest
+            if isSync, var manifest = existingManifest {
+                // Repair entries that point somewhere the note no longer
+                // belongs. Older versions parked unresolvable notes in
+                // "Unknown Folder" and then overwrote them there forever; the
+                // same applies to a note moved between folders in Apple Notes.
+                let accounts = try await repository.fetchAccounts()
+                let folders = try await repository.fetchFolders()
+                var accountLookup: [String: String] = [:]
+                for account in accounts { accountLookup[account.id] = account.name }
+                var folderLookup: [String: NotesFolder] = [:]
+                for folder in folders { folderLookup[folder.id] = folder }
+
+                let relocated = healManifestPaths(
+                    manifest: &manifest,
+                    notes: notes,
+                    accountLookup: accountLookup,
+                    folderLookup: folderLookup,
+                    outputRoot: outputURL
+                )
+                if !relocated.isEmpty {
+                    log("Relocating \(relocated.count) note(s) whose export folder changed")
+                }
+                activeManifest = manifest
+
                 notesToExport = manifest.notesNeedingExport(from: notes)
                 // Start from existing manifest so we preserve entries for unchanged notes
                 syncTracker = SyncManifestTracker(manifest: manifest)
                 if notesToExport.isEmpty {
+                    let presentIds = libraryNoteIds.map { $0.union(notes.map(\.id)) } ?? Set(notes.map(\.id))
+                    let removed = await syncTracker!.pruneDeleted(presentNoteIds: presentIds)
+                    for pruned in removed {
+                        deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
+                        log("✓ Pruned deleted note: \(pruned.entry.exportedPath)")
+                    }
+                    await syncTracker!.finishRun(pruned: removed)
+                    let updatedManifest = await syncTracker!.getManifest()
+                    try updatedManifest.save(to: outputURL)
                     log("✓ All notes are up to date, nothing to export")
                     exportState = .completed(ExportStatistics(
                         successfulNotes: 0,
@@ -172,10 +245,6 @@ class ExportViewModel: ObservableObject {
                         failedAttachments: 0,
                         completionDate: Date()
                     ))
-                    // Still update lastSync timestamp
-                    var updatedManifest = manifest
-                    updatedManifest.lastSync = Date()
-                    try updatedManifest.save(to: outputURL)
                     return
                 }
                 log("Incremental sync: \(notesToExport.count) new/changed notes of \(notes.count) total")
@@ -232,8 +301,7 @@ class ExportViewModel: ObservableObject {
             defer { self.internalLinkMap = [:] }
 
             // Check if we should concatenate all notes into a single file
-            // Only MD and TXT support concatenation
-            let canConcatenate = format == .markdown || format == .txt
+            let canConcatenate = format.supportsConcatenation
             if configurations.concatenateOutput && canConcatenate {
                 try await exportNotesConcatenated(
                     notesWithPaths,
@@ -252,8 +320,8 @@ class ExportViewModel: ObservableObject {
                     totalNotes: notesToExport.count,
                     startTime: startTime,
                     syncTracker: syncTracker,
-                    syncManifest: existingManifest,
-                    outputRootURL: isSync ? outputURL : nil
+                    syncManifest: activeManifest,
+                    outputRootURL: outputURL
                 )
             }
 
@@ -268,16 +336,30 @@ class ExportViewModel: ObservableObject {
 
             // Prune deleted notes from manifest, remove their files, then save.
             if let syncTracker = syncTracker {
-                let presentIds = Set(notes.map { $0.id })
+                let presentIds = libraryNoteIds.map { $0.union(notes.map(\.id)) } ?? Set(notes.map(\.id))
                 let removed = await syncTracker.pruneDeleted(presentNoteIds: presentIds)
-                for entry in removed {
-                    deleteExportedNoteFiles(outputRoot: outputURL, entry: entry)
-                    log("✓ Pruned deleted note: \(entry.exportedPath)")
+                for pruned in removed {
+                    deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
+                    log("✓ Pruned deleted note: \(pruned.entry.exportedPath)")
                 }
+                await syncTracker.finishRun(pruned: removed)
                 let finalManifest = await syncTracker.getManifest()
                 try finalManifest.save(to: outputURL)
                 log("✓ Sync manifest saved")
             }
+
+            if format == .html && configurations.html.writeFolderIndexes {
+                try writeHTMLFolderIndexes(underRoot: outputURL)
+            }
+
+            if makeZip {
+                log("Creating \(archiveURL.lastPathComponent)...")
+                try zipDirectory(at: outputURL, to: archiveURL)
+                try? FileManager.default.removeItem(at: outputURL)
+                log("✓ Wrote \(archiveURL.lastPathComponent)")
+            }
+
+            lastExportArtifactURL = makeZip ? archiveURL : outputURL
 
             // Export completed successfully
             let successfulNotes = notesToExport.count - failedNotesCount
@@ -290,6 +372,9 @@ class ExportViewModel: ObservableObject {
             Logger.noteExport.info("Export completed: \(successfulNotes) successful, \(self.failedNotesCount) failed notes, \(self.failedAttachmentsCount) failed attachments")
 
         } catch {
+            if makeZip {
+                try? FileManager.default.removeItem(at: outputURL)
+            }
             exportState = .error(error.localizedDescription)
             Logger.noteExport.error("Export failed: \(error.localizedDescription)")
         }
@@ -424,6 +509,7 @@ class ExportViewModel: ObservableObject {
                     attachmentPaths = try await exportAttachmentsAndReturnPaths(
                         note.attachments,
                         toDirectory: outputURL,
+                        outputRoot: outputURL,
                         noteBaseName: baseFilename,
                         noteTitle: note.title,
                         noteCreationDate: note.creationDate,
@@ -506,8 +592,12 @@ class ExportViewModel: ObservableObject {
         }
 
         // Write the single concatenated file
-        let filename = "Exported Notes.\(format.fileExtension)"
-        let fileURL = outputURL.appendingPathComponent(filename)
+        // The destination may be the file the user named in the save panel, or
+        // a directory to put the default name in.
+        let fileURL = concatenatedExportURL(destination: outputURL, format: format)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
 
         if format == .pdf {
             // For PDF, the concatenated content is HTML — render it
@@ -534,7 +624,7 @@ class ExportViewModel: ObservableObject {
             try concatenated.write(to: fileURL, atomically: true, encoding: .utf8)
         }
 
-        log("✓ Exported concatenated file: \(filename)")
+        log("✓ Exported concatenated file: \(fileURL.lastPathComponent)")
     }
 
     /// Export a single note concurrently (non-throwing wrapper for TaskGroup)
@@ -651,6 +741,7 @@ class ExportViewModel: ObservableObject {
             attachmentPaths = try await exportAttachmentsAndReturnPaths(
                 note.attachments,
                 toDirectory: directory,
+                outputRoot: outputRootURL ?? directory,
                 noteBaseName: uniqueBaseName,
                 noteTitle: note.title,
                 noteCreationDate: note.creationDate,
@@ -722,6 +813,10 @@ class ExportViewModel: ObservableObject {
             // Write to file
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
             log("✓ Exported note: \(note.title)")
+            if format == .enex,
+               let warning = ENEXLimits.oversizeWarning(title: note.title, byteCount: content.utf8.count) {
+                log("⚠︎ \(warning)")
+            }
         }
 
         // Set file timestamps to match note's creation and modification dates
@@ -749,6 +844,7 @@ class ExportViewModel: ObservableObject {
     private func exportAttachmentsAndReturnPaths(
         _ attachments: [NotesAttachment],
         toDirectory directory: URL,
+        outputRoot: URL,
         noteBaseName: String,
         noteTitle: String,
         noteCreationDate: Date,
@@ -764,8 +860,13 @@ class ExportViewModel: ObservableObject {
             return attachmentPaths
         }
 
-        // Create attachments subfolder using the unique note base name
-        let attachmentsURL = directory.appendingPathComponent("\(noteBaseName) (Attachments)")
+        let attachmentsURL = attachmentExportLocation(
+            sharedDump: configurations.sharedAttachmentsFolder,
+            outputRoot: outputRoot,
+            noteDirectory: directory,
+            noteBaseName: noteBaseName,
+            filename: "placeholder"
+        ).directory
         try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
 
         // Track used filenames to handle collisions
@@ -798,11 +899,19 @@ class ExportViewModel: ObservableObject {
                             usedFilenames[childBase] = 1
                         }
 
-                        let fileURL = attachmentsURL.appendingPathComponent(childFinal)
+                        let loc = attachmentExportLocation(
+                            sharedDump: configurations.sharedAttachmentsFolder,
+                            outputRoot: outputRoot,
+                            noteDirectory: directory,
+                            noteBaseName: noteBaseName,
+                            filename: childFinal
+                        )
+                        try FileManager.default.createDirectory(at: loc.directory, withIntermediateDirectories: true)
+                        let fileURL = loc.directory.appendingPathComponent(childFinal)
                         try child.data.write(to: fileURL)
                         try? setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
 
-                        let relativePath = "\(noteBaseName) (Attachments)/\(childFinal)"
+                        let relativePath = loc.relativePath
                         attachmentPaths[child.id] = relativePath
                         if attachmentPaths[attachment.id] == nil {
                             attachmentPaths[attachment.id] = relativePath
@@ -840,7 +949,15 @@ class ExportViewModel: ObservableObject {
                     usedFilenames[baseFilename] = 1
                 }
 
-                let fileURL = attachmentsURL.appendingPathComponent(finalFilename)
+                let loc = attachmentExportLocation(
+                    sharedDump: configurations.sharedAttachmentsFolder,
+                    outputRoot: outputRoot,
+                    noteDirectory: directory,
+                    noteBaseName: noteBaseName,
+                    filename: finalFilename
+                )
+                try FileManager.default.createDirectory(at: loc.directory, withIntermediateDirectories: true)
+                let fileURL = loc.directory.appendingPathComponent(finalFilename)
 
                 // Write attachment to disk
                 try data.write(to: fileURL)
@@ -850,9 +967,7 @@ class ExportViewModel: ObservableObject {
 
                 log("✓ Exported attachment: \(finalFilename) for note '\(noteTitle)'")
 
-                // Store relative path for this attachment
-                let relativePath = "\(noteBaseName) (Attachments)/\(finalFilename)"
-                attachmentPaths[attachment.id] = relativePath
+                attachmentPaths[attachment.id] = loc.relativePath
 
             } catch {
                 await tracker.attachmentFailed()
@@ -1216,7 +1331,9 @@ class ExportViewModel: ObservableObject {
             modificationDate: note.modificationDate,
             folderId: note.folderId,
             accountId: note.accountId,
-            attachments: note.attachments
+            attachments: note.attachments,
+            identifier: note.identifier,
+            isDeleted: note.isDeleted
         )
     }
 
@@ -1398,7 +1515,7 @@ class ExportViewModel: ObservableObject {
 
         for note in notes {
             let accountKey = sanitizeExportFilename(accountLookup[note.accountId] ?? "Unknown Account")
-            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup)
+            let folderPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup, accountId: note.accountId, isDeleted: note.isDeleted)
             hierarchy[accountKey, default: [:]][folderPath, default: []].append(note)
         }
 

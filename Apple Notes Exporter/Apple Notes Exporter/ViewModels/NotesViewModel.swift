@@ -83,7 +83,22 @@ class NotesViewModel: ObservableObject {
             async let foldersTask = repository.fetchFolders()
             async let notesTask = repository.fetchNotes()
 
-            let (accounts, folders, notes) = try await (accountsTask, foldersTask, notesTask)
+            var (accounts, folders, notes) = try await (accountsTask, foldersTask, notesTask)
+
+            // The live Notes DB can be empty on the first read (TCC / WAL).
+            // Retry a couple of times before giving up on an empty library.
+            if accounts.isEmpty || (notes.isEmpty && folders.isEmpty) {
+                for attempt in 1...3 {
+                    repository.invalidateCache()
+                    try await Task.sleep(nanoseconds: 400_000_000)
+                    Logger.noteQuery.info("Retrying NoteStore read (attempt \(attempt + 1))")
+                    async let a = repository.fetchAccounts()
+                    async let f = repository.fetchFolders()
+                    async let n = repository.fetchNotes()
+                    (accounts, folders, notes) = try await (a, f, n)
+                    if !accounts.isEmpty && !(notes.isEmpty && folders.isEmpty) { break }
+                }
+            }
 
             // Store raw data for rebuilding
             rawAccounts = accounts
@@ -104,7 +119,8 @@ class NotesViewModel: ObservableObject {
             // Automatically select all notes after loading
             selectAll()
 
-            Logger.noteQuery.info("Loaded \(self.allNotes.count) notes from \(self.accountsCount) accounts")
+            Logger.noteQuery.info("Raw fetch: \(accounts.count) accounts, \(folders.count) folders, \(notes.count) notes")
+            Logger.noteQuery.info("Loaded \(self.allNotes.count) notes from \(self.accountsCount) accounts (tree)")
             Logger.noteQuery.info("Automatically selected all \(self.selectedCount) notes")
 
         } catch let error as RepositoryError {

@@ -75,187 +75,247 @@ enum ExportFormatOption: String, AppEnum {
     }
 }
 
+// MARK: - Filename Date Format
+
+@available(macOS 13.0, *)
+enum FilenameDateFormatOption: String, AppEnum {
+    case iso
+    case us
+    case eu
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Date Format"
+
+    static var caseDisplayRepresentations: [FilenameDateFormatOption: DisplayRepresentation] = [
+        .iso: "ISO (2026-09-08)",
+        .us: "US (09-08-2026)",
+        .eu: "European (08-09-2026)",
+    ]
+
+    var toFilenameDateFormat: FilenameDateFormat {
+        switch self {
+        case .iso: return .iso
+        case .us:  return .usDate
+        case .eu:  return .euDate
+        }
+    }
+}
+
 // MARK: - Export Notes Intent
 
 @available(macOS 13.0, *)
 struct ExportNotesIntent: AppIntent {
     static var title: LocalizedStringResource = "Export Apple Notes"
     static var description = IntentDescription(
-        "Export Apple Notes to various file formats.",
+        "Export Apple Notes to any supported file format, with the same options as the command line tool.",
         categoryName: "Export"
     )
 
     @Parameter(title: "Format", description: "The file format to export notes to.")
     var format: ExportFormatOption
 
-    @Parameter(title: "Output Folder", description: "Path to the output directory (e.g. ~/Desktop/notes).")
+    @Parameter(title: "Output", description: "Destination directory, or the .zip to create when Zip Archive is on.")
     var outputPath: String
 
-    @Parameter(title: "Folder", description: "Only export notes from this folder (case-insensitive). Leave empty for all folders.", default: nil)
+    // MARK: Selection
+
+    @Parameter(title: "Folder", description: "Only export notes from this folder: an exact name or folder id. Leave empty for all folders.", default: nil)
     var folderFilter: String?
 
-    @Parameter(title: "Account", description: "Only export notes from this account (case-insensitive). Leave empty for all accounts.", default: nil)
+    @Parameter(title: "Match Folder by Substring", description: "Treat Folder as a substring instead of an exact name.", default: false)
+    var folderContains: Bool
+
+    @Parameter(title: "Include Subfolders", description: "Include notes in subfolders of the chosen folder.", default: true)
+    var includeSubfolders: Bool
+
+    @Parameter(title: "Account", description: "Only export notes from this account. Leave empty for all accounts.", default: nil)
     var accountFilter: String?
+
+    @Parameter(title: "Title Contains", description: "Only export notes whose title contains this text.", default: nil)
+    var titleContains: String?
+
+    @Parameter(title: "Modified After", description: "Only export notes modified after this date.", default: nil)
+    var modifiedAfter: Date?
+
+    @Parameter(title: "Modified Before", description: "Only export notes modified before this date.", default: nil)
+    var modifiedBefore: Date?
+
+    @Parameter(title: "Include Recently Deleted", description: "Include notes in Recently Deleted.", default: false)
+    var includeDeleted: Bool
+
+    // MARK: Output shape
+
+    @Parameter(title: "Zip Archive", description: "Deliver the export as a single .zip. Cannot be combined with Incremental Sync.", default: false)
+    var zipOutput: Bool
+
+    @Parameter(title: "Single File", description: "Join every note into one file. Not available for PDF, DOCX, ODT or EPUB.", default: false)
+    var concatenate: Bool
+
+    @Parameter(title: "Incremental Sync", description: "Only export notes that are new or changed since the last export to this folder.", default: false)
+    var incremental: Bool
+
+    @Parameter(title: "Reset Sync", description: "Discard the existing sync manifest first, forcing a full re-export.", default: false)
+    var resetSync: Bool
+
+    // MARK: Content
 
     @Parameter(title: "Include Attachments", description: "Export file attachments alongside notes.", default: false)
     var includeAttachments: Bool
 
-    @Parameter(title: "Date Prefix", description: "Prepend creation date to filenames.", default: false)
+    @Parameter(title: "Shared Attachments Folder", description: "Collect attachments under one Attachments folder instead of beside each note.", default: false)
+    var sharedAttachments: Bool
+
+    @Parameter(title: "HTML Folder Indexes", description: "Write an index.html in each folder so an HTML export is browsable.", default: false)
+    var htmlIndexes: Bool
+
+    @Parameter(title: "Date Prefix", description: "Prepend the creation date to filenames.", default: false)
     var datePrefix: Bool
+
+    @Parameter(title: "Date Format", description: "Format for the filename date prefix.", default: .iso)
+    var dateFormat: FilenameDateFormatOption
 
     static var parameterSummary: some ParameterSummary {
         Summary("Export notes as \(\.$format) to \(\.$outputPath)") {
             \.$folderFilter
+            \.$folderContains
+            \.$includeSubfolders
             \.$accountFilter
+            \.$titleContains
+            \.$modifiedAfter
+            \.$modifiedBefore
+            \.$includeDeleted
+            \.$zipOutput
+            \.$concatenate
+            \.$incremental
+            \.$resetSync
             \.$includeAttachments
+            \.$sharedAttachments
+            \.$htmlIndexes
             \.$datePrefix
+            \.$dateFormat
         }
     }
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let exportFormat = format.toExportFormat
-        let resolvedPath = (outputPath as NSString).expandingTildeInPath
-        let outputURL = URL(fileURLWithPath: resolvedPath)
 
-        // Create output directory
-        try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+        if zipOutput && incremental {
+            return .result(value: "Zip Archive cannot be combined with Incremental Sync: the sync manifest has to persist in a folder between runs.")
+        }
+        if concatenate && !exportFormat.supportsConcatenation {
+            return .result(value: "Single File is not available for \(exportFormat.rawValue): it is a packaged format with its own internal structure.")
+        }
 
-        let repo = DatabaseNotesRepository()
-        let databasePath = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
+        let destinationURL = URL(fileURLWithPath: (outputPath as NSString).expandingTildeInPath).standardizedFileURL
 
-        // Fetch data
-        let accounts = try await repo.fetchAccounts()
-        let folders = try await repo.fetchFolders()
-        var notes = try await repo.fetchNotes()
+        // Zip stages into a folder beside the archive so the destination never
+        // holds loose note files, matching the CLI and the app.
+        let archiveURL: URL?
+        let workingURL: URL
+        if zipOutput {
+            let locations = archiveExportLocations(destination: destinationURL)
+            archiveURL = locations.archive
+            workingURL = locations.staging
+        } else {
+            archiveURL = nil
+            workingURL = destinationURL
+        }
+        try FileManager.default.createDirectory(at: workingURL, withIntermediateDirectories: true)
 
-        // Apply filters
+        if resetSync {
+            try? FileManager.default.removeItem(at: workingURL.appendingPathComponent(SyncManifest.filename))
+        }
+
+        var configs = ExportConfigurations.default
+        configs.includeAttachments = includeAttachments
+        configs.sharedAttachmentsFolder = sharedAttachments
+        configs.addDateToFilename = datePrefix
+        configs.filenameDateFormat = dateFormat.toFilenameDateFormat
+        configs.concatenateOutput = concatenate
+        configs.incrementalSync = incremental
+        configs.html.writeFolderIndexes = htmlIndexes
+
+        // Same engine the CLI and the MCP server use, rather than a third
+        // export loop that only ever supported a handful of these options.
+        let engine = CLIExportEngine(databasePath: defaultNotesDatabasePath(), configurations: configs)
+
+        let folderTokens = folderFilter.map { $0.isEmpty ? [] : [$0] } ?? []
+        let wantsTrash = includeDeleted || folderTokens.contains { isRecentlyDeletedFolderName($0) }
+
+        let accounts = try await engine.fetchAccounts()
+        let folders = try await engine.fetchFolders()
+        let allNotes = try await engine.fetchNotes(includeDeleted: wantsTrash)
+
+        let unmatched = unmatchedFolderFilters(
+            filters: folderTokens, folders: folders, matchContains: folderContains
+        )
+        if !unmatched.isEmpty {
+            let names = folders.map(\.name).sorted().joined(separator: ", ")
+            return .result(value: "No folder matches \(unmatched.joined(separator: ", ")). Available folders: \(names)")
+        }
+
+        var filtered = applyNoteSelection(
+            notes: allNotes,
+            folders: folders,
+            folderFilters: folderTokens,
+            matchContains: folderContains,
+            includeSubfolders: includeSubfolders,
+            includeDeleted: wantsTrash,
+            noteIds: []
+        )
+
         if let accountName = accountFilter, !accountName.isEmpty {
             let matchingIds = Set(accounts
-                .filter { $0.name.localizedCaseInsensitiveCompare(accountName) == .orderedSame }
+                .filter { $0.name.localizedCaseInsensitiveContains(accountName) }
                 .map { $0.id })
-            notes = notes.filter { matchingIds.contains($0.accountId) }
+            filtered = filtered.filter { matchingIds.contains($0.accountId) }
+        }
+        if let tc = titleContains, !tc.isEmpty {
+            filtered = filtered.filter { $0.title.localizedCaseInsensitiveContains(tc) }
+        }
+        if let after = modifiedAfter {
+            filtered = filtered.filter { $0.modificationDate > after }
+        }
+        if let before = modifiedBefore {
+            filtered = filtered.filter { $0.modificationDate < before }
         }
 
-        if let folderName = folderFilter, !folderName.isEmpty {
-            let matchingIds = Set(folders
-                .filter { $0.name.localizedCaseInsensitiveCompare(folderName) == .orderedSame }
-                .map { $0.id })
-            notes = notes.filter { matchingIds.contains($0.folderId) }
-        }
-
-        guard !notes.isEmpty else {
+        guard !filtered.isEmpty || incremental else {
             return .result(value: "No notes matched the specified filters.")
         }
 
-        // Build lookups
-        var accountNames: [String: String] = [:]
-        for account in accounts { accountNames[account.id] = account.name }
-        var folderLookup: [String: NotesFolder] = [:]
-        for folder in folders { folderLookup[folder.id] = folder }
+        do {
+            let result = try await engine.exportNotes(
+                filtered,
+                toDirectory: workingURL,
+                format: exportFormat,
+                includeAttachments: includeAttachments,
+                verbose: false,
+                allKnownNoteIds: Set(allNotes.map(\.id)),
+                progressHandler: { _, _ in }
+            )
 
-        // Organize and create directories
-        var hierarchy: [(accountName: String, folderPath: String, note: NotesNote)] = []
-        for note in notes {
-            let acctName = sanitizeFileNameString(accountNames[note.accountId] ?? "Unknown Account")
-            let fPath = buildExportFolderPath(folderId: note.folderId, folderLookup: folderLookup)
-            hierarchy.append((accountName: acctName, folderPath: fPath, note: note))
-        }
-
-        var createdDirs: Set<String> = []
-        for item in hierarchy {
-            let dirURL = outputURL.appendingPathComponent(item.accountName).appendingPathComponent(item.folderPath)
-            if !createdDirs.contains(dirURL.path) {
-                try? FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
-                createdDirs.insert(dirURL.path)
+            var destination = workingURL.path
+            if let archiveURL {
+                do {
+                    try zipDirectory(at: workingURL, to: archiveURL)
+                    try? FileManager.default.removeItem(at: workingURL)
+                    destination = archiveURL.path
+                } catch {
+                    try? FileManager.default.removeItem(at: workingURL)
+                    return .result(value: "Export finished but the archive could not be written: \(error.localizedDescription)")
+                }
             }
+
+            var summary = "\(result.exported) notes exported as \(exportFormat.rawValue) to \(destination)."
+            if result.skipped > 0 { summary += " \(result.skipped) unchanged." }
+            if result.failed > 0 { summary += " \(result.failed) failed." }
+            return .result(value: summary)
+        } catch {
+            if archiveURL != nil { try? FileManager.default.removeItem(at: workingURL) }
+            Logger.noteExport.error("Shortcut export failed: \(error.localizedDescription)")
+            return .result(value: "Export failed: \(error.localizedDescription)")
         }
-
-        // Export
-        var successCount = 0
-        var failCount = 0
-
-        for item in hierarchy {
-            let note = item.note
-            let folderURL = outputURL.appendingPathComponent(item.accountName).appendingPathComponent(item.folderPath)
-
-            do {
-                let baseFilename: String
-                if datePrefix {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd"
-                    baseFilename = "\(formatter.string(from: note.creationDate)) \(note.sanitizedFileName)"
-                } else {
-                    baseFilename = note.sanitizedFileName
-                }
-
-                let filename = generateUniqueExportFilename(baseName: baseFilename, ext: exportFormat.fileExtension, inDirectory: folderURL)
-                let fileURL = folderURL.appendingPathComponent(filename)
-                let uniqueBaseName = filename.replacingOccurrences(of: ".\(exportFormat.fileExtension)", with: "")
-
-                // Attachments
-                var attachmentPaths: [String: String] = [:]
-                if includeAttachments && note.hasAttachments {
-                    attachmentPaths = try await intentExportAttachments(
-                        note: note,
-                        toDirectory: folderURL,
-                        noteBaseName: uniqueBaseName,
-                        repo: repo
-                    )
-                }
-
-                // Generate HTML
-                let html = try await intentGenerateHTML(
-                    for: note,
-                    repo: repo,
-                    databasePath: databasePath,
-                    attachmentPaths: attachmentPaths,
-                    exportDirectory: folderURL,
-                    forPDF: exportFormat == .pdf
-                )
-
-                // Write output
-                if exportFormat == .pdf {
-                    let pdfConfig = HtmlToPdf.PDFConfiguration(
-                        margins: HtmlToPdf.EdgeInsets(top: 36, left: 36, bottom: 36, right: 36),
-                        paperSize: CGSize(width: 612, height: 792)
-                    )
-                    try await withThrowingTaskGroup(of: Void.self) { group in
-                        group.addTask { try await html.print(to: fileURL, configuration: pdfConfig) }
-                        group.addTask {
-                            try await Task.sleep(nanoseconds: 60_000_000_000)
-                            throw NSError(domain: "ANE", code: 1, userInfo: [NSLocalizedDescriptionKey: "PDF timeout"])
-                        }
-                        try await group.next()
-                        group.cancelAll()
-                    }
-                } else if exportFormat.isBinaryFormat {
-                    let enrichedNote = noteWithHTML(note, html: html)
-                    let data: Data
-                    switch exportFormat {
-                    case .docx: data = enrichedNote.toDOCX()
-                    case .odt:  data = enrichedNote.toODT()
-                    case .epub: data = enrichedNote.toEPUB()
-                    default: fatalError()
-                    }
-                    try data.write(to: fileURL)
-                } else {
-                    let enrichedNote = noteWithHTML(note, html: html)
-                    let content = generateExportTextContent(for: enrichedNote, format: exportFormat, folderName: item.folderPath, accountName: item.accountName)
-                    try content.write(to: fileURL, atomically: true, encoding: .utf8)
-                }
-
-                try? setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
-
-                successCount += 1
-            } catch {
-                failCount += 1
-                Logger.noteExport.error("Shortcut export failed for '\(note.title)': \(error.localizedDescription)")
-            }
-        }
-
-        let summary = "\(successCount) notes exported as \(exportFormat.rawValue). \(failCount > 0 ? "\(failCount) failed." : "")"
-        return .result(value: summary)
     }
 }
 
@@ -322,6 +382,128 @@ struct ListFoldersIntent: AppIntent {
 
 // MARK: - App Shortcuts Provider
 
+// MARK: - List Notes Intent
+
+@available(macOS 13.0, *)
+struct ListNotesIntent: AppIntent {
+    static var title: LocalizedStringResource = "List Apple Notes"
+    static var description = IntentDescription(
+        "List notes, optionally filtered by folder, account, title or modification date.",
+        categoryName: "Export"
+    )
+
+    @Parameter(title: "Folder", description: "Only list notes in this folder: an exact name or folder id.", default: nil)
+    var folderFilter: String?
+
+    @Parameter(title: "Match Folder by Substring", description: "Treat Folder as a substring instead of an exact name.", default: false)
+    var folderContains: Bool
+
+    @Parameter(title: "Include Subfolders", description: "Include notes in subfolders of the chosen folder.", default: true)
+    var includeSubfolders: Bool
+
+    @Parameter(title: "Account", description: "Only list notes from this account.", default: nil)
+    var accountFilter: String?
+
+    @Parameter(title: "Title Contains", description: "Only list notes whose title contains this text.", default: nil)
+    var titleContains: String?
+
+    @Parameter(title: "Modified After", description: "Only list notes modified after this date.", default: nil)
+    var modifiedAfter: Date?
+
+    @Parameter(title: "Modified Before", description: "Only list notes modified before this date.", default: nil)
+    var modifiedBefore: Date?
+
+    @Parameter(title: "Include Recently Deleted", description: "Include notes in Recently Deleted.", default: false)
+    var includeDeleted: Bool
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("List Apple Notes") {
+            \.$folderFilter
+            \.$folderContains
+            \.$includeSubfolders
+            \.$accountFilter
+            \.$titleContains
+            \.$modifiedAfter
+            \.$modifiedBefore
+            \.$includeDeleted
+        }
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<[String]> {
+        let repo = DatabaseNotesRepository()
+        let folderTokens = folderFilter.map { $0.isEmpty ? [] : [$0] } ?? []
+        let wantsTrash = includeDeleted || folderTokens.contains { isRecentlyDeletedFolderName($0) }
+
+        let accounts = try await repo.fetchAccounts()
+        let folders = try await repo.fetchFolders()
+        let allNotes = try await repo.fetchNotes(includeDeleted: wantsTrash)
+
+        let unmatched = unmatchedFolderFilters(
+            filters: folderTokens, folders: folders, matchContains: folderContains
+        )
+        if !unmatched.isEmpty {
+            return .result(value: ["No folder matches \(unmatched.joined(separator: ", "))."])
+        }
+
+        var filtered = applyNoteSelection(
+            notes: allNotes,
+            folders: folders,
+            folderFilters: folderTokens,
+            matchContains: folderContains,
+            includeSubfolders: includeSubfolders,
+            includeDeleted: wantsTrash,
+            noteIds: []
+        )
+        if let accountName = accountFilter, !accountName.isEmpty {
+            let ids = Set(accounts.filter { $0.name.localizedCaseInsensitiveContains(accountName) }.map { $0.id })
+            filtered = filtered.filter { ids.contains($0.accountId) }
+        }
+        if let tc = titleContains, !tc.isEmpty {
+            filtered = filtered.filter { $0.title.localizedCaseInsensitiveContains(tc) }
+        }
+        if let after = modifiedAfter { filtered = filtered.filter { $0.modificationDate > after } }
+        if let before = modifiedBefore { filtered = filtered.filter { $0.modificationDate < before } }
+
+        return .result(value: filtered.map(\.title))
+    }
+}
+
+// MARK: - Sync Status Intent
+
+@available(macOS 13.0, *)
+struct SyncStatusIntent: AppIntent {
+    static var title: LocalizedStringResource = "Apple Notes Sync Status"
+    static var description = IntentDescription(
+        "Report the incremental sync state of a previously exported folder. Does not read the Notes database.",
+        categoryName: "Export"
+    )
+
+    @Parameter(title: "Output Folder", description: "The folder a previous incremental export wrote to.")
+    var outputPath: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Sync status of \(\.$outputPath)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        let url = URL(fileURLWithPath: (outputPath as NSString).expandingTildeInPath).standardizedFileURL
+        guard let manifest = SyncManifest.load(from: url) else {
+            return .result(value: "No sync manifest in \(url.path). That folder has not been used for an incremental export.")
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        var summary = "\(manifest.notes.count) notes tracked, last synced \(formatter.string(from: manifest.lastSync))."
+        if let run = manifest.history.last {
+            summary += " Last run: \(run.added.count) added, \(run.updated.count) updated, \(run.deleted.count) deleted."
+        }
+        return .result(value: summary)
+    }
+}
+
 @available(macOS 13.0, *)
 struct ANEShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -334,6 +516,23 @@ struct ANEShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Export Notes",
             systemImageName: "square.and.arrow.up"
+        )
+        AppShortcut(
+            intent: ListNotesIntent(),
+            phrases: [
+                "List notes in \(.applicationName)",
+                "List Apple Notes with \(.applicationName)",
+            ],
+            shortTitle: "List Notes",
+            systemImageName: "doc.text.magnifyingglass"
+        )
+        AppShortcut(
+            intent: SyncStatusIntent(),
+            phrases: [
+                "Check sync status in \(.applicationName)",
+            ],
+            shortTitle: "Sync Status",
+            systemImageName: "clock.arrow.circlepath"
         )
         AppShortcut(
             intent: ListAccountsIntent(),

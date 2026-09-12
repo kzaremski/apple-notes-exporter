@@ -1,8 +1,8 @@
 # Apple Notes Exporter - Makefile
 # For terminal-based development workflow
 
-.PHONY: help build run clean logs test test-formats rebuild install icon \
-        release release-archive release-export release-notarize release-zip release-clean
+.PHONY: help build run clean logs test test-ui test-cli test-all test-formats rebuild install icon \
+        release release-archive release-export release-notarize release-zip release-verify release-clean
 
 # Configuration
 PROJECT = Apple Notes Exporter/Apple Notes Exporter.xcodeproj
@@ -17,6 +17,12 @@ ICONSET_DIR = Apple Notes Exporter/Apple Notes Exporter/Assets.xcassets/AppIcon.
 
 # Code signing flags for local dev builds without a valid cert.
 UNSIGNED = CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+# xcodebuild needs the full Xcode toolchain. If xcode-select is pointing at
+# Command Line Tools, send every xcodebuild invocation to Xcode.app instead.
+ifeq ($(shell xcode-select -p 2>/dev/null),/Library/Developer/CommandLineTools)
+  export DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
+endif
 
 # Release configuration. The notary profile must be set up once on this
 # machine via:
@@ -46,9 +52,13 @@ help:
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make rebuild      - Clean and build"
 	@echo "  make logs         - Stream app logs (run in separate terminal)"
-	@echo "  make test         - Run unit tests"
+	@echo "  make test         - Run unit tests (skips UI tests; unsigned Debug)"
+	@echo "  make test-cli     - Offline CLI checks (help, sync-status history, missing db)"
+	@echo "  make test-all     - unit tests + offline CLI (no Notes database / FDA needed)"
+	@echo "  make test-ui      - Run UI tests (needs a signed runner)"
 	@echo "  make test-formats - Export a sample note via the embedded CLI to every format"
 	@echo "                      OUTPUT=/path FILTER=title FORMATS=\"pdf html\""
+	@echo "                      Needs Full Disk Access on the terminal."
 	@echo "  make install      - Build and install to /Applications"
 	@echo "  make icon         - Generate app icon from icon/icon.svg"
 	@echo ""
@@ -59,6 +69,8 @@ help:
 	@echo "  make release-export  - Export the .app from the archive (Developer ID)."
 	@echo "  make release-notarize- Submit to Apple notary, wait, staple."
 	@echo "  make release-zip     - Produce AppleNotesExporter_v<VERSION>[-<BUILD>].zip"
+	@echo "  make release-verify  - Verify a built zip (ZIP=path) and print reference"
+	@echo "                          CDHashes for the release notes."
 	@echo "  make release-clean   - Remove the release/ output directory."
 	@echo ""
 	@echo "The notes-export CLI and notes-export-mcp server are built as dependencies"
@@ -121,6 +133,19 @@ test-formats: build
 	echo "✓ $$passed passed, ✗ $$failed failed of $$(echo $(FORMATS) | wc -w | tr -d ' ') formats"; \
 	if [ "$$failed" -gt 0 ]; then exit 1; fi
 
+# Offline CLI checks: no NoteStore and no Full Disk Access required.
+# Covers help text (--folder id/descendants, sync history), sync-status JSON
+# against a fixture manifest, and export failure on a missing --db path.
+CLI_BIN = $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export
+MCP_BIN = $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export-mcp
+
+test-cli: build
+	@if [ ! -x "$(CLI_BIN)" ]; then echo "❌ CLI not found at $(CLI_BIN)"; exit 1; fi
+	@if [ ! -x "$(MCP_BIN)" ]; then echo "❌ MCP not found at $(MCP_BIN)"; exit 1; fi
+	@bash scripts/test-cli-offline.sh "$(CLI_BIN)"
+
+test-all: test test-cli
+
 # Build and run
 run: build
 	@echo "🚀 Launching $(APP_NAME)..."
@@ -148,13 +173,39 @@ logs-process:
 	@echo "📋 Streaming logs for process '$(SCHEME)'..."
 	log stream --process "$(SCHEME)"
 
-# Run unit tests
+# Run unit tests. UI tests are excluded: the unsigned UITest runner exits
+# before bootstrapping (xcodebuild: "Test crashed with signal kill").
 test:
-	@echo "🧪 Running tests..."
+	@echo "🧪 Running unit tests..."
+	@set -o pipefail && xcodebuild test \
+		-project "$(PROJECT)" \
+		-scheme "$(SCHEME)" \
+		-destination 'platform=macOS' \
+		-derivedDataPath "$(BUILD_DIR)" \
+		-only-testing:"Apple Notes ExporterTests" \
+		$(UNSIGNED) \
+		2>&1 | tee test.log | grep -E "error:|warning:|passed on|failed on|TEST SUCCEEDED|TEST FAILED|^/" || true
+	@if grep -q "TEST FAILED" test.log 2>/dev/null; then \
+		echo ""; \
+		echo "❌ Tests failed:"; \
+		grep -E "failed on|error:" test.log | head -20; \
+		exit 1; \
+	elif grep -q "TEST SUCCEEDED" test.log 2>/dev/null; then \
+		echo "✅ Tests passed"; \
+	else \
+		echo "❌ xcodebuild did not report TEST SUCCEEDED (see test.log)"; \
+		exit 1; \
+	fi
+
+test-ui:
+	@echo "🧪 Running UI tests..."
 	xcodebuild test \
 		-project "$(PROJECT)" \
 		-scheme "$(SCHEME)" \
-		-derivedDataPath "$(BUILD_DIR)"
+		-destination 'platform=macOS' \
+		-derivedDataPath "$(BUILD_DIR)" \
+		-only-testing:"Apple Notes ExporterUITests" \
+		$(UNSIGNED)
 
 # Build release version (used by `install`; not a distributable artifact).
 release-build:
@@ -168,7 +219,17 @@ release-build:
 # Install to /Applications
 install: release-build
 	@echo "📦 Installing to /Applications..."
-	@cp -R "$(BUILD_DIR)/Build/Products/Release/$(APP_NAME)" /Applications/
+	@# Replace the bundle, never merge into it. `cp -R src.app /Applications/`
+	@# copies *into* an existing bundle of the same name, so any file the old
+	@# version shipped and the new one dropped survives. The new signature does
+	@# not seal that leftover, and the install fails verification with
+	@# "a sealed resource is missing or invalid".
+	@set -e; \
+		SRC="$(BUILD_DIR)/Build/Products/Release/$(APP_NAME)"; \
+		DEST="/Applications/$(APP_NAME)"; \
+		rm -rf "$$DEST"; \
+		ditto "$$SRC" "$$DEST"; \
+		codesign --verify --strict --verbose=2 "$$DEST"
 	@echo "✅ Installed to /Applications/$(APP_NAME)"
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -219,6 +280,22 @@ release-export:
 		-archivePath "$(RELEASE_DIR)/Apple Notes Exporter.xcarchive" \
 		-exportPath "$(RELEASE_DIR)/Export" \
 		-exportOptionsPlist "$(RELEASE_DIR)/ExportOptions.plist"
+	@echo "🔐 Verifying signatures..."
+	@# `set -e` matters: these used to be `;`-chained with a trailing `|| true`,
+	@# so the recipe always exited 0 and a broken build sailed through to
+	@# notarization. Apple also deprecates --deep for verification, so each
+	@# nested binary is checked on its own.
+	@set -e; APP="$(RELEASE_DIR)/Export/$(APP_NAME)"; \
+		codesign --verify --strict --verbose=2 "$$APP"; \
+		for nested in "$$APP/Contents/SharedSupport/"* "$$APP/Contents/Frameworks/"*; do \
+			[ -f "$$nested" ] || continue; \
+			codesign --verify --strict --verbose=2 "$$nested"; \
+		done
+	@# Gatekeeper cannot pass before notarization, so this is informational here
+	@# and enforced in release-notarize and release-zip.
+	@APP="$(RELEASE_DIR)/Export/$(APP_NAME)"; \
+		echo "   Gatekeeper (expected to be rejected until notarized):"; \
+		spctl --assess --type execute --verbose "$$APP" 2>&1 | sed 's/^/     /' || true
 	@echo "✅ Exported to $(RELEASE_DIR)/Export/$(APP_NAME)"
 
 release-notarize:
@@ -246,6 +323,9 @@ release-notarize:
 	@echo "📎 Stapling notarization ticket to .app..."
 	xcrun stapler staple "$(RELEASE_DIR)/Export/$(APP_NAME)"
 	xcrun stapler validate "$(RELEASE_DIR)/Export/$(APP_NAME)"
+	@# Now that the ticket is stapled, Gatekeeper acceptance is a hard gate.
+	@set -e; APP="$(RELEASE_DIR)/Export/$(APP_NAME)"; \
+		spctl --assess --type execute --verbose "$$APP"
 	@echo "✅ Notarized and stapled."
 
 release-zip:
@@ -257,6 +337,38 @@ release-zip:
 	ditto -c -k --keepParent "$(RELEASE_DIR)/Export/$(APP_NAME)" "$(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip"
 	@SIZE=$$(du -h "$(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip" | cut -f1); \
 		echo "✅ Created $(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip ($$SIZE)"
+	@$(MAKE) --no-print-directory release-verify ZIP="$(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip"
+
+# Verify the artifact a user actually downloads, by extracting the zip and
+# checking that copy rather than the export directory it was made from. Also
+# prints the reference values worth publishing alongside a release, so a report
+# of "your release fails codesign" can be checked against something.
+#   make release-verify ZIP=release/AppleNotesExporter_v2.0-2.zip
+ZIP ?= $(RELEASE_DIR)/$(RELEASE_ZIP_NAME).zip
+
+release-verify:
+	@if [ ! -f "$(ZIP)" ]; then echo "❌ Zip not found: $(ZIP)"; exit 1; fi
+	@echo "🔎 Verifying the distributed artifact: $(ZIP)"
+	@set -e; \
+		TMP=$$(mktemp -d); \
+		trap 'rm -rf "$$TMP"' EXIT; \
+		ditto -x -k "$(ZIP)" "$$TMP"; \
+		APP="$$TMP/$(APP_NAME)"; \
+		if [ ! -d "$$APP" ]; then echo "❌ $(APP_NAME) not found inside the zip"; exit 1; fi; \
+		codesign --verify --strict --verbose=2 "$$APP"; \
+		for nested in "$$APP/Contents/SharedSupport/"* "$$APP/Contents/Frameworks/"*; do \
+			[ -f "$$nested" ] || continue; \
+			codesign --verify --strict --verbose=2 "$$nested"; \
+		done; \
+		spctl --assess --type execute --verbose "$$APP"; \
+		xcrun stapler validate "$$APP"; \
+		echo ""; \
+		echo "   Reference values (publish these in the release notes):"; \
+		echo "     zip sha256   $$(shasum -a 256 "$(ZIP)" | cut -d' ' -f1)"; \
+		codesign -dvvv --arch arm64  "$$APP" 2>&1 | awk -F= '/^CDHash/{print "     app arm64    "$$2}'; \
+		codesign -dvvv --arch x86_64 "$$APP" 2>&1 | awk -F= '/^CDHash/{print "     app x86_64   "$$2}'; \
+		codesign -dvvv "$$APP" 2>&1 | awk '/^Runtime Version/{print "     "$$0} /^Sealed Resources/{print "     "$$0}'
+	@echo "✅ Distributed artifact verifies clean"
 
 release-clean:
 	@echo "🧹 Removing $(RELEASE_DIR)/..."

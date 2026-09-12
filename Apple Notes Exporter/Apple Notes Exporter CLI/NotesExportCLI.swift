@@ -57,7 +57,13 @@ struct NotesExportCLI: AsyncParsableCommand {
         discussion: """
         Headless companion to the Apple Notes Exporter macOS app. Reads the
         local Notes database directly (no AppleScript, no UI), and supports
-        filtering by account, folder, title, and modification date.
+        filtering by account, folder (exact name or id, repeatable; subfolders
+        included), title, and modification date. Use --include-deleted or
+        --folder "Recently Deleted" for trash. --shared-attachments writes
+        files under Attachments/ at the output root.
+
+        Shortcuts: grant Full Disk Access to Shortcuts.app to Run Shell Script
+        without opening Terminal. App Intents need a signed copy of the GUI.
 
         Full Disk Access is required. In System Settings > Privacy & Security
         > Full Disk Access, add your Terminal app (Terminal.app, iTerm, etc.)
@@ -77,7 +83,7 @@ struct NotesExportCLI: AsyncParsableCommand {
           notes-export sync-status -o ~/backups/notes
         """,
         version: {
-            let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0"
+            let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1"
             let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
             return "\(marketing).\(build)"
         }(),
@@ -95,8 +101,10 @@ struct NotesExportCLI: AsyncParsableCommand {
 
 /// Options used by every subcommand for database path override.
 struct DatabaseOptions: ParsableArguments {
-    @Option(name: .long, help: "Path to NoteStore.sqlite (default: system Notes database).")
-    var db: String = "\(NSHomeDirectory())/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
+    @Option(name: .long, help: "Path to NoteStore.sqlite (default: system Notes database). Tildes are expanded to an absolute path.")
+    var db: String = defaultNotesDatabasePath()
+
+    var resolvedDB: String { resolvedFilePath(db) }
 }
 
 /// Options used by list commands for output format selection.

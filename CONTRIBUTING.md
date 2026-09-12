@@ -13,10 +13,12 @@ Thanks for your interest in Apple Notes Exporter! Contributions of all kinds are
 ```sh
 make build        # Debug build (CLI + MCP embedded in the .app bundle)
 make run          # Build and launch
-make test         # Run tests
+make test         # Run unit tests
+make test-cli     # Offline CLI checks (no Notes database required)
+make test-all     # unit tests + offline CLI
 make clean        # Clean build artifacts
 make logs         # Stream app logs
-make test-formats # Export a sample note via the embedded CLI to every format
+make test-formats # Export a sample note via the embedded CLI to every format (needs FDA)
 ```
 
 ## Signing
@@ -34,6 +36,40 @@ Then edit `Signing.local.xcconfig` and fill in `LOCAL_DEVELOPMENT_TEAM` with you
 
 If you're just building locally without a paid developer account, you can leave the team empty and Xcode will fall back to ad-hoc signing — enough to run the Debug build on your own machine.
 
+### Where build settings live
+
+Signing and version settings are kept in `Config/*.xcconfig`, not in `project.pbxproj`:
+
+| File | Holds | Committed |
+|------|-------|-----------|
+| `Config/Debug.xcconfig` | Debug signing identity and style | yes |
+| `Config/Release.xcconfig` | Developer ID signing for release builds | yes |
+| `Config/Version.xcconfig` | `MARKETING_VERSION`, `CURRENT_PROJECT_VERSION` | yes |
+| `Config/Signing.xcconfig` | pulls in the local team override | yes |
+| `Config/Signing.local.xcconfig` | your `LOCAL_DEVELOPMENT_TEAM` | **no** (gitignored) |
+
+The app, `notes-export`, and `notes-export-mcp` targets use `Debug.xcconfig` and
+`Release.xcconfig` as their base configurations. Bumping the version for a
+release is therefore a one-line change in `Version.xcconfig` rather than six
+edits scattered through the project file.
+
+**Do not put `DEVELOPMENT_TEAM` or `CODE_SIGN_IDENTITY` in `project.pbxproj`.**
+A target-level value silently overrides the xcconfig, which is how one
+developer's team id ends up trampling everyone else's build. CI fails the build
+if either key reappears in the project file. If Xcode writes one back (it does
+this when you change signing through the UI), move it into the xcconfig and
+delete it from the project.
+
+## Full Disk Access
+
+macOS does not expose a public API that grants Full Disk Access. The app registers itself with TCC by reading a protected path, then asks the user to flip the toggle in System Settings.
+
+When working on permission checks or the Notes database:
+
+1. Probe a protected path with an **absolute** file path (`hasNotesDatabaseAccess()` / `defaultNotesDatabasePath()` in `ExportSupport.swift`). Relative paths and `NSHomeDirectory()` can fail to match the binary TCC is tracking.
+2. Keep the app **code-signed**. Unsigned or ad-hoc Debug builds often do not appear in Full Disk Access, do not register App Intents (`linkd` 4097), and may never trigger the prompt. Use `Signing.local.xcconfig` and prefer a Developer ID signed copy in `/Applications` for permission testing.
+3. There is no supported TCC request for `kTCCServiceSystemPolicyAllFiles`. `FullDiskAccess.promptIfNotGranted` enumerates a protected directory (to create the Privacy entry) and opens System Settings. The user still has to enable the checkbox.
+
 ## Project Layout
 
 ```
@@ -50,7 +86,7 @@ Apple Notes Exporter/
     Models/                                 # Data models, format converters
     ViewModels/                             # MVVM view models
     Repository/                             # DB access abstraction
-    Config/                                 # xcconfig files for signing
+    Config/                                 # xcconfig files: signing, version
   Apple Notes Exporter CLI/                 # notes-export command-line tool
   Apple Notes Exporter MCP/                 # notes-export-mcp server
 ```
@@ -144,6 +180,8 @@ When filing an issue, it helps to include:
 - The app uses MVVM with a Repository pattern. `async/await` and `TaskGroup` for concurrency.
 - Logging goes through `OSLog` via the `Logger` extensions.
 - The CLI and MCP targets share code with the main app; changes to `ExportSupport.swift`, `NotesModels.swift`, etc. affect all three targets.
+- Folder resolution lives in one place, `buildExportFolderPath` in `ExportSupport.swift`. The note tree (`NotesHierarchy.build`) and the exporter both go through it, so loose notes appear in the same folder in the UI and on disk. Apple marks each account's default folder with a `DefaultFolder` `ZIDENTIFIER`, which is what we match on rather than the localized name.
+- `project.pbxproj` is set to never auto-merge (see `.gitattributes`). A textual merge of that file yields a project that opens but builds wrong, so git raises a conflict instead; resolve it deliberately.
 
 ## License
 

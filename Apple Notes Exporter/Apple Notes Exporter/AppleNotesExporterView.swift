@@ -18,7 +18,9 @@
 //  along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import Foundation
 
 extension Binding {
@@ -138,6 +140,9 @@ struct AppleNotesExporterView: View {
             self.showAlert = true
             return
         }
+        // A destination left over from a different container would fail late
+        // and confusingly, so treat it as unset here.
+        normalizeOutputPathForContainer()
         // No output folder or file chosen
         if self.outputPath == "" {
             self.activeAlert = .noOutput
@@ -170,7 +175,82 @@ struct AppleNotesExporterView: View {
     /**
      Select the output folder.
      */
+    /// Forget the chosen destination when the container changes.
+    ///
+    /// The three containers do not mean the same thing by "output": ZIP names
+    /// a file, the other two name a directory. Carrying a path across a switch
+    /// leaves a value the new mode has to reinterpret, so the user picks again
+    /// with the right panel.
+    func clearOutputPathIfContainerChanged(wasZip: Bool, wasSingle: Bool, nowZip: Bool, nowSingle: Bool) {
+        guard wasZip != nowZip || wasSingle != nowSingle else { return }
+        outputPath = ""
+        outputURL = nil
+    }
+
+    /// Drop a stored destination the current container cannot use.
+    ///
+    /// outputPath is persisted, so clearing it only when the container changes
+    /// is not enough: an archive path chosen in a previous session comes back
+    /// on the next launch even if Folder is now selected, and the export then
+    /// tries to create a directory where that .zip file already sits. A folder
+    /// path under ZIP is fine, since the archive is named inside it.
+    func normalizeOutputPathForContainer() {
+        guard !outputPath.isEmpty else { return }
+        let ext = (outputPath as NSString).pathExtension.lowercased()
+        // Only extensions this app produces are treated as a filename; a
+        // directory legitimately called "my.notes" must not be discarded.
+        let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(["zip"])
+
+        let isZip = exportViewModel.configurations.zipOutput
+        let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
+
+        let stale: Bool
+        if isZip {
+            stale = ours.contains(ext) && ext != "zip"
+        } else if isSingle {
+            // The extension has to match the format being written, so
+            // switching MD to TXT invalidates the stored name too.
+            stale = ours.contains(ext) && ext != ExportFormat(rawValue: outputFormat)?.fileExtension
+        } else {
+            stale = ours.contains(ext)
+        }
+        guard stale else { return }
+        outputPath = ""
+        outputURL = nil
+    }
+
+    /// The filename and type to offer in a save panel, or nil when the
+    /// container writes into a directory instead.
+    func savePanelTarget() -> (name: String, type: UTType?)? {
+        if exportViewModel.configurations.zipOutput {
+            return ("\(ExportViewModel.zipRootName).zip", .zip)
+        }
+        guard exportViewModel.configurations.concatenateOutput,
+              let format = ExportFormat(rawValue: outputFormat) else { return nil }
+        let ext = format.fileExtension
+        // Not every export extension maps to a registered type (adoc, enex and
+        // friends); leaving it unset just means the panel does not filter.
+        return ("\(concatenatedFileBaseName).\(ext)", UTType(filenameExtension: ext))
+    }
+
     func selectOutputFolder() {
+        // ZIP and Single File both produce exactly one file, so the user names
+        // that file rather than picking a directory to be filled.
+        if let (suggestedName, contentType) = savePanelTarget() {
+            let savePanel = NSSavePanel()
+            if let contentType { savePanel.allowedContentTypes = [contentType] }
+            savePanel.canCreateDirectories = true
+            savePanel.nameFieldStringValue = suggestedName
+            savePanel.prompt = "Choose"
+            savePanel.begin { response in
+                if response == .OK, let exportURL = savePanel.url {
+                    self.outputURL = exportURL
+                    self.outputPath = exportURL.path
+                }
+            }
+            return
+        }
+
         let openPanel = NSOpenPanel()
 
         openPanel.canChooseDirectories = true
@@ -208,12 +288,11 @@ struct AppleNotesExporterView: View {
     // revoked since the last launch (e.g. user toggled it off in System Settings).
     @State private var showLicensePermissionsView: Bool = {
         let licenseAccepted = UserDefaults.standard.bool(forKey: "licenseAcceptedGPLv3")
-        let notesDBDir = NSHomeDirectory() + "/Library/Group Containers/group.com.apple.notes/"
-        let hasFDA = FileManager.default.isReadableFile(atPath: notesDBDir)
-        return !licenseAccepted || !hasFDA
+        return !licenseAccepted || !hasNotesDatabaseAccess()
     }()
     @State private var showNoteSelectorView: Bool = false
     @State private var showFormatOptionsView: Bool = false
+    @State private var showMCPSetupView: Bool = false
     @State private var showProgressWindow: Bool = false
     @State private var showErrorExportingAlert: Bool = false
     @State private var showAlert: Bool = false
@@ -370,16 +449,81 @@ struct AppleNotesExporterView: View {
                 .padding(.top, 5)
                 .padding(.bottom, titleBottomPadding)
             
+            HStack(spacing: 8) {
+                let canConcatenate = ExportFormat(rawValue: outputFormat)?.supportsConcatenation ?? false
+                let isZip = exportViewModel.configurations.zipOutput
+                let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
+
+                OutputContainerButton(
+                    title: "Folder",
+                    icon: "folder",
+                    isSelected: !isZip && !isSingle
+                ) {
+                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
+                                                      nowZip: false, nowSingle: false)
+                    exportViewModel.configurations.zipOutput = false
+                    exportViewModel.configurations.concatenateOutput = false
+                    exportViewModel.saveConfigurations()
+                }
+                OutputContainerButton(
+                    title: "ZIP Archive",
+                    icon: "doc.zipper",
+                    isSelected: isZip
+                ) {
+                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
+                                                      nowZip: true, nowSingle: false)
+                    exportViewModel.configurations.zipOutput = true
+                    exportViewModel.configurations.concatenateOutput = false
+                    // A sync manifest has to live in a folder that persists
+                    // between runs, so it cannot travel inside an archive.
+                    exportViewModel.configurations.incrementalSync = false
+                    showSyncWarning = false
+                    exportViewModel.saveConfigurations()
+                }
+                OutputContainerButton(
+                    title: "Single File",
+                    icon: "doc.text",
+                    isSelected: isSingle,
+                    isEnabled: canConcatenate,
+                    disabledHelp: "\(outputFormat) is a packaged format, so its notes cannot be joined into one file."
+                ) {
+                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
+                                                      nowZip: false, nowSingle: true)
+                    exportViewModel.configurations.concatenateOutput = true
+                    exportViewModel.configurations.zipOutput = false
+                    exportViewModel.configurations.incrementalSync = false
+                    showSyncWarning = false
+                    exportViewModel.saveConfigurations()
+                }
+            }
+            .padding(.bottom, 6)
+
             HStack() {
-                Image(systemName: "folder")
+                Image(systemName: exportViewModel.configurations.zipOutput
+                        ? "doc.zipper"
+                        : (exportViewModel.configurations.concatenateOutput ? "doc.text" : "folder"))
                 Text({
-                    let canConcat = ["MD", "TXT"].contains(outputFormat) && exportViewModel.configurations.concatenateOutput
-                    return outputPath != "" ? (outputPath + (canConcat ? "/Exported Notes.\(outputFormat.lowercased())" : "")) : "Choose an output folder"
+                    if exportViewModel.configurations.zipOutput {
+                        guard outputPath != "" else { return "Choose where to save the archive" }
+                        if outputPath.lowercased().hasSuffix(".zip") { return outputPath }
+                        return outputPath + "/\(ExportViewModel.zipRootName).zip"
+                    }
+                    let format = ExportFormat(rawValue: outputFormat)
+                    let single = exportViewModel.configurations.concatenateOutput
+                        && (format?.supportsConcatenation ?? false)
+                    if single, let ext = format?.fileExtension {
+                        guard outputPath != "" else { return "Choose where to save the file" }
+                        if outputPath.lowercased().hasSuffix("." + ext) { return outputPath }
+                        return outputPath + "/\(concatenatedFileBaseName).\(ext)"
+                    }
+                    guard outputPath != "" else { return "Choose an output folder" }
+                    return outputPath
                 }()).frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .animation(.easeInOut(duration: 0.15), value: outputPath)
                 .animation(.easeInOut(duration: 0.15), value: exportViewModel.configurations.concatenateOutput)
+                .animation(.easeInOut(duration: 0.15), value: exportViewModel.configurations.zipOutput)
                 Button {
                     selectOutputFolder()
                 } label: {
@@ -388,38 +532,56 @@ struct AppleNotesExporterView: View {
                 }
             }
 
-            VStack(spacing: 4) {
-                HStack {
-                    Toggle("Add date to filename", isOn: $exportViewModel.configurations.addDateToFilename)
-                    Spacer()
-                    Picker("", selection: $exportViewModel.configurations.filenameDateFormat) {
-                        ForEach(FilenameDateFormat.allCases, id: \.self) { format in
-                            Text(format.displayName).tag(format)
+            VStack(spacing: outputOptionRowSpacing) {
+                let isZip = exportViewModel.configurations.zipOutput
+                let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
+
+                // One file the user already named: there is no per-note
+                // filename for a date to prefix.
+                if !isSingle {
+                    OutputOptionRow(
+                        title: "Add date to filename",
+                        help: "Prefix each exported file with the note's creation date, so files sort chronologically.",
+                        isOn: $exportViewModel.configurations.addDateToFilename
+                    ) {
+                        Picker("", selection: $exportViewModel.configurations.filenameDateFormat) {
+                            ForEach(FilenameDateFormat.allCases, id: \.self) { format in
+                                Text(format.displayName).tag(format)
+                            }
                         }
+                        .frame(width: 210)
+                        .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
+                        .disabled(!exportViewModel.configurations.addDateToFilename)
                     }
-                    .frame(width: 210)
-                    .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
-                    .disabled(!exportViewModel.configurations.addDateToFilename)
                 }
-                HStack {
-                    Toggle("Include attachments", isOn: $exportViewModel.configurations.includeAttachments)
-                    Spacer()
-                }
-                HStack {
-                    let concatAllowed = ["MD", "TXT"].contains(outputFormat) && !exportViewModel.configurations.incrementalSync
-                    Toggle("Concatenate into single file", isOn: $exportViewModel.configurations.concatenateOutput)
-                        .disabled(!concatAllowed)
-                    Spacer()
-                }
-                HStack {
-                    Toggle("Incremental sync", isOn: $exportViewModel.configurations.incrementalSync)
-                        .disabled(exportViewModel.configurations.concatenateOutput)
-                    Spacer()
+
+                OutputOptionRow(
+                    title: "Include attachments",
+                    help: "Export images, PDFs, drawings, and other files attached to each note.",
+                    isOn: $exportViewModel.configurations.includeAttachments
+                )
+
+                OutputOptionRow(
+                    title: "Shared Attachments folder",
+                    help: "Collect every attachment in one Attachments folder at the top level, instead of a folder beside each note.",
+                    isOn: $exportViewModel.configurations.sharedAttachmentsFolder,
+                    isEnabled: exportViewModel.configurations.includeAttachments
+                )
+
+                // A manifest has to persist in a folder between runs, so it
+                // cannot travel inside an archive or a single joined file.
+                if !isSingle && !isZip {
+                    OutputOptionRow(
+                        title: "Incremental sync",
+                        help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
+                        isOn: $exportViewModel.configurations.incrementalSync
+                    )
                 }
             }
             .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.filenameDateFormat) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.includeAttachments) { _ in exportViewModel.saveConfigurations() }
+            .onChange(of: exportViewModel.configurations.sharedAttachmentsFolder) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.concatenateOutput) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.incrementalSync) { _ in
                 exportViewModel.saveConfigurations()
@@ -427,7 +589,11 @@ struct AppleNotesExporterView: View {
             }
             .onChange(of: outputFormat) { newFormat in
                 // Auto-disable concatenation when switching to a format that doesn't support it
-                if !["MD", "TXT"].contains(newFormat) && exportViewModel.configurations.concatenateOutput {
+                let supportsConcat = ExportFormat(rawValue: newFormat)?.supportsConcatenation ?? false
+                normalizeOutputPathForContainer()
+                if !supportsConcat && exportViewModel.configurations.concatenateOutput {
+                    // Fall back to Folder rather than leaving a selection the
+                    // new format cannot honour.
                     exportViewModel.configurations.concatenateOutput = false
                     exportViewModel.saveConfigurations()
                 }
@@ -495,7 +661,9 @@ struct AppleNotesExporterView: View {
         .onAppear {
             // Initialize sync warning state from persisted config
             showSyncWarning = exportViewModel.configurations.incrementalSync
-            // Restore output URL from persisted path
+            // Restore output URL from persisted path, discarding one the
+            // current container cannot use.
+            normalizeOutputPathForContainer()
             if !outputPath.isEmpty {
                 outputURL = URL(fileURLWithPath: outputPath)
             }
@@ -563,6 +731,15 @@ struct AppleNotesExporterView: View {
                 showNoteSelectorView: $showNoteSelectorView
             ).frame(width: 600, height: 400)
         }
+        .sheet(isPresented: $showMCPSetupView) {
+            MCPSetupView(showMCPSetupView: $showMCPSetupView)
+        }
+        .onChange(of: sharedState.triggerMCPSetup) { trigger in
+            if trigger {
+                showMCPSetupView = true
+                sharedState.triggerMCPSetup = false
+            }
+        }
         .sheet(isPresented: $showFormatOptionsView) {
             if let format = ExportFormat(rawValue: outputFormat) {
                 FormatOptionsView(
@@ -613,5 +790,145 @@ struct BorderedProminentButtonStyle: ButtonStyle {
             .background(configuration.isPressed ? SwiftUI.Color.blue.opacity(0.8) : SwiftUI.Color.blue)
             .cornerRadius(6)
             
+    }
+}
+
+
+// MARK: - Step 3 option rows
+
+/// Rows in Step 3 share a fixed height. Without it the row carrying the date
+/// picker is taller than the plain checkbox rows, so the gaps between the
+/// checkboxes read as uneven even though the stack spacing is uniform.
+// Row pitch is height + spacing. The date picker is the tallest thing in any
+// row at roughly 22pt, so the height stays above that to avoid clipping it and
+// the gap is taken out of the spacing instead. Together these halve the visible
+// gap between checkboxes compared with the original 26 + 4.
+private let outputOptionRowHeight: CGFloat = 24
+private let outputOptionRowSpacing: CGFloat = 0
+
+/// A "?" affordance carrying a tooltip. Uses `.help`, so it appears on hover
+/// and is also exposed to VoiceOver rather than being purely decorative.
+private struct OptionHelpTip: View {
+    let text: String
+
+    @State private var isShowingHelp = false
+
+    var body: some View {
+        Button {
+            isShowingHelp.toggle()
+        } label: {
+            Image(systemName: "questionmark.circle")
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HelpTipButtonStyle(isActive: isShowingHelp))
+        .popover(isPresented: $isShowingHelp, arrowEdge: .trailing) {
+            Text(text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 260, alignment: .leading)
+                .padding(12)
+        }
+        // A Button is a real control, so .help also gives the hover tooltip.
+        .help(text)
+        .accessibilityLabel(Text(text))
+    }
+}
+
+/// Press feedback for the help icons. A plain button style leaves them inert,
+/// so they look like decoration rather than something you can click.
+private struct HelpTipButtonStyle: ButtonStyle {
+    let isActive: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(
+                configuration.isPressed || isActive ? SwiftUI.Color.accentColor : SwiftUI.Color.secondary
+            )
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// One checkbox row: toggle, help tip, and optional trailing controls.
+private struct OutputOptionRow<Trailing: View>: View {
+    let title: String
+    let help: String
+    @Binding var isOn: Bool
+    var isEnabled: Bool
+    let trailing: () -> Trailing
+
+    init(
+        title: String,
+        help: String,
+        isOn: Binding<Bool>,
+        isEnabled: Bool = true,
+        @ViewBuilder trailing: @escaping () -> Trailing
+    ) {
+        self.title = title
+        self.help = help
+        self._isOn = isOn
+        self.isEnabled = isEnabled
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Toggle(title, isOn: $isOn)
+                .disabled(!isEnabled)
+            OptionHelpTip(text: help)
+                .opacity(isEnabled ? 1 : 0.4)
+            Spacer()
+            trailing()
+        }
+        .frame(height: outputOptionRowHeight)
+    }
+}
+
+extension OutputOptionRow where Trailing == EmptyView {
+    init(title: String, help: String, isOn: Binding<Bool>, isEnabled: Bool = true) {
+        self.init(title: title, help: help, isOn: isOn, isEnabled: isEnabled) { EmptyView() }
+    }
+}
+
+
+/// Folder vs ZIP selector above the output path. Deliberately mirrors the
+/// format tiles in Step 2 (same icon size, padding, corner radius and selected
+/// treatment) so the two controls read as the same kind of choice, but with
+/// two buttons they each take half the width instead of being narrow.
+private struct OutputContainerButton: View {
+    let title: String
+    let icon: String
+    let isSelected: Bool
+    var isEnabled: Bool = true
+    var disabledHelp: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .frame(height: 20)
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .foregroundColor(isSelected ? .white : .secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? SwiftUI.Color.accentColor : SwiftUI.Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isSelected ? SwiftUI.Color.clear : SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
+        )
+        .help(isEnabled ? "" : (disabledHelp ?? ""))
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
+        .animation(.easeInOut(duration: 0.15), value: isEnabled)
     }
 }

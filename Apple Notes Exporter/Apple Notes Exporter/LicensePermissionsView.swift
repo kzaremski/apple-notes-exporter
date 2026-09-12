@@ -34,25 +34,41 @@ struct LicensePermissionsView: View {
     @State private var gplTextExpanded = false
     @State private var fullDiskPermissionGranted = false
     @State private var checkingFullDiskPermission = false
+    @State private var showFullDiskAccessHelp = false
     
     @State private var permissionCheckTimer: Timer?
     
-    func requestFullDiskAccess() {
-        DispatchQueue.main.async {
-            FullDiskAccess.promptIfNotGranted(
-                title: "Enable Full Disk Access for\nApple Notes Exporter",
-                message: "Apple Notes Exporter requires Full Disk Access to access your Apple Notes database file.",
-                settingsButtonTitle: "Open Settings",
-                skipButtonTitle: "Later",
-                canBeSuppressed: false,
-                icon: nil
-            )
+    /// Touch every FDA-protected path we can so this signed binary shows up
+    /// (unchecked) in System Settings > Privacy > Full Disk Access.
+    /// There is still no API that grants the permission.
+    func registerWithFullDiskAccessList() {
+        // Notes group container: the path we actually need, absolute so TCC
+        // can match this process.
+        _ = hasNotesDatabaseAccess()
+
+        // Read a few bytes of NoteStore.sqlite if it exists. Listing the
+        // directory is not always enough for TCC to create the Privacy entry.
+        let dbURL = URL(fileURLWithPath: defaultNotesDatabasePath())
+        if let handle = try? FileHandle(forReadingFrom: dbURL) {
+            _ = try? handle.read(upToCount: 64)
+            try? handle.close()
         }
+
+        // Stocks/Safari probe from FullDiskAccess: on 10.15+ this is what
+        // actually inserts the app into the Full Disk Access list.
+        _ = FullDiskAccess.isGranted
+    }
+
+    func requestFullDiskAccess() {
+        registerWithFullDiskAccessList()
+    }
+
+    func openFullDiskAccessHelp() {
+        showFullDiskAccessHelp = true
     }
     
     func hasFullDiskAccess() -> Bool {
-        let path = NSHomeDirectory() + "/Library/Group Containers/group.com.apple.notes/"
-        return FileManager.default.isReadableFile(atPath: path)
+        hasNotesDatabaseAccess()
     }
     
     func checkPermission() {
@@ -271,9 +287,9 @@ struct LicensePermissionsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding([.bottom], 5)
             
-            HStack {
+            HStack(alignment: .center) {
                 Image(systemName: "info.circle")
-                Text("Apple Notes Exporter needs to be granted Full Disk Access.")
+                Text("Apple Notes Exporter needs Full Disk Access to read your Notes database.")
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 if fullDiskPermissionGranted {
@@ -293,9 +309,8 @@ struct LicensePermissionsView: View {
                             .foregroundColor(.red)
                     }
                     Button("Open Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        registerWithFullDiskAccessList()
+                        FullDiskAccess.openSystemSettings()
                     }
                 }
             }
@@ -303,12 +318,15 @@ struct LicensePermissionsView: View {
             .padding([.bottom], 10)
             
             HStack {
+                Spacer()
+                Button("Help") {
+                    openFullDiskAccessHelp()
+                }
                 Button {
                     exit(0)
                 } label: {
                     Text("Cancel")
-                }.frame(maxWidth: .infinity, alignment: .trailing)
-                
+                }
                 Button {
                     // Mark license as accepted and persist to UserDefaults
                     sharedState.licenseAccepted = true
@@ -321,10 +339,16 @@ struct LicensePermissionsView: View {
                 }
                 .disabled(!agreedToLicense || !fullDiskPermissionGranted)
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .alert(isPresented: $showFullDiskAccessHelp) {
+            Alert(
+                title: Text("Enable Full Disk Access"),
+                message: Text("The app often does not appear in the Privacy list on its own. In System Settings > Privacy & Security > Full Disk Access, click +, or drag Apple Notes Exporter.app from Finder (or the Applications folder) into the list. Use this exact copy of the app, not a different build."),
+                dismissButton: .default(Text("OK"))
+            )
+        }
         .onAppear {
             startPermissionCheckLoop()
         }

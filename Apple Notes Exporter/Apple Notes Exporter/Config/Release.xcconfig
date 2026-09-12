@@ -1,0 +1,15 @@
+// Release.xcconfig -- base configuration for Release builds of the app, CLI,
+// and MCP server.
+//
+// Release ships a Developer ID signed, notarized build. The identity is set for
+// both the generic and the macOS-specific position so the two cannot drift out
+// of sync, which produces a bundle that passes codesign on one architecture and
+// fails on another.
+
+#include "Signing.xcconfig"
+#include "Version.xcconfig"
+
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = Developer ID Application
+CODE_SIGN_IDENTITY[sdk=macosx*] = Developer ID Application
+PROVISIONING_PROFILE_SPECIFIER =

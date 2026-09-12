@@ -106,11 +106,15 @@ typedef struct {
     int64_t     parent_pk;        /* Z_PK of parent folder, -1 if root */
     int64_t     account_pk;       /* Z_PK of owning account */
     char       *account_id;       /* ZIDENTIFIER of owning account */
+    char       *identifier;       /* ZIDENTIFIER of the folder itself; Apple marks
+                                   * the account default folder "DefaultFolder-*".
+                                   * NULL when the schema has no ZIDENTIFIER. */
 } ane_folder;
 
 typedef struct {
     int64_t     pk;
     char       *title;
+    char       *identifier;       /* ZIDENTIFIER UUID; used in applenotes:note/ links */
     char       *folder_title;
     char       *account_name;
     char       *account_identifier;
@@ -123,6 +127,7 @@ typedef struct {
     int         is_password_protected;
     int         is_pinned;        /* ZISPINNED, 0 for legacy */
     int         is_legacy;        /* 1 if from legacy iOS 8 tables */
+    int         marked_for_deletion; /* ZMARKEDFORDELETION, Recently Deleted */
 } ane_note;
 
 typedef struct {

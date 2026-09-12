@@ -19,6 +19,21 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Validate project file
+        run: |
+          PROJ="Apple Notes Exporter/Apple Notes Exporter.xcodeproj/project.pbxproj"
+          # A bad merge can leave a project that still opens but builds wrong.
+          plutil -lint "$PROJ"
+          # Signing identity and team belong in Config/*.xcconfig. A team id in
+          # the tracked project file means someone's local settings leaked back
+          # in and will trample every other contributor's build.
+          if grep -qE '^[[:space:]]*"?(DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY)' "$PROJ"; then
+            echo "::error::Signing settings found in project.pbxproj; move them to Config/*.xcconfig"
+            grep -nE '^[[:space:]]*"?(DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY)' "$PROJ"
+            exit 1
+          fi
+          echo "✓ project file is valid and carries no signing settings"
+
       - name: Resolve Swift Package dependencies
         run: >
           xcodebuild -project "Apple Notes Exporter/Apple Notes Exporter.xcodeproj"
@@ -50,3 +65,25 @@ jobs:
       - name: Verify CLI help runs
         run: |
           "build/Build/Products/Debug/Apple Notes Exporter.app/Contents/SharedSupport/notes-export" --help > /dev/null
+
+      - name: Build Release (unsigned)
+        run: >
+          xcodebuild -project "Apple Notes Exporter/Apple Notes Exporter.xcodeproj"
+          -scheme "Apple Notes Exporter"
+          -configuration Release
+          -derivedDataPath "build-release"
+          CODE_SIGN_IDENTITY=""
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+      - name: Verify Release embedded tools
+        run: |
+          APP="build-release/Build/Products/Release/Apple Notes Exporter.app"
+          for tool in notes-export notes-export-mcp; do
+            if [ ! -x "$APP/Contents/SharedSupport/$tool" ]; then
+              echo "::error::Release build is missing embedded tool: $tool"
+              exit 1
+            fi
+          done
+          echo "✓ Release configuration builds and embeds both tools"

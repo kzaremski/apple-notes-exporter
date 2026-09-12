@@ -106,15 +106,24 @@ struct ExportView: View {
                 }
 
                 if case .completed = exportViewModel.exportState {
+                    // Opening a .zip hands it to Archive Utility, which expands
+                    // it right back into a folder. Reveal the archive instead.
+                    let artifact = exportViewModel.lastExportArtifactURL
+                        ?? (outputPath.isEmpty ? nil : URL(fileURLWithPath: outputPath))
+                    let isArchive = artifact?.pathExtension.lowercased() == "zip"
+
                     Button {
-                        if !outputPath.isEmpty {
-                            NSWorkspace.shared.open(URL(fileURLWithPath: outputPath))
+                        guard let artifact else { return }
+                        if isArchive {
+                            NSWorkspace.shared.activateFileViewerSelecting([artifact])
+                        } else {
+                            NSWorkspace.shared.open(artifact)
                         }
                     } label: {
-                        Image(systemName: "folder")
-                        Text("Open Output Folder")
+                        Image(systemName: isArchive ? "doc.zipper" : "folder")
+                        Text(isArchive ? "Show ZIP File in Finder" : "Open Output Folder")
                     }
-                    .disabled(outputPath.isEmpty)
+                    .disabled(artifact == nil)
                 }
 
                 Spacer()

@@ -42,6 +42,14 @@ struct ExportCommand: AsyncParsableCommand {
         Incremental sync (--incremental) writes a sync manifest to the
         output directory so subsequent runs only re-export changed notes.
         Use --reset-sync to force a full re-export.
+
+        --zip delivers the same export as one archive. Pass --output ending in
+        .zip to name it, or a directory to get "Apple Notes Export.zip" inside.
+        File dates are preserved inside the archive.
+
+        --concatenate joins every note into one file. Pass --output ending in
+        the format's extension to name that file, or a directory to get
+        "Exported Notes.<ext>" inside.
         """
     )
 
@@ -53,14 +61,23 @@ struct ExportCommand: AsyncParsableCommand {
     var format: String = "markdown"
 
     // Note selection filters
-    @Option(name: .long, help: "Export only these note IDs (comma-separated).")
+    @Option(name: .long, help: "Export these note IDs (comma-separated). Combined with --folder as a union.")
     var notes: String?
 
     @Option(name: .long, help: "Filter by account name (partial match, case-insensitive).")
     var account: String?
 
-    @Option(name: .long, help: "Filter by folder name (partial match, case-insensitive).")
-    var folder: String?
+    @Option(name: .long, help: "Folder name (exact, case-insensitive) or folder id. Repeat or comma-separate to select several. Includes subfolders unless --no-subfolders.")
+    var folder: [String] = []
+
+    @Flag(name: .long, help: "Treat --folder as a case-insensitive substring instead of an exact name.")
+    var folderContains: Bool = false
+
+    @Flag(name: .long, help: "Do not include notes in subfolders of --folder.")
+    var noSubfolders: Bool = false
+
+    @Flag(name: .long, help: "Include Recently Deleted notes. Also implied by --folder 'Recently Deleted'.")
+    var includeDeleted: Bool = false
 
     @Option(name: .long, help: "Filter notes whose title contains this string (case-insensitive).")
     var titleContains: String?
@@ -75,6 +92,12 @@ struct ExportCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "Skip exporting attachments.")
     var noAttachments: Bool = false
 
+    @Flag(name: .long, help: "Write all attachments under <output>/Attachments/ instead of a folder beside each note.")
+    var sharedAttachments: Bool = false
+
+    @Flag(name: .customLong("html-indexes"), inversion: .prefixedNo, help: "Write index.html in each HTML folder (off by default).")
+    var htmlIndexes: Bool = false
+
     @Flag(name: .long, help: "Add creation date prefix to filenames.")
     var addDatePrefix: Bool = false
 
@@ -83,6 +106,9 @@ struct ExportCommand: AsyncParsableCommand {
 
     @Flag(name: .long, help: "Concatenate all notes into a single output file.")
     var concatenate: Bool = false
+
+    @Flag(name: .long, help: "Deliver the export as a single .zip. --output may name the archive or a folder to put one in. Not compatible with --incremental.")
+    var zip: Bool = false
 
     @Flag(name: .long, help: "Incremental sync: only export new or changed notes.")
     var incremental: Bool = false
@@ -110,10 +136,58 @@ struct ExportCommand: AsyncParsableCommand {
             throw ExitCode(2)
         }
 
-        // Resolve and create output directory
-        let outputURL = URL(fileURLWithPath: (output as NSString).expandingTildeInPath).standardizedFileURL
+        if concatenate && !exportFormat.supportsConcatenation {
+            CLIOutput.writeError(.incompatibleOptions(
+                "--concatenate is not available for \(exportFormat.rawValue): it is a packaged format with its own internal structure, so there is nothing to join."
+            ))
+            throw ExitCode(2)
+        }
+
+        // A sync manifest has to persist between runs in a folder, so it
+        // cannot travel inside an archive.
+        if zip && incremental {
+            CLIOutput.writeError(.incompatibleOptions(
+                "--zip cannot be combined with --incremental: the sync manifest has to persist in a folder between runs."
+            ))
+            throw ExitCode(2)
+        }
+
+        // Resolve the destination. With --zip the export is staged in a folder
+        // beside the archive and the archive replaces it at the end, so the
+        // directory the user pointed at never holds loose note files.
+        let destinationURL = URL(fileURLWithPath: (output as NSString).expandingTildeInPath).standardizedFileURL
+        let archiveURL: URL?
+        let outputURL: URL
+        if zip {
+            let locations = archiveExportLocations(destination: destinationURL)
+            archiveURL = locations.archive
+            outputURL = locations.staging
+        } else {
+            archiveURL = nil
+            outputURL = destinationURL
+        }
+        // A name ending in an extension this app produces, but not the one
+        // being written, is a mistake rather than a directory: without this it
+        // silently becomes a folder called "Notes.md" holding a .txt file.
+        if concatenate && !zip {
+            let ext = outputURL.pathExtension.lowercased()
+            let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(["zip"])
+            if ours.contains(ext) && ext != exportFormat.fileExtension {
+                CLIOutput.writeError(.incompatibleOptions(
+                    "--output ends in .\(ext) but the format is \(exportFormat.rawValue). Name it .\(exportFormat.fileExtension), or pass a directory to get \(concatenatedFileBaseName).\(exportFormat.fileExtension) inside it."
+                ))
+                throw ExitCode(2)
+            }
+        }
+
+        // With --concatenate the destination may name the file itself, in which
+        // case the directory to create is the one containing it.
+        let directoryToCreate = (concatenate && !zip
+            && outputURL.pathExtension.lowercased() == exportFormat.fileExtension)
+            ? outputURL.deletingLastPathComponent()
+            : outputURL
         do {
-            try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: directoryToCreate, withIntermediateDirectories: true)
         } catch {
             CLIOutput.writeError(.invalidOutputDirectory(output))
             throw ExitCode(2)
@@ -122,6 +196,7 @@ struct ExportCommand: AsyncParsableCommand {
         // Build configurations
         var configs = ExportConfigurations.default
         configs.includeAttachments = !noAttachments
+        configs.sharedAttachmentsFolder = sharedAttachments
         configs.addDateToFilename = addDatePrefix
         configs.concatenateOutput = concatenate
         configs.incrementalSync = incremental
@@ -151,7 +226,8 @@ struct ExportCommand: AsyncParsableCommand {
                 marginSize: configs.html.marginSize,
                 marginUnit: configs.html.marginUnit,
                 embedImagesInline: configs.html.embedImagesInline,
-                linkEmbeddedImages: configs.html.linkEmbeddedImages
+                linkEmbeddedImages: configs.html.linkEmbeddedImages,
+                writeFolderIndexes: htmlIndexes
             )
         } else {
             configs.html = HTMLConfiguration(
@@ -160,40 +236,53 @@ struct ExportCommand: AsyncParsableCommand {
                 marginSize: configs.html.marginSize,
                 marginUnit: configs.html.marginUnit,
                 embedImagesInline: configs.html.embedImagesInline,
-                linkEmbeddedImages: configs.html.linkEmbeddedImages
+                linkEmbeddedImages: configs.html.linkEmbeddedImages,
+                writeFolderIndexes: htmlIndexes
             )
         }
 
-        let engine = CLIExportEngine(databasePath: dbOptions.db, configurations: configs)
+        let engine = CLIExportEngine(databasePath: dbOptions.resolvedDB, configurations: configs)
 
         // Fetch all notes then apply filters
         let (accounts, folders, allNotes): ([NotesAccount], [NotesFolder], [NotesNote])
         do {
             async let a = engine.fetchAccounts()
             async let f = engine.fetchFolders()
-            async let n = engine.fetchNotes()
+            async let n = engine.fetchNotes(includeDeleted: includeDeleted || parseListArgument(folder).contains { isRecentlyDeletedFolderName($0) })
             (accounts, folders, allNotes) = try await (a, f, n)
         } catch {
             CLIOutput.writeError(.databaseUnavailable)
             throw ExitCode(CLIError.databaseUnavailable.exitCode)
         }
 
-        var filtered = allNotes
-
-        // Filter by explicit note IDs
-        if let noteIdsStr = notes {
-            let ids = Set(noteIdsStr.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) })
-            filtered = filtered.filter { ids.contains($0.id) }
+        // A mistyped --folder must not fall through to "no filter" and export
+        // the whole library. Fail before doing any work.
+        let unmatched = unmatchedFolderFilters(
+            filters: folder,
+            folders: folders,
+            matchContains: folderContains
+        )
+        if !unmatched.isEmpty {
+            CLIOutput.writeError(.unknownFolder(
+                requested: unmatched,
+                available: folders.map(\.name).sorted()
+            ))
+            throw ExitCode(CLIError.unknownFolder(requested: unmatched, available: []).exitCode)
         }
+
+        var filtered = applyNoteSelection(
+            notes: allNotes,
+            folders: folders,
+            folderFilters: folder,
+            matchContains: folderContains,
+            includeSubfolders: !noSubfolders,
+            includeDeleted: includeDeleted,
+            noteIds: notes.map { [$0] } ?? []
+        )
 
         if let accountFilter = account?.lowercased() {
             let matchingIds = accounts.filter { $0.name.lowercased().contains(accountFilter) }.map { $0.id }
             filtered = filtered.filter { matchingIds.contains($0.accountId) }
-        }
-
-        if let folderFilter = folder?.lowercased() {
-            let matchingIds = folders.filter { $0.name.lowercased().contains(folderFilter) }.map { $0.id }
-            filtered = filtered.filter { matchingIds.contains($0.folderId) }
         }
 
         if let tc = titleContains?.lowercased() {
@@ -237,15 +326,39 @@ struct ExportCommand: AsyncParsableCommand {
                 format: exportFormat,
                 includeAttachments: !noAttachments,
                 verbose: verbose,
+                allKnownNoteIds: Set(allNotes.map(\.id)),
                 progressHandler: { current, total in
                     CLIOutput.writeProgress(current, total)
                 }
             )
-            CLIOutput.writeJSON(result)
-            if result.failed > 0 {
+            var reported = result
+            if let archiveURL {
+                if verbose { CLIOutput.writeStderr("Creating \(archiveURL.lastPathComponent)...") }
+                do {
+                    try zipDirectory(at: outputURL, to: archiveURL)
+                    try? FileManager.default.removeItem(at: outputURL)
+                } catch {
+                    try? FileManager.default.removeItem(at: outputURL)
+                    CLIOutput.writeError(.fileSystemError("Could not write \(archiveURL.path): \(error.localizedDescription)"))
+                    throw ExitCode(1)
+                }
+                reported = CLIExportEngine.ExportResult(
+                    success: result.success,
+                    exported: result.exported,
+                    skipped: result.skipped,
+                    failed: result.failed,
+                    failedAttachments: result.failedAttachments,
+                    outputDirectory: archiveURL.path,
+                    format: result.format,
+                    durationSeconds: result.durationSeconds
+                )
+            }
+            CLIOutput.writeJSON(reported)
+            if reported.failed > 0 {
                 throw ExitCode(1)
             }
         } catch let error as CLIError {
+            if zip { try? FileManager.default.removeItem(at: outputURL) }
             CLIOutput.writeError(error)
             throw ExitCode(error.exitCode)
         }

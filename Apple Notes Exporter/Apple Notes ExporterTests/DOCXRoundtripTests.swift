@@ -317,4 +317,63 @@ final class DOCXRoundtripTests: XCTestCase {
             XCTAssertTrue(s.contains("[Image]"))
         } else { XCTFail("Couldn't read ODT content.xml") }
     }
+
+    // MARK: - EPUB (Apple Books / OCF)
+
+    func test_epub_mimetype_is_first_stored_and_at_offset_38() throws {
+        let note = sampleNote(html: "<html><body><p>Hi</p></body></html>", title: "EPUB Sample")
+        let data = note.toEPUB()
+        let bytes = [UInt8](data)
+        guard bytes.count >= 58 else {
+            return XCTFail("EPUB too short to contain an OCF mimetype entry")
+        }
+
+        XCTAssertEqual(Array(bytes[0..<4]), [0x50, 0x4b, 0x03, 0x04], "local file header signature")
+        let versionNeeded = UInt16(bytes[4]) | (UInt16(bytes[5]) << 8)
+        XCTAssertEqual(versionNeeded, 10, "mimetype must use ZIP 1.0 (version needed 10)")
+        let method = UInt16(bytes[8]) | (UInt16(bytes[9]) << 8)
+        XCTAssertEqual(method, 0, "mimetype must be stored, not deflated")
+        let dosTime = UInt16(bytes[10]) | (UInt16(bytes[11]) << 8)
+        let dosDate = UInt16(bytes[12]) | (UInt16(bytes[13]) << 8)
+        XCTAssertEqual(dosTime, 0)
+        XCTAssertEqual(dosDate, 0)
+        let nameLen = Int(bytes[26]) | (Int(bytes[27]) << 8)
+        let extraLen = Int(bytes[28]) | (Int(bytes[29]) << 8)
+        XCTAssertEqual(nameLen, 8)
+        XCTAssertEqual(extraLen, 0, "OCF forbids an extra field on mimetype")
+        XCTAssertEqual(String(bytes: bytes[30..<38], encoding: .utf8), "mimetype")
+        XCTAssertEqual(String(bytes: bytes[38..<58], encoding: .ascii), "application/epub+zip")
+    }
+
+    func test_epub_identifier_uses_uuid_when_present() throws {
+        var note = sampleNote(html: "<html><body><p>Hi</p></body></html>")
+        note.identifier = "1D1D6543-DF39-9275-9A7A-827DB983EFC0"
+        let data = note.toEPUB()
+        let opf = try XCTUnwrap(readZIPEntry(data, named: "OEBPS/content.opf"))
+        let s = String(data: opf, encoding: .utf8) ?? ""
+        XCTAssertTrue(s.contains("<dc:identifier id=\"uid\">urn:uuid:1d1d6543-df39-9275-9a7a-827db983efc0</dc:identifier>"))
+        XCTAssertFalse(s.contains("urn:uuid:test-note-id"))
+    }
+
+    func test_epub_identifier_falls_back_to_ane_uri() throws {
+        let note = sampleNote(html: "<html><body><p>Hi</p></body></html>")
+        let data = note.toEPUB()
+        let opf = try XCTUnwrap(readZIPEntry(data, named: "OEBPS/content.opf"))
+        let s = String(data: opf, encoding: .utf8) ?? ""
+        XCTAssertTrue(s.contains("<dc:identifier id=\"uid\">urn:ane:note:test-note-id</dc:identifier>"))
+        XCTAssertFalse(s.contains("urn:uuid:test-note-id"))
+    }
+
+    func test_epub_chapter_closes_void_tags_and_numeric_nbsp() throws {
+        let html = "<html><body><p>Hi<br>there&nbsp;x<img src=\"a.png\" alt=\"a\"></p></body></html>"
+        let note = sampleNote(html: html)
+        let data = note.toEPUB()
+        let chapter = try XCTUnwrap(readZIPEntry(data, named: "OEBPS/chapter1.xhtml"))
+        let s = String(data: chapter, encoding: .utf8) ?? ""
+        XCTAssertTrue(s.contains("<br />"))
+        XCTAssertTrue(s.contains("<img src=\"a.png\" alt=\"a\" />"))
+        XCTAssertTrue(s.contains("&#160;"))
+        XCTAssertFalse(s.contains("&nbsp;"))
+        XCTAssertTrue(s.contains("xmlns=\"http://www.w3.org/1999/xhtml\""))
+    }
 }
