@@ -580,6 +580,13 @@ struct AppleNotesExporterView: View {
                     .transition(.opacity)
                 }
             }
+            // Pinned to the full row count. Rows come and go with the chosen
+            // container, and letting the section shrink resized the window,
+            // which slid the container buttons above it up and down.
+            .frame(
+                height: CGFloat(outputOptionRowCount) * (outputOptionRowHeight + outputOptionRowSpacing),
+                alignment: .top
+            )
             .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.filenameDateFormat) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.includeAttachments) { _ in exportViewModel.saveConfigurations() }
@@ -626,6 +633,9 @@ struct AppleNotesExporterView: View {
                     .transition(.opacity)
                 }
             }
+            // Same reason: switching container clears incremental sync, and
+            // letting this banner collapse moved everything above it.
+            .frame(height: syncWarningReservedHeight, alignment: .top)
             .animation(.easeInOut(duration: 0.2), value: showSyncWarning)
 
             Text("Step 4: Export!")
@@ -807,8 +817,13 @@ struct BorderedProminentButtonStyle: ButtonStyle {
 // row at roughly 22pt, so the height stays above that to avoid clipping it and
 // the gap is taken out of the spacing instead. Together these halve the visible
 // gap between checkboxes compared with the original 26 + 4.
+/// Every row the options section can show. The section reserves all of them so
+/// its height never changes, whichever container is selected.
+private let outputOptionRowCount = 4
 private let outputOptionRowHeight: CGFloat = 24
 private let outputOptionRowSpacing: CGFloat = 0
+/// Height held for the sync warning whether or not it is showing.
+private let syncWarningReservedHeight: CGFloat = 38
 
 /// A "?" affordance carrying a tooltip. Uses `.help`, so it appears on hover
 /// and is also exposed to VoiceOver rather than being purely decorative.
