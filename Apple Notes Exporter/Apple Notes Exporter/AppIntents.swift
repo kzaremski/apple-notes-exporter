@@ -75,6 +75,28 @@ enum ExportFormatOption: String, AppEnum {
     }
 }
 
+// MARK: - Font Family
+
+@available(macOS 13.0, *)
+enum FontFamilyOption: String, AppEnum {
+    case system, serif, sansSerif, monospace
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Font Family"
+
+    static var caseDisplayRepresentations: [FontFamilyOption: DisplayRepresentation] = [
+        .system: "System", .serif: "Serif", .sansSerif: "Sans-Serif", .monospace: "Monospace",
+    ]
+
+    var toHTMLFontFamily: HTMLConfiguration.FontFamily {
+        switch self {
+        case .system:    return .system
+        case .serif:     return .serif
+        case .sansSerif: return .sansSerif
+        case .monospace: return .monospace
+        }
+    }
+}
+
 // MARK: - Filename Date Format
 
 @available(macOS 13.0, *)
@@ -130,6 +152,9 @@ struct ExportNotesIntent: AppIntent {
     @Parameter(title: "Account", description: "Only export notes from this account. Leave empty for all accounts.", default: nil)
     var accountFilter: String?
 
+    @Parameter(title: "Note IDs", description: "Export these specific notes by id, in addition to anything the folder filter selects. Leave empty to use the filters alone.", default: nil)
+    var noteIDs: [String]?
+
     @Parameter(title: "Title Contains", description: "Only export notes whose title contains this text.", default: nil)
     var titleContains: String?
 
@@ -146,6 +171,9 @@ struct ExportNotesIntent: AppIntent {
 
     @Parameter(title: "Zip Archive", description: "Deliver the export as a single .zip. Cannot be combined with Incremental Sync.", default: false)
     var zipOutput: Bool
+
+    @Parameter(title: "Tar Archive", description: "Deliver the export as a single .tar. Cannot be combined with Incremental Sync.", default: false)
+    var tarOutput: Bool
 
     @Parameter(title: "Single File", description: "Join every note into one file. Not available for PDF, DOCX, ODT or EPUB.", default: false)
     var concatenate: Bool
@@ -173,17 +201,25 @@ struct ExportNotesIntent: AppIntent {
     @Parameter(title: "Date Format", description: "Format for the filename date prefix.", default: .iso)
     var dateFormat: FilenameDateFormatOption
 
+    @Parameter(title: "Font Family", description: "Font family for HTML, PDF and RTF output.", default: .system)
+    var fontFamily: FontFamilyOption
+
+    @Parameter(title: "Font Size", description: "Font size in points for HTML, PDF and RTF output.", default: 14.0)
+    var fontSize: Double
+
     static var parameterSummary: some ParameterSummary {
         Summary("Export notes as \(\.$format) to \(\.$outputPath)") {
             \.$folderFilter
             \.$folderContains
             \.$includeSubfolders
             \.$accountFilter
+            \.$noteIDs
             \.$titleContains
             \.$modifiedAfter
             \.$modifiedBefore
             \.$includeDeleted
             \.$zipOutput
+            \.$tarOutput
             \.$concatenate
             \.$incremental
             \.$resetSync
@@ -192,6 +228,8 @@ struct ExportNotesIntent: AppIntent {
             \.$htmlIndexes
             \.$datePrefix
             \.$dateFormat
+            \.$fontFamily
+            \.$fontSize
         }
     }
 
@@ -199,8 +237,12 @@ struct ExportNotesIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let exportFormat = format.toExportFormat
 
-        if zipOutput && incremental {
-            return .result(value: "Zip Archive cannot be combined with Incremental Sync: the sync manifest has to persist in a folder between runs.")
+        if zipOutput && tarOutput {
+            return .result(value: "Pick either Zip Archive or Tar Archive, not both.")
+        }
+        let archiveFormat: ExportArchiveFormat? = zipOutput ? .zip : (tarOutput ? .tar : nil)
+        if archiveFormat != nil && incremental {
+            return .result(value: "An archive cannot be combined with Incremental Sync: the sync manifest has to persist in a folder between runs.")
         }
         if concatenate && !exportFormat.supportsConcatenation {
             return .result(value: "Single File is not available for \(exportFormat.rawValue): it is a packaged format with its own internal structure.")
@@ -212,8 +254,8 @@ struct ExportNotesIntent: AppIntent {
         // holds loose note files, matching the CLI and the app.
         let archiveURL: URL?
         let workingURL: URL
-        if zipOutput {
-            let locations = archiveExportLocations(destination: destinationURL)
+        if let archiveFormat {
+            let locations = archiveExportLocations(destination: destinationURL, format: archiveFormat)
             archiveURL = locations.archive
             workingURL = locations.staging
         } else {
@@ -234,6 +276,15 @@ struct ExportNotesIntent: AppIntent {
         configs.concatenateOutput = concatenate
         configs.incrementalSync = incremental
         configs.html.writeFolderIndexes = htmlIndexes
+        configs.html = HTMLConfiguration(
+            fontSizePoints: fontSize,
+            fontFamily: fontFamily.toHTMLFontFamily,
+            marginSize: configs.html.marginSize,
+            marginUnit: configs.html.marginUnit,
+            embedImagesInline: configs.html.embedImagesInline,
+            linkEmbeddedImages: configs.html.linkEmbeddedImages,
+            writeFolderIndexes: htmlIndexes
+        )
 
         // Same engine the CLI and the MCP server use, rather than a third
         // export loop that only ever supported a handful of these options.
@@ -261,7 +312,7 @@ struct ExportNotesIntent: AppIntent {
             matchContains: folderContains,
             includeSubfolders: includeSubfolders,
             includeDeleted: wantsTrash,
-            noteIds: []
+            noteIds: noteIDs ?? []
         )
 
         if let accountName = accountFilter, !accountName.isEmpty {
@@ -298,7 +349,7 @@ struct ExportNotesIntent: AppIntent {
             var destination = workingURL.path
             if let archiveURL {
                 do {
-                    try zipDirectory(at: workingURL, to: archiveURL)
+                    try createArchive(archiveFormat ?? .zip, at: workingURL, to: archiveURL)
                     try? FileManager.default.removeItem(at: workingURL)
                     destination = archiveURL.path
                 } catch {

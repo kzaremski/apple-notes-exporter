@@ -204,6 +204,62 @@ struct LicensePermissionsView: View {
                                 filename: "swift-html-to-pdf-LICENSE"
                             )
                             LicenseEntryView(
+                                name: "swift-argument-parser",
+                                licenseType: "Apache 2.0 License (with Runtime Library Exception)",
+                                copyright: "Copyright Apple Inc. and the Swift project authors",
+                                url: "https://github.com/apple/swift-argument-parser",
+                                filename: "swift-argument-parser-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "mcp-swift-sdk",
+                                licenseType: "MIT License / Apache 2.0 License",
+                                copyright: "Copyright Anthropic, PBC and the MCP project authors",
+                                url: "https://github.com/modelcontextprotocol/swift-sdk",
+                                filename: "mcp-swift-sdk-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-nio",
+                                licenseType: "Apache 2.0 License",
+                                copyright: "Copyright Apple Inc. and the SwiftNIO project authors",
+                                url: "https://github.com/apple/swift-nio",
+                                filename: "swift-nio-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-log",
+                                licenseType: "Apache 2.0 License",
+                                copyright: "Copyright Apple Inc. and the Swift Logging API project authors",
+                                url: "https://github.com/apple/swift-log",
+                                filename: "swift-log-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-atomics",
+                                licenseType: "Apache 2.0 License (with Runtime Library Exception)",
+                                copyright: "Copyright Apple Inc. and the Swift project authors",
+                                url: "https://github.com/apple/swift-atomics",
+                                filename: "swift-atomics-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-collections",
+                                licenseType: "Apache 2.0 License (with Runtime Library Exception)",
+                                copyright: "Copyright Apple Inc. and the Swift project authors",
+                                url: "https://github.com/apple/swift-collections",
+                                filename: "swift-collections-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "swift-system",
+                                licenseType: "Apache 2.0 License (with Runtime Library Exception)",
+                                copyright: "Copyright Apple Inc. and the Swift project authors",
+                                url: "https://github.com/apple/swift-system",
+                                filename: "swift-system-LICENSE"
+                            )
+                            LicenseEntryView(
+                                name: "EventSource",
+                                licenseType: "MIT License",
+                                copyright: "Copyright Mattt Zmuda",
+                                url: "https://github.com/mattt/eventsource",
+                                filename: "EventSource-LICENSE"
+                            )
+                            LicenseEntryView(
                                 name: "SwiftProtobuf",
                                 licenseType: "Apache 2.0 License (with Runtime Library Exception)",
                                 copyright: "Copyright 2008 Google Inc.",

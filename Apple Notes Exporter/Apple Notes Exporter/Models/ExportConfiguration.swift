@@ -343,6 +343,15 @@ struct ExportConfigurations: Codable {
     var incrementalSync: Bool = false
     /// Deliver the export as a single .zip instead of a folder tree.
     var zipOutput: Bool = false
+    /// Deliver the export as a single .tar instead of a folder tree.
+    var tarOutput: Bool = false
+
+    /// The archive being produced, or nil when writing a folder tree.
+    var archiveFormat: ExportArchiveFormat? {
+        if zipOutput { return .zip }
+        if tarOutput { return .tar }
+        return nil
+    }
 
     static var `default`: ExportConfigurations {
         ExportConfigurations(
@@ -374,14 +383,14 @@ struct ExportConfigurations: Codable {
     enum CodingKeys: String, CodingKey {
         case html, pdf, latex, rtf
         case addDateToFilename, filenameDateFormat, includeAttachments
-        case sharedAttachmentsFolder, concatenateOutput, incrementalSync, zipOutput
+        case sharedAttachmentsFolder, concatenateOutput, incrementalSync, zipOutput, tarOutput
     }
 
     init(html: HTMLConfiguration, pdf: PDFConfiguration, latex: LaTeXConfiguration, rtf: RTFConfiguration,
          addDateToFilename: Bool = false, filenameDateFormat: FilenameDateFormat = .iso,
          includeAttachments: Bool = true, sharedAttachmentsFolder: Bool = false,
          concatenateOutput: Bool = false, incrementalSync: Bool = false,
-         zipOutput: Bool = false) {
+         zipOutput: Bool = false, tarOutput: Bool = false) {
         self.html = html
         self.pdf = pdf
         self.latex = latex
@@ -393,6 +402,7 @@ struct ExportConfigurations: Codable {
         self.concatenateOutput = concatenateOutput
         self.incrementalSync = incrementalSync
         self.zipOutput = zipOutput
+        self.tarOutput = tarOutput
     }
 
     init(from decoder: Decoder) throws {
@@ -408,6 +418,7 @@ struct ExportConfigurations: Codable {
         concatenateOutput = try c.decodeIfPresent(Bool.self, forKey: .concatenateOutput) ?? false
         incrementalSync = try c.decodeIfPresent(Bool.self, forKey: .incrementalSync) ?? false
         zipOutput = try c.decodeIfPresent(Bool.self, forKey: .zipOutput) ?? false
+        tarOutput = try c.decodeIfPresent(Bool.self, forKey: .tarOutput) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -423,5 +434,6 @@ struct ExportConfigurations: Codable {
         try c.encode(concatenateOutput, forKey: .concatenateOutput)
         try c.encode(incrementalSync, forKey: .incrementalSync)
         try c.encode(zipOutput, forKey: .zipOutput)
+        try c.encode(tarOutput, forKey: .tarOutput)
     }
 }

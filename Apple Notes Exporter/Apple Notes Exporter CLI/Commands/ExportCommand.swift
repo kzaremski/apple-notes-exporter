@@ -43,9 +43,9 @@ struct ExportCommand: AsyncParsableCommand {
         output directory so subsequent runs only re-export changed notes.
         Use --reset-sync to force a full re-export.
 
-        --zip delivers the same export as one archive. Pass --output ending in
-        .zip to name it, or a directory to get "Apple Notes Export.zip" inside.
-        File dates are preserved inside the archive.
+        --zip and --tar deliver the same export as one archive. Pass --output
+        ending in .zip or .tar to name it, or a directory to get
+        "Apple Notes Export.<ext>" inside. File dates are preserved either way.
 
         --concatenate joins every note into one file. Pass --output ending in
         the format's extension to name that file, or a directory to get
@@ -110,6 +110,9 @@ struct ExportCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "Deliver the export as a single .zip. --output may name the archive or a folder to put one in. Not compatible with --incremental.")
     var zip: Bool = false
 
+    @Flag(name: .long, help: "Deliver the export as a single .tar. Same as --zip but uncompressed; file dates are preserved either way.")
+    var tar: Bool = false
+
     @Flag(name: .long, help: "Incremental sync: only export new or changed notes.")
     var incremental: Bool = false
 
@@ -145,9 +148,14 @@ struct ExportCommand: AsyncParsableCommand {
 
         // A sync manifest has to persist between runs in a folder, so it
         // cannot travel inside an archive.
-        if zip && incremental {
+        if zip && tar {
+            CLIOutput.writeError(.incompatibleOptions("--zip and --tar both produce one archive; pick one."))
+            throw ExitCode(2)
+        }
+        let archiveFormat: ExportArchiveFormat? = zip ? .zip : (tar ? .tar : nil)
+        if archiveFormat != nil && incremental {
             CLIOutput.writeError(.incompatibleOptions(
-                "--zip cannot be combined with --incremental: the sync manifest has to persist in a folder between runs."
+                "--zip and --tar cannot be combined with --incremental: the sync manifest has to persist in a folder between runs."
             ))
             throw ExitCode(2)
         }
@@ -158,8 +166,8 @@ struct ExportCommand: AsyncParsableCommand {
         let destinationURL = URL(fileURLWithPath: (output as NSString).expandingTildeInPath).standardizedFileURL
         let archiveURL: URL?
         let outputURL: URL
-        if zip {
-            let locations = archiveExportLocations(destination: destinationURL)
+        if let archiveFormat {
+            let locations = archiveExportLocations(destination: destinationURL, format: archiveFormat)
             archiveURL = locations.archive
             outputURL = locations.staging
         } else {
@@ -169,9 +177,10 @@ struct ExportCommand: AsyncParsableCommand {
         // A name ending in an extension this app produces, but not the one
         // being written, is a mistake rather than a directory: without this it
         // silently becomes a folder called "Notes.md" holding a .txt file.
-        if concatenate && !zip {
+        if concatenate && archiveFormat == nil {
             let ext = outputURL.pathExtension.lowercased()
-            let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(["zip"])
+            let ours = Set(ExportFormat.allCases.map(\.fileExtension))
+                .union(ExportArchiveFormat.allCases.map(\.fileExtension))
             if ours.contains(ext) && ext != exportFormat.fileExtension {
                 CLIOutput.writeError(.incompatibleOptions(
                     "--output ends in .\(ext) but the format is \(exportFormat.rawValue). Name it .\(exportFormat.fileExtension), or pass a directory to get \(concatenatedFileBaseName).\(exportFormat.fileExtension) inside it."
@@ -182,7 +191,7 @@ struct ExportCommand: AsyncParsableCommand {
 
         // With --concatenate the destination may name the file itself, in which
         // case the directory to create is the one containing it.
-        let directoryToCreate = (concatenate && !zip
+        let directoryToCreate = (concatenate && archiveFormat == nil
             && outputURL.pathExtension.lowercased() == exportFormat.fileExtension)
             ? outputURL.deletingLastPathComponent()
             : outputURL
@@ -335,7 +344,7 @@ struct ExportCommand: AsyncParsableCommand {
             if let archiveURL {
                 if verbose { CLIOutput.writeStderr("Creating \(archiveURL.lastPathComponent)...") }
                 do {
-                    try zipDirectory(at: outputURL, to: archiveURL)
+                    try createArchive(archiveFormat ?? .zip, at: outputURL, to: archiveURL)
                     try? FileManager.default.removeItem(at: outputURL)
                 } catch {
                     try? FileManager.default.removeItem(at: outputURL)
@@ -358,7 +367,7 @@ struct ExportCommand: AsyncParsableCommand {
                 throw ExitCode(1)
             }
         } catch let error as CLIError {
-            if zip { try? FileManager.default.removeItem(at: outputURL) }
+            if archiveFormat != nil { try? FileManager.default.removeItem(at: outputURL) }
             CLIOutput.writeError(error)
             throw ExitCode(error.exitCode)
         }

@@ -167,7 +167,8 @@ class ExportViewModel: ObservableObject {
         // archive will land, so the archive has a single tidy root and the
         // user's chosen folder is never littered with loose note files. The
         // staging folder is removed once the archive exists.
-        let makeZip = configurations.zipOutput && !configurations.incrementalSync
+        let archiveFormat = configurations.incrementalSync ? nil : configurations.archiveFormat
+        let makeZip = archiveFormat != nil
 
         // In zip mode the destination may be the archive the user named in the
         // save panel, or a plain folder if they picked one before switching
@@ -176,7 +177,7 @@ class ExportViewModel: ObservableObject {
         let archiveURL: URL
         let outputURL: URL
         if makeZip {
-            let locations = archiveExportLocations(destination: destinationURL)
+            let locations = archiveExportLocations(destination: destinationURL, format: archiveFormat ?? .zip)
             archiveURL = locations.archive
             outputURL = locations.staging
         } else {
@@ -354,7 +355,7 @@ class ExportViewModel: ObservableObject {
 
             if makeZip {
                 log("Creating \(archiveURL.lastPathComponent)...")
-                try zipDirectory(at: outputURL, to: archiveURL)
+                try createArchive(archiveFormat ?? .zip, at: outputURL, to: archiveURL)
                 try? FileManager.default.removeItem(at: outputURL)
                 log("✓ Wrote \(archiveURL.lastPathComponent)")
             }

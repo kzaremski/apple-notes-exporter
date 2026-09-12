@@ -175,16 +175,58 @@ struct AppleNotesExporterView: View {
     /**
      Select the output folder.
      */
+    /// The four ways an export can be delivered, derived from the stored
+    /// booleans so there is a single source of truth for "which container".
+    enum OutputContainer: Equatable {
+        case folder, zip, tar, singleFile
+    }
+
+    var currentOutputContainer: OutputContainer {
+        if exportViewModel.configurations.zipOutput { return .zip }
+        if exportViewModel.configurations.tarOutput { return .tar }
+        if exportViewModel.configurations.concatenateOutput { return .singleFile }
+        return .folder
+    }
+
     /// Forget the chosen destination when the container changes.
     ///
-    /// The three containers do not mean the same thing by "output": ZIP names
-    /// a file, the other two name a directory. Carrying a path across a switch
-    /// leaves a value the new mode has to reinterpret, so the user picks again
-    /// with the right panel.
-    func clearOutputPathIfContainerChanged(wasZip: Bool, wasSingle: Bool, nowZip: Bool, nowSingle: Bool) {
-        guard wasZip != nowZip || wasSingle != nowSingle else { return }
+    /// The containers do not mean the same thing by "output": the archives and
+    /// a single file name a file, Folder names a directory. Carrying a path
+    /// across a switch leaves a value the new mode has to reinterpret, so the
+    /// user picks again with the right panel. This takes the new container as
+    /// one value rather than a set of flags, so a destination added later
+    /// cannot end up uncompared (TAR did, and switching to it kept the path).
+    ///
+    /// Call before mutating the configuration, since the old container is read
+    /// back from it.
+    func clearOutputPathIfContainerChanged(to newContainer: OutputContainer) {
+        guard newContainer != currentOutputContainer else { return }
         outputPath = ""
         outputURL = nil
+    }
+
+    /// The alert shown when Export is pressed with no destination. Folder, an
+    /// archive and a single file are three different things to have not chosen,
+    /// so the wording follows the container rather than always saying "folder".
+    var missingDestinationTitle: String {
+        if let archive = exportViewModel.configurations.archiveFormat {
+            return "No \(archive.displayName) Location Chosen"
+        }
+        if exportViewModel.configurations.concatenateOutput {
+            return "No Output File Chosen"
+        }
+        return "No Output Folder Chosen"
+    }
+
+    var missingDestinationMessage: String {
+        if let archive = exportViewModel.configurations.archiveFormat {
+            return "Please choose where you would like the .\(archive.fileExtension) archive to be saved."
+        }
+        if exportViewModel.configurations.concatenateOutput {
+            let ext = ExportFormat(rawValue: outputFormat)?.fileExtension ?? "file"
+            return "Please choose where you would like the exported .\(ext) file to be saved."
+        }
+        return "Please choose the folder where you would like the exported notes to be saved."
     }
 
     /// Drop a stored destination the current container cannot use.
@@ -199,14 +241,15 @@ struct AppleNotesExporterView: View {
         let ext = (outputPath as NSString).pathExtension.lowercased()
         // Only extensions this app produces are treated as a filename; a
         // directory legitimately called "my.notes" must not be discarded.
-        let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(["zip"])
+        let archiveExtensions = Set(ExportArchiveFormat.allCases.map(\.fileExtension))
+        let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(archiveExtensions)
 
-        let isZip = exportViewModel.configurations.zipOutput
-        let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
+        let archive = exportViewModel.configurations.archiveFormat
+        let isSingle = exportViewModel.configurations.concatenateOutput && archive == nil
 
         let stale: Bool
-        if isZip {
-            stale = ours.contains(ext) && ext != "zip"
+        if let archive {
+            stale = ours.contains(ext) && ext != archive.fileExtension
         } else if isSingle {
             // The extension has to match the format being written, so
             // switching MD to TXT invalidates the stored name too.
@@ -222,8 +265,11 @@ struct AppleNotesExporterView: View {
     /// The filename and type to offer in a save panel, or nil when the
     /// container writes into a directory instead.
     func savePanelTarget() -> (name: String, type: UTType?)? {
-        if exportViewModel.configurations.zipOutput {
-            return ("\(ExportViewModel.zipRootName).zip", .zip)
+        if let archive = exportViewModel.configurations.archiveFormat {
+            let name = "\(ExportViewModel.zipRootName).\(archive.fileExtension)"
+            // .tar has no first-class UTType constant; resolve it by extension
+            // and leave the panel unfiltered if the system does not know it.
+            return (name, archive == .zip ? .zip : UTType(filenameExtension: archive.fileExtension))
         }
         guard exportViewModel.configurations.concatenateOutput,
               let format = ExportFormat(rawValue: outputFormat) else { return nil }
@@ -367,7 +413,7 @@ struct AppleNotesExporterView: View {
             let rows = Int(ceil(Double(OUTPUT_FORMATS.count) / Double(columns)))
             VStack(spacing: 4) {
                 ForEach(0..<rows, id: \.self) { row in
-                    HStack(spacing: 6) {
+                    HStack(spacing: selectionTileSpacing) {
                         ForEach(0..<columns, id: \.self) { col in
                             let index = row * columns + col
                             if index < OUTPUT_FORMATS.count {
@@ -449,19 +495,21 @@ struct AppleNotesExporterView: View {
                 .padding(.top, 5)
                 .padding(.bottom, titleBottomPadding)
             
-            HStack(spacing: 8) {
+            HStack(spacing: selectionTileSpacing) {
                 let canConcatenate = ExportFormat(rawValue: outputFormat)?.supportsConcatenation ?? false
                 let isZip = exportViewModel.configurations.zipOutput
-                let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
+                let isTar = exportViewModel.configurations.tarOutput && !isZip
+                let isArchive = isZip || isTar
+                let isSingle = exportViewModel.configurations.concatenateOutput && !isArchive
 
                 OutputContainerButton(
                     title: "Folder",
                     icon: "folder",
-                    isSelected: !isZip && !isSingle
+                    isSelected: !isArchive && !isSingle
                 ) {
-                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
-                                                      nowZip: false, nowSingle: false)
+                    clearOutputPathIfContainerChanged(to: .folder)
                     exportViewModel.configurations.zipOutput = false
+                    exportViewModel.configurations.tarOutput = false
                     exportViewModel.configurations.concatenateOutput = false
                     exportViewModel.saveConfigurations()
                 }
@@ -470,12 +518,25 @@ struct AppleNotesExporterView: View {
                     icon: "doc.zipper",
                     isSelected: isZip
                 ) {
-                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
-                                                      nowZip: true, nowSingle: false)
+                    clearOutputPathIfContainerChanged(to: .zip)
                     exportViewModel.configurations.zipOutput = true
+                    exportViewModel.configurations.tarOutput = false
                     exportViewModel.configurations.concatenateOutput = false
                     // A sync manifest has to live in a folder that persists
                     // between runs, so it cannot travel inside an archive.
+                    exportViewModel.configurations.incrementalSync = false
+                    showSyncWarning = false
+                    exportViewModel.saveConfigurations()
+                }
+                OutputContainerButton(
+                    title: "TAR Archive",
+                    icon: "shippingbox",
+                    isSelected: isTar
+                ) {
+                    clearOutputPathIfContainerChanged(to: .tar)
+                    exportViewModel.configurations.tarOutput = true
+                    exportViewModel.configurations.zipOutput = false
+                    exportViewModel.configurations.concatenateOutput = false
                     exportViewModel.configurations.incrementalSync = false
                     showSyncWarning = false
                     exportViewModel.saveConfigurations()
@@ -487,10 +548,10 @@ struct AppleNotesExporterView: View {
                     isEnabled: canConcatenate,
                     disabledHelp: "\(outputFormat) is a packaged format, so its notes cannot be joined into one file."
                 ) {
-                    clearOutputPathIfContainerChanged(wasZip: isZip, wasSingle: isSingle,
-                                                      nowZip: false, nowSingle: true)
+                    clearOutputPathIfContainerChanged(to: .singleFile)
                     exportViewModel.configurations.concatenateOutput = true
                     exportViewModel.configurations.zipOutput = false
+                    exportViewModel.configurations.tarOutput = false
                     exportViewModel.configurations.incrementalSync = false
                     showSyncWarning = false
                     exportViewModel.saveConfigurations()
@@ -499,14 +560,14 @@ struct AppleNotesExporterView: View {
             .padding(.bottom, 6)
 
             HStack() {
-                Image(systemName: exportViewModel.configurations.zipOutput
-                        ? "doc.zipper"
-                        : (exportViewModel.configurations.concatenateOutput ? "doc.text" : "folder"))
-                Text({
-                    if exportViewModel.configurations.zipOutput {
+                let destinationIcon = exportViewModel.configurations.archiveFormat?.systemImage
+                    ?? (exportViewModel.configurations.concatenateOutput ? "doc.text" : "folder")
+                let destinationLabel: String = {
+                    if let archive = exportViewModel.configurations.archiveFormat {
+                        let ext = archive.fileExtension
                         guard outputPath != "" else { return "Choose where to save the archive" }
-                        if outputPath.lowercased().hasSuffix(".zip") { return outputPath }
-                        return outputPath + "/\(ExportViewModel.zipRootName).zip"
+                        if outputPath.lowercased().hasSuffix("." + ext) { return outputPath }
+                        return outputPath + "/\(ExportViewModel.zipRootName).\(ext)"
                     }
                     let format = ExportFormat(rawValue: outputFormat)
                     let single = exportViewModel.configurations.concatenateOutput
@@ -518,12 +579,42 @@ struct AppleNotesExporterView: View {
                     }
                     guard outputPath != "" else { return "Choose an output folder" }
                     return outputPath
-                }()).frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .animation(.easeInOut(duration: 0.15), value: outputPath)
-                .animation(.easeInOut(duration: 0.15), value: exportViewModel.configurations.concatenateOutput)
-                .animation(.easeInOut(duration: 0.15), value: exportViewModel.configurations.zipOutput)
+                }()
+
+                // Keying on the value makes each change a new view, so the old
+                // one fades out as the new one fades in. Animating the modifier
+                // alone would only move the view, not cross-fade its contents.
+                // Both isolate their geometry for the same reason the container
+                // buttons do, otherwise the transaction also shifts them and
+                // the text visibly jitters as it swaps.
+                // A transition is driven by the transaction in place when the
+                // view is inserted, which has to come from the parent: the
+                // incoming view does not exist yet to carry one itself. So the
+                // animation goes on the wrapper and the transition on the
+                // child, the same shape the checkbox rows and sync banner use.
+                // The wrapper is a ZStack so the outgoing and incoming views
+                // overlap and genuinely cross-fade instead of replacing.
+                ZStack {
+                    Image(systemName: destinationIcon)
+                        .id(destinationIcon)
+                        .transition(.opacity)
+                }
+                // folder, doc.zipper and doc.text are not the same width, so a
+                // fixed box keeps the path text from shifting as it swaps.
+                .frame(width: destinationIconSize.width, height: destinationIconSize.height)
+                .animation(.easeInOut(duration: 0.15), value: destinationIcon)
+                .isolatedGeometry()
+
+                ZStack(alignment: .leading) {
+                    Text(destinationLabel)
+                        .id(destinationLabel)
+                        .transition(.opacity)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(.easeInOut(duration: 0.15), value: destinationLabel)
+                .isolatedGeometry()
                 Button {
                     selectOutputFolder()
                 } label: {
@@ -533,28 +624,8 @@ struct AppleNotesExporterView: View {
             }
 
             VStack(spacing: outputOptionRowSpacing) {
-                let isZip = exportViewModel.configurations.zipOutput
+                let isZip = exportViewModel.configurations.zipOutput || exportViewModel.configurations.tarOutput
                 let isSingle = exportViewModel.configurations.concatenateOutput && !isZip
-
-                // One file the user already named: there is no per-note
-                // filename for a date to prefix.
-                if !isSingle {
-                    OutputOptionRow(
-                        title: "Add date to filename",
-                        help: "Prefix each exported file with the note's creation date, so files sort chronologically.",
-                        isOn: $exportViewModel.configurations.addDateToFilename
-                    ) {
-                        Picker("", selection: $exportViewModel.configurations.filenameDateFormat) {
-                            ForEach(FilenameDateFormat.allCases, id: \.self) { format in
-                                Text(format.displayName).tag(format)
-                            }
-                        }
-                        .frame(width: 210)
-                        .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
-                        .disabled(!exportViewModel.configurations.addDateToFilename)
-                    }
-                    .transition(.opacity)
-                }
 
                 OutputOptionRow(
                     title: "Include attachments",
@@ -569,24 +640,48 @@ struct AppleNotesExporterView: View {
                     isEnabled: exportViewModel.configurations.includeAttachments
                 )
 
-                // A manifest has to persist in a folder between runs, so it
-                // cannot travel inside an archive or a single joined file.
-                if !isSingle && !isZip {
-                    OutputOptionRow(
-                        title: "Incremental sync",
-                        help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
-                        isOn: $exportViewModel.configurations.incrementalSync
-                    )
-                    .transition(.opacity)
+                // Each conditional row sits in its own wrapper with its own
+                // animation, the way the sync banner below does. The wrapper is
+                // the only thing whose height changes, so it fades and resizes
+                // without handing a transaction to anything around it.
+                VStack(spacing: 0) {
+                    // One file the user already named: there is no per-note
+                    // filename for a date to prefix.
+                    if !isSingle {
+                        OutputOptionRow(
+                            title: "Add date to filename",
+                            help: "Prefix each exported file with the note's creation date, so files sort chronologically.",
+                            isOn: $exportViewModel.configurations.addDateToFilename
+                        ) {
+                            Picker("", selection: $exportViewModel.configurations.filenameDateFormat) {
+                                ForEach(FilenameDateFormat.allCases, id: \.self) { format in
+                                    Text(format.displayName).tag(format)
+                                }
+                            }
+                            .frame(width: 210)
+                            .opacity(exportViewModel.configurations.addDateToFilename ? 1 : 0)
+                            .disabled(!exportViewModel.configurations.addDateToFilename)
+                        }
+                        .transition(.opacity)
+                    }
                 }
+                .animation(.easeInOut(duration: 0.2), value: isSingle)
+
+                VStack(spacing: 0) {
+                    // A manifest has to persist in a folder between runs, so it
+                    // cannot travel inside an archive or a single joined file.
+                    if !isSingle && !isZip {
+                        OutputOptionRow(
+                            title: "Incremental sync",
+                            help: "Only export notes that are new or changed since the last export to this folder. Notes deleted from Apple Notes are removed from the output.",
+                            isOn: $exportViewModel.configurations.incrementalSync
+                        )
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: isZip)
+                .animation(.easeInOut(duration: 0.2), value: isSingle)
             }
-            // Pinned to the full row count. Rows come and go with the chosen
-            // container, and letting the section shrink resized the window,
-            // which slid the container buttons above it up and down.
-            .frame(
-                height: CGFloat(outputOptionRowCount) * (outputOptionRowHeight + outputOptionRowSpacing),
-                alignment: .top
-            )
             .onChange(of: exportViewModel.configurations.addDateToFilename) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.filenameDateFormat) { _ in exportViewModel.saveConfigurations() }
             .onChange(of: exportViewModel.configurations.includeAttachments) { _ in exportViewModel.saveConfigurations() }
@@ -633,9 +728,6 @@ struct AppleNotesExporterView: View {
                     .transition(.opacity)
                 }
             }
-            // Same reason: switching container clears incremental sync, and
-            // letting this banner collapse moved everything above it.
-            .frame(height: syncWarningReservedHeight, alignment: .top)
             .animation(.easeInOut(duration: 0.2), value: showSyncWarning)
 
             Text("Step 4: Export!")
@@ -732,8 +824,8 @@ struct AppleNotesExporterView: View {
                 )
             case .noOutput:
                 Alert(
-                    title: Text("No Output Folder Chosen"),
-                    message: Text("Please choose folder where you would like the exported notes to be saved."),
+                    title: Text(missingDestinationTitle),
+                    message: Text(missingDestinationMessage),
                     dismissButton: .default(Text("OK"))
                 )
             }
@@ -808,6 +900,27 @@ struct BorderedProminentButtonStyle: ButtonStyle {
 }
 
 
+/// Box the output path icon sits in, wide enough for the widest of the three
+/// glyphs so swapping between them does not move the text beside it.
+private let destinationIconSize = CGSize(width: 20, height: 18)
+
+private extension View {
+    /// Isolate this view's geometry from animations owned by its ancestors, so
+    /// a layout change elsewhere cannot animate this view into a new position.
+    ///
+    /// geometryGroup() is the real API for this; transformEffect(.identity) is
+    /// the long-standing stand-in for it before macOS 14, which this app still
+    /// deploys to.
+    @ViewBuilder
+    func isolatedGeometry() -> some View {
+        if #available(macOS 14.0, *) {
+            geometryGroup()
+        } else {
+            transformEffect(.identity)
+        }
+    }
+}
+
 // MARK: - Step 3 option rows
 
 /// Rows in Step 3 share a fixed height. Without it the row carrying the date
@@ -817,13 +930,12 @@ struct BorderedProminentButtonStyle: ButtonStyle {
 // row at roughly 22pt, so the height stays above that to avoid clipping it and
 // the gap is taken out of the spacing instead. Together these halve the visible
 // gap between checkboxes compared with the original 26 + 4.
-/// Every row the options section can show. The section reserves all of them so
-/// its height never changes, whichever container is selected.
-private let outputOptionRowCount = 4
+/// Gap between tiles in the Step 2 format grid and the Step 3 container
+/// buttons, which are meant to read as the same kind of control.
+let selectionTileSpacing: CGFloat = 6
+
 private let outputOptionRowHeight: CGFloat = 24
 private let outputOptionRowSpacing: CGFloat = 0
-/// Height held for the sync warning whether or not it is showing.
-private let syncWarningReservedHeight: CGFloat = 38
 
 /// A "?" affordance carrying a tooltip. Uses `.help`, so it appears on hover
 /// and is also exposed to VoiceOver rather than being purely decorative.
@@ -937,7 +1049,6 @@ private struct OutputContainerButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.4)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isSelected ? SwiftUI.Color.accentColor : SwiftUI.Color.clear)
@@ -946,8 +1057,13 @@ private struct OutputContainerButton: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(isSelected ? SwiftUI.Color.clear : SwiftUI.Color.gray.opacity(0.3), lineWidth: 1)
         )
+        .opacity(isEnabled ? 1 : 0.4)
         .help(isEnabled ? "" : (disabledHelp ?? ""))
         .animation(.easeInOut(duration: 0.15), value: isSelected)
-        .animation(.easeInOut(duration: 0.15), value: isEnabled)
+        // Without this the cross-fade above also animates the button's
+        // position: selecting a container changes the layout below it, and the
+        // animation transaction picks that movement up. Isolating the geometry
+        // keeps the fade and drops the slide.
+        .isolatedGeometry()
     }
 }

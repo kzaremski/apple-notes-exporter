@@ -162,6 +162,8 @@ enum MCPToolHandlers {
                     ]),
                     "concatenate": .object(["type": .string("boolean"),
                         "description": .string("Join every note into a single file. 'output' may name that file, or a directory to receive \"Exported Notes.<ext>\". Not available for the packaged formats (pdf, docx, odt, epub), and not compatible with incremental.")]),
+                    "tar": .object(["type": .string("boolean"),
+                        "description": .string("Deliver the export as one .tar. Same as zip but uncompressed; file dates are preserved either way.")]),
                     "zip": .object(["type": .string("boolean"),
                         "description": .string("Deliver the export as one .zip. 'output' may name the archive or a directory to receive it. Not compatible with incremental.")])
                 ]),
@@ -356,10 +358,15 @@ enum MCPToolHandlers {
             return errorText("Output path '\(outputStr)' is outside the user's home directory. For safety, the MCP server only writes under $HOME or /tmp.")
         }
 
+        let wantsTar = args["tar"]?.boolValue ?? false
         let wantsZip = args["zip"]?.boolValue ?? false
+        if wantsZip && wantsTar {
+            return errorText("'zip' and 'tar' both produce one archive; pick one.")
+        }
+        let archiveFormat: ExportArchiveFormat? = wantsZip ? .zip : (wantsTar ? .tar : nil)
         let wantsIncremental = args["incremental"]?.boolValue ?? false
-        if wantsZip && wantsIncremental {
-            return errorText("'zip' cannot be combined with 'incremental': the sync manifest has to persist in a folder between runs.")
+        if archiveFormat != nil && wantsIncremental {
+            return errorText("'zip' and 'tar' cannot be combined with 'incremental': the sync manifest has to persist in a folder between runs.")
         }
         if args["concatenate"]?.boolValue ?? false {
             let ext = outputURL.pathExtension.lowercased()
@@ -377,8 +384,8 @@ enum MCPToolHandlers {
         // note files. The staging path stays inside the checked output path.
         let archiveURL: URL?
         let workingURL: URL
-        if wantsZip {
-            let locations = archiveExportLocations(destination: outputURL)
+        if let archiveFormat {
+            let locations = archiveExportLocations(destination: outputURL, format: archiveFormat)
             archiveURL = locations.archive
             workingURL = locations.staging
         } else {
@@ -388,7 +395,7 @@ enum MCPToolHandlers {
 
         // A named single-file destination needs its containing folder created,
         // not a directory at the file's own path.
-        let directoryToCreate = (!wantsZip
+        let directoryToCreate = (archiveFormat == nil
             && (args["concatenate"]?.boolValue ?? false)
             && workingURL.pathExtension.lowercased() == exportFormat.fileExtension)
             ? workingURL.deletingLastPathComponent()
@@ -514,7 +521,7 @@ enum MCPToolHandlers {
             guard let archiveURL else { return jsonText(result) }
 
             do {
-                try zipDirectory(at: workingURL, to: archiveURL)
+                try createArchive(archiveFormat ?? .zip, at: workingURL, to: archiveURL)
                 try? FileManager.default.removeItem(at: workingURL)
             } catch {
                 try? FileManager.default.removeItem(at: workingURL)

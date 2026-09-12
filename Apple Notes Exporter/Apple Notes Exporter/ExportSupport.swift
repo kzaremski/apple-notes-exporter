@@ -597,9 +597,76 @@ func concatenatedExportURL(destination: URL, format: ExportFormat) -> URL {
         : destination.appendingPathComponent("\(concatenatedFileBaseName).\(format.fileExtension)")
 }
 
-/// Default root name for a zip export: both the folder inside the archive and
-/// the archive itself when the user has not named one.
+/// Default root name for an archive export: both the folder inside the archive
+/// and the archive itself when the user has not named one.
 let exportArchiveRootName = "Apple Notes Export"
+
+/// Archive containers the exporter can deliver.
+enum ExportArchiveFormat: String, CaseIterable {
+    case zip
+    case tar
+
+    var fileExtension: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .zip: return "ZIP Archive"
+        case .tar: return "TAR Archive"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .zip: return "doc.zipper"
+        case .tar: return "shippingbox"
+        }
+    }
+}
+
+/// Write `sourceURL` (a directory) into an archive at `destinationURL`.
+func createArchive(_ format: ExportArchiveFormat, at sourceURL: URL, to destinationURL: URL) throws {
+    switch format {
+    case .zip: try zipDirectory(at: sourceURL, to: destinationURL)
+    case .tar: try tarDirectory(at: sourceURL, to: destinationURL)
+    }
+}
+
+/// Tar `sourceURL` (a directory) to `destinationURL`.
+///
+/// Uses bsdtar with -C so the archive contains the folder itself rather than an
+/// absolute path, matching the layout the zip export produces. tar records each
+/// entry's modification time, so the note dates the exporter stamps on every
+/// file survive being unpacked.
+func tarDirectory(at sourceURL: URL, to destinationURL: URL) throws {
+    if FileManager.default.fileExists(atPath: destinationURL.path) {
+        try FileManager.default.removeItem(at: destinationURL)
+    }
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+    process.arguments = [
+        "-cf", destinationURL.path,
+        "-C", sourceURL.deletingLastPathComponent().path,
+        sourceURL.lastPathComponent
+    ]
+    let errorPipe = Pipe()
+    process.standardError = errorPipe
+    process.standardOutput = Pipe()
+
+    try process.run()
+    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+
+    guard process.terminationStatus == 0 else {
+        let detail = String(data: errorData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        throw NSError(domain: "AppleNotesExporter", code: Int(process.terminationStatus), userInfo: [
+            NSLocalizedDescriptionKey: detail.isEmpty
+                ? "tar exited with status \(process.terminationStatus)."
+                : "tar failed: \(detail)"
+        ])
+    }
+}
 
 /// Zip `sourceURL` (a directory) to `destinationURL`.
 ///
@@ -646,10 +713,10 @@ func uniqueExportURL(in directory: URL, baseName: String, extension ext: String?
 ///
 /// `destination` is either the archive the user named or a folder to put one
 /// in. The archive's own name becomes the root folder inside it.
-func archiveExportLocations(destination: URL) -> (staging: URL, archive: URL) {
-    let archive = destination.pathExtension.lowercased() == "zip"
+func archiveExportLocations(destination: URL, format: ExportArchiveFormat = .zip) -> (staging: URL, archive: URL) {
+    let archive = destination.pathExtension.lowercased() == format.fileExtension
         ? destination
-        : uniqueExportURL(in: destination, baseName: exportArchiveRootName, extension: "zip")
+        : uniqueExportURL(in: destination, baseName: exportArchiveRootName, extension: format.fileExtension)
     let rootName = archive.deletingPathExtension().lastPathComponent
     let staging = uniqueExportURL(
         in: archive.deletingLastPathComponent(), baseName: rootName, extension: nil

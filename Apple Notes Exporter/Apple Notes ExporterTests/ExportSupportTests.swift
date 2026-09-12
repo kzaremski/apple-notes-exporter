@@ -3,7 +3,19 @@
 //  Apple Notes ExporterTests
 //
 //  Copyright (C) 2026 Konstantin Zaremski
-//  Licensed under GPL v3.
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 import XCTest
@@ -883,6 +895,65 @@ final class ExportSupportTests: XCTestCase {
             accuracy: 2,
             "modification date did not survive the archive"
         )
+    }
+
+    func test_tarDirectory_roundTripsAndPreservesModificationDates() throws {
+        let root = try makeTempDirectory()
+        let source = root.appendingPathComponent("Apple Notes Export")
+        try FileManager.default.createDirectory(
+            at: source.appendingPathComponent("iCloud/Notes"), withIntermediateDirectories: true
+        )
+        let note = source.appendingPathComponent("iCloud/Notes/Old Note.md")
+        try Data("aged".utf8).write(to: note)
+
+        let created = Date(timeIntervalSince1970: 1_100_000_000)
+        let modified = Date(timeIntervalSince1970: 1_400_000_000)
+        try setExportFileTimestamps(note, creationDate: created, modificationDate: modified)
+
+        let archive = root.appendingPathComponent("Apple Notes Export.tar")
+        try createArchive(.tar, at: source, to: archive)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archive.path))
+
+        let unpacked = root.appendingPathComponent("unpacked")
+        try FileManager.default.createDirectory(at: unpacked, withIntermediateDirectories: true)
+        let untar = Process()
+        untar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        untar.arguments = ["-xf", archive.path, "-C", unpacked.path]
+        try untar.run()
+        untar.waitUntilExit()
+        XCTAssertEqual(untar.terminationStatus, 0)
+
+        let restored = unpacked.appendingPathComponent("Apple Notes Export/iCloud/Notes/Old Note.md")
+        XCTAssertEqual(try String(contentsOf: restored, encoding: .utf8), "aged")
+
+        let attrs = try FileManager.default.attributesOfItem(atPath: restored.path)
+        let restoredModified = try XCTUnwrap(attrs[.modificationDate] as? Date)
+        XCTAssertEqual(
+            restoredModified.timeIntervalSince1970, modified.timeIntervalSince1970, accuracy: 2,
+            "modification date did not survive the tar"
+        )
+    }
+
+    func test_tarDirectory_archiveRootIsTheFolderNotAnAbsolutePath() throws {
+        let root = try makeTempDirectory()
+        let source = root.appendingPathComponent("Trip Notes")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: source.appendingPathComponent("a.md"))
+
+        let archive = root.appendingPathComponent("Trip Notes.tar")
+        try createArchive(.tar, at: source, to: archive)
+
+        let list = Process()
+        list.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        list.arguments = ["-tf", archive.path]
+        let pipe = Pipe()
+        list.standardOutput = pipe
+        try list.run()
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        list.waitUntilExit()
+
+        XCTAssertTrue(out.contains("Trip Notes/"), "archive should be rooted at the folder, got: \(out)")
+        XCTAssertFalse(out.contains(root.path), "archive must not embed an absolute path")
     }
 
     func test_zipDirectory_overwritesAnExistingArchive() throws {
