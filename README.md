@@ -76,7 +76,7 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 * **ADOC** - AsciiDoc format for technical documentation.
 
 ### Interchange formats
-* **ENEX** - Evernote export format for import into Evernote, Joplin, and similar apps. Images are written as `<resource>` elements referenced by `<en-media>`, so note content stays within Evernote's 5 MB `EDAM_NOTE_CONTENT_LEN_MAX`; output validates against `enml2.dtd` and `evernote-export3.dtd`.
+* **ENEX** - Evernote export format for import into Evernote, Joplin, and similar apps. Attachments travel inside the file as `<resource>` elements referenced by `<en-media>` - images, and also PDFs, audio and any other file the note links to - so nothing depends on a sibling file surviving the import, and note content stays within Evernote's 5 MB `EDAM_NOTE_CONTENT_LEN_MAX`. Output validates against `enml2.dtd` and `evernote-export3.dtd`.
 
 Attachments are always saved in a folder corresponding to the name/title of the note that they are associated with.
 
@@ -127,6 +127,11 @@ photo-heavy library.
 Every note joined into one file, with format-appropriate separators between
 them: page breaks in HTML and TeX, `---` rules in Markdown, a row of equals
 signs in plain text, one object per line in JSON Lines.
+
+Formats that are a single structured document get the wrapper that document
+needs, applied once rather than per note: JSON becomes one array, CSV gets a
+single header row, and ENEX becomes one `<en-export>` containing every `<note>`
+with its attachments embedded, so the result is one importable file.
 
 Available for the 14 text formats. The four packaged formats (PDF, DOCX, ODT,
 EPUB) are containers with their own internal structure, so there is nothing to

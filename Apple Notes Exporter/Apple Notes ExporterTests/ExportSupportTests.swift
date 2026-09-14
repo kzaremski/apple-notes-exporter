@@ -716,6 +716,22 @@ final class ExportSupportTests: XCTestCase {
         )
     }
 
+    func test_concatenatedExportURL_containingFolderIsNeverTheFileItself() {
+        // Regression: the app used the destination as the directory to write
+        // attachments and folder paths into. When the user named a file, that
+        // created a folder called "Exported Notes.md" holding the whole tree,
+        // and the final write then failed against the folder sitting in its
+        // place. Whichever form the destination takes, the directory to work in
+        // is the resolved file's parent, never the file path.
+        for destination in [URL(fileURLWithPath: "/tmp/out/My Notes.md"),
+                            URL(fileURLWithPath: "/tmp/out")] {
+            let resolved = concatenatedExportURL(destination: destination, format: .markdown)
+            let workingDirectory = resolved.deletingLastPathComponent()
+            XCTAssertEqual(workingDirectory.path, "/tmp/out")
+            XCTAssertNotEqual(workingDirectory, resolved)
+        }
+    }
+
     func test_concatenatedExportURL_ignoresAnExtensionForADifferentFormat() {
         // A name left over from a previous format is not the file to write.
         let stale = URL(fileURLWithPath: "/tmp/out/My Notes.md")
@@ -806,6 +822,578 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertFalse(enex.contains("evil()"), "script contents must go, not just the tag")
         XCTAssertFalse(enex.contains("<title>T</title>"), "head contents must not leak into the body")
         XCTAssertTrue(enex.contains("Keep"))
+    }
+
+    // MARK: - Attachment export
+
+    /// A repository that answers exactly what a test asks it to, including by
+    /// failing. The shipped `MockNotesRepository` returns fixed data and an
+    /// empty gallery, which cannot express these cases.
+    private final class FakeNotesRepository: NotesRepository {
+        var attachments: [String: Data] = [:]
+        var filenames: [String: String] = [:]
+        var galleries: [String: [GalleryChild]] = [:]
+        var failingIds: Set<String> = []
+
+        struct Missing: Error {}
+
+        func fetchAttachment(id: String) async throws -> Data {
+            if failingIds.contains(id) { throw Missing() }
+            guard let data = attachments[id] else { throw Missing() }
+            return data
+        }
+        func fetchAttachmentFilename(id: String) async -> String? { filenames[id] }
+        func fetchGalleryChildren(galleryId: String, accountId: String?) async throws -> [GalleryChild] {
+            if failingIds.contains(galleryId) { throw Missing() }
+            return galleries[galleryId] ?? []
+        }
+
+        func fetchAccounts() async throws -> [NotesAccount] { [] }
+        func fetchFolders() async throws -> [NotesFolder] { [] }
+        func fetchNotes(includeDeleted: Bool) async throws -> [NotesNote] { [] }
+        func generateHTML(forNoteId noteId: String) async throws -> String { "" }
+        func fetchHierarchy(sortBy: NoteSortOption, foldersOnTop: Bool) async throws -> NotesHierarchy {
+            NotesHierarchy.build(accounts: [], folders: [], notes: [], sortBy: sortBy, foldersOnTop: foldersOnTop)
+        }
+        func invalidateCache() {}
+    }
+
+    private func exportAttachments(
+        _ attachments: [NotesAttachment],
+        repository: FakeNotesRepository,
+        into root: URL,
+        sharedFolder: Bool = false
+    ) async throws -> AttachmentExportResult {
+        try await exportNoteAttachments(
+            attachments,
+            toDirectory: root,
+            outputRoot: root,
+            noteBaseName: "My Note",
+            noteTitle: "My Note",
+            creationDate: Date(timeIntervalSince1970: 1_400_000_000),
+            modificationDate: Date(timeIntervalSince1970: 1_400_000_000),
+            sharedAttachmentsFolder: sharedFolder,
+            repository: repository
+        )
+    }
+
+    func test_attachments_galleryIsExpandedIntoItsChildren() async throws {
+        // Regression: the CLI copy had no gallery branch, so it asked the parser
+        // for the container's bytes -- which by design has none -- and every
+        // gallery in a CLI, MCP or Shortcuts export silently lost its images.
+        let root = try makeTempDirectory()
+        let repo = FakeNotesRepository()
+        let png = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        repo.galleries["gal-1"] = [
+            GalleryChild(id: "child-1", data: png, filename: "one.png", uti: "public.png"),
+            GalleryChild(id: "child-2", data: png, filename: "two.png", uti: "public.png")
+        ]
+
+        let result = try await exportAttachments(
+            [NotesAttachment(id: "gal-1", typeUTI: "com.apple.notes.gallery", filename: nil)],
+            repository: repo, into: root
+        )
+
+        XCTAssertEqual(result.failures, 0)
+        // Both children, plus the container aliased to the first so the note's
+        // own markup resolves.
+        XCTAssertEqual(result.paths.count, 3)
+        XCTAssertEqual(result.paths["gal-1"], result.paths["child-1"])
+        for id in ["child-1", "child-2"] {
+            let path = try XCTUnwrap(result.paths[id])
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path),
+                "\(id) was not written"
+            )
+        }
+    }
+
+    func test_attachments_collidingNamesWithoutExtensionDoNotEndInADot() async throws {
+        let root = try makeTempDirectory()
+        let repo = FakeNotesRepository()
+        repo.attachments = ["a": Data("a".utf8), "b": Data("b".utf8)]
+        repo.filenames = ["a": "noext", "b": "noext"]
+
+        let result = try await exportAttachments(
+            [NotesAttachment(id: "a", typeUTI: "public.data", filename: nil),
+             NotesAttachment(id: "b", typeUTI: "public.data", filename: nil)],
+            repository: repo, into: root
+        )
+
+        let second = try XCTUnwrap(result.paths["b"])
+        XCTAssertFalse(second.hasSuffix("."), "collision suffix left a trailing dot: \(second)")
+        XCTAssertTrue(second.hasSuffix("noext (2).bin"), second)
+    }
+
+    func test_attachments_extensionIsSniffedWhenUTIAndFilenameAreBothAbsent() async throws {
+        // The CLI copy lacked this and wrote .bin for a perfectly good PNG.
+        let root = try makeTempDirectory()
+        let repo = FakeNotesRepository()
+        repo.attachments = ["a": try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))]
+
+        let result = try await exportAttachments(
+            [NotesAttachment(id: "a", typeUTI: "public.item", filename: nil)],
+            repository: repo, into: root
+        )
+
+        XCTAssertTrue(try XCTUnwrap(result.paths["a"]).hasSuffix(".png"))
+    }
+
+    func test_attachments_oneFailureDoesNotCostTheOthers() async throws {
+        let root = try makeTempDirectory()
+        let repo = FakeNotesRepository()
+        repo.attachments = ["good": Data("ok".utf8)]
+        repo.filenames = ["good": "good.txt"]
+        repo.failingIds = ["bad"]
+
+        let result = try await exportAttachments(
+            [NotesAttachment(id: "bad", typeUTI: "public.data", filename: "bad.bin"),
+             NotesAttachment(id: "good", typeUTI: "public.data", filename: nil)],
+            repository: repo, into: root
+        )
+
+        XCTAssertEqual(result.failures, 1)
+        XCTAssertNil(result.paths["bad"])
+        XCTAssertNotNil(result.paths["good"], "a later attachment must still be exported")
+        // The CLI reported nothing at all for a failed attachment, even with -v.
+        XCTAssertEqual(result.events.filter { $0.severity == .warning }.count, 1)
+    }
+
+    func test_attachments_sharedFolderPathsAreRelativeToTheNote() async throws {
+        let root = try makeTempDirectory()
+        let repo = FakeNotesRepository()
+        repo.attachments = ["a": Data("x".utf8)]
+        repo.filenames = ["a": "doc.pdf"]
+
+        let shared = try await exportAttachments(
+            [NotesAttachment(id: "a", typeUTI: "com.adobe.pdf", filename: nil)],
+            repository: repo, into: root, sharedFolder: true
+        )
+        let beside = try await exportAttachments(
+            [NotesAttachment(id: "a", typeUTI: "com.adobe.pdf", filename: nil)],
+            repository: repo, into: root, sharedFolder: false
+        )
+
+        XCTAssertTrue(try XCTUnwrap(shared.paths["a"]).contains("Attachments/"), shared.paths["a"] ?? "")
+        XCTAssertTrue(try XCTUnwrap(beside.paths["a"]).contains("(Attachments)"), beside.paths["a"] ?? "")
+    }
+
+    // MARK: - Prune safety
+
+    func test_prune_isSkippedEntirelyWhenTheLibraryCouldNotBeRead() {
+        // Regression: a failed library read was collapsed into an empty set,
+        // so pruning judged "deleted from Apple Notes" against this run's
+        // selection and removed the exported files of every unselected note.
+        XCTAssertNil(prunePresentNoteIds(libraryNoteIds: nil, selectedNoteIds: ["a", "b"]))
+    }
+
+    func test_prune_judgesAgainstTheWholeLibraryNotTheSelection() {
+        let present = prunePresentNoteIds(
+            libraryNoteIds: ["a", "b", "c"],
+            selectedNoteIds: ["a"]
+        )
+        // "b" and "c" were not exported this run but still exist, so they must
+        // be counted present or their files would be deleted.
+        XCTAssertEqual(present, ["a", "b", "c"])
+    }
+
+    func test_prune_includesSelectedNotesMissingFromTheLibrarySnapshot() {
+        let present = prunePresentNoteIds(libraryNoteIds: ["a"], selectedNoteIds: ["b"])
+        XCTAssertEqual(present, ["a", "b"])
+    }
+
+    // MARK: - Export destination
+
+    func test_destination_cannotBeBothZipAndTar() {
+        // The three booleans could express this; the two-axis model cannot.
+        var configs = ExportConfigurations.default
+        configs.zipOutput = true
+        configs.tarOutput = true
+
+        XCTAssertFalse(configs.zipOutput, "setting tar must clear zip")
+        XCTAssertTrue(configs.tarOutput)
+        XCTAssertEqual(configs.archiveFormat, .tar)
+    }
+
+    func test_destination_clearingOneArchiveDoesNotClearTheOther() {
+        // The GUI sets the one it wants then clears the others in sequence.
+        var configs = ExportConfigurations.default
+        configs.tarOutput = true
+        configs.zipOutput = false          // was never zip; must be a no-op
+
+        XCTAssertEqual(configs.archiveFormat, .tar)
+
+        configs.tarOutput = false
+        XCTAssertNil(configs.archiveFormat)
+    }
+
+    func test_destination_singleFileInsideAnArchiveIsRepresentable() {
+        // --zip --concatenate is a supported CLI combination. A single
+        // four-case destination enum would have silently deleted it.
+        var configs = ExportConfigurations.default
+        configs.zipOutput = true
+        configs.concatenateOutput = true
+
+        XCTAssertEqual(configs.destination.container, .zip)
+        XCTAssertEqual(configs.destination.layout, .singleFile)
+        XCTAssertEqual(configs.archiveFormat, .zip)
+        XCTAssertTrue(configs.concatenateOutput)
+    }
+
+    func test_destination_migratesFromTheLegacyBooleans() throws {
+        // Settings saved before the destination became one value must survive.
+        let legacy = """
+        {"html":\(try encoded(ExportConfigurations.default.html)),
+         "pdf":\(try encoded(ExportConfigurations.default.pdf)),
+         "latex":\(try encoded(ExportConfigurations.default.latex)),
+         "rtf":\(try encoded(ExportConfigurations.default.rtf)),
+         "tarOutput":true,"concatenateOutput":true}
+        """
+        let decoded = try JSONDecoder().decode(
+            ExportConfigurations.self, from: Data(legacy.utf8))
+
+        XCTAssertEqual(decoded.destination.container, .tar)
+        XCTAssertEqual(decoded.destination.layout, .singleFile)
+        XCTAssertTrue(decoded.tarOutput)
+        XCTAssertTrue(decoded.concatenateOutput)
+    }
+
+    func test_destination_survivesARoundTrip() throws {
+        var configs = ExportConfigurations.default
+        configs.zipOutput = true
+        configs.concatenateOutput = true
+
+        let data = try JSONEncoder().encode(configs)
+        let decoded = try JSONDecoder().decode(ExportConfigurations.self, from: data)
+
+        XCTAssertEqual(decoded.destination, configs.destination)
+    }
+
+    private func encoded<T: Encodable>(_ value: T) throws -> String {
+        String(data: try JSONEncoder().encode(value), encoding: .utf8) ?? "{}"
+    }
+
+    // MARK: - Format bridges that cannot be derived
+
+    func test_everyFormat_roundTripsThroughItsAdvertisedToken() {
+        // The CLI parser switches over arbitrary user text, so it cannot be
+        // exhaustive. A format added to the enum but not to that switch would
+        // be unreachable from the CLI and MCP with nothing failing to compile.
+        for format in ExportFormat.allCases {
+            XCTAssertEqual(
+                ExportFormat(cliString: format.cliToken), format,
+                "\(format.rawValue) is not reachable by its advertised token '\(format.cliToken)'"
+            )
+            XCTAssertEqual(
+                ExportFormat(cliString: format.rawValue), format,
+                "\(format.rawValue) is not reachable by its raw value"
+            )
+        }
+    }
+
+    func test_advertisedTokensListsEveryFormat() {
+        // Regression: the CLI's "Valid formats:" line was hand-written and
+        // omitted pdf.
+        let advertised = ExportFormat.advertisedTokens
+        for format in ExportFormat.allCases {
+            XCTAssertTrue(
+                advertised.contains(format.cliToken),
+                "\(format.rawValue) is missing from the advertised list"
+            )
+        }
+    }
+
+    @available(macOS 13.0, *)
+    func test_everyFormat_hasAShortcutsOption() throws {
+        // AppIntents bridges two hand-maintained enums with a force unwrap
+        // (`ExportFormat(rawValue: self.rawValue)!`), so a mismatch traps inside
+        // a Shortcut instead of failing to build. Nothing could check this until
+        // AppIntents.swift was added to the app target: it was absent from
+        // project.pbxproj, so the whole Shortcuts integration compiled into
+        // nothing and the type did not exist.
+        for format in ExportFormat.allCases {
+            let option = ExportFormatOption(rawValue: format.rawValue)
+            XCTAssertNotNil(option, "\(format.rawValue) has no Shortcuts option; the force unwrap would trap")
+            XCTAssertEqual(option?.toExportFormat, format)
+        }
+        for option in ExportFormatOption.allCases {
+            XCTAssertNotNil(
+                ExportFormat(rawValue: option.rawValue),
+                "\(option.rawValue) has no matching ExportFormat"
+            )
+        }
+    }
+
+    func test_archiveFormats_haveDistinctExtensions() {
+        let extensions = ExportArchiveFormat.allCases.map(\.fileExtension)
+        XCTAssertEqual(Set(extensions).count, extensions.count, "archive extensions collide")
+        for archive in ExportArchiveFormat.allCases {
+            XCTAssertFalse(archive.displayName.isEmpty)
+            XCTAssertFalse(archive.systemImage.isEmpty)
+        }
+    }
+
+    // MARK: - Per-format HTML configuration
+
+    func test_htmlConfiguration_markdownLinksImagesRatherThanEmbeddingThem() {
+        // Regression: the app applied this and the CLI did not, so
+        // `--format markdown` wrote multi-megabyte base64 data URIs into the
+        // .md where the app wrote a relative link to the exported file.
+        var base = ExportConfigurations.default.html
+        base.embedImagesInline = true
+        base.linkEmbeddedImages = false
+
+        let markdown = htmlConfiguration(for: .markdown, base: base)
+        XCTAssertFalse(markdown.embedImagesInline)
+        XCTAssertTrue(markdown.linkEmbeddedImages)
+    }
+
+    func test_htmlConfiguration_plainTextCarriesNoImagesAtAll() {
+        var base = ExportConfigurations.default.html
+        base.embedImagesInline = true
+        base.linkEmbeddedImages = true
+
+        let txt = htmlConfiguration(for: .txt, base: base)
+        XCTAssertFalse(txt.embedImagesInline)
+        XCTAssertFalse(txt.linkEmbeddedImages)
+    }
+
+    func test_htmlConfiguration_leavesEveryOtherFormatAsConfigured() {
+        var base = ExportConfigurations.default.html
+        base.embedImagesInline = true
+        base.linkEmbeddedImages = true
+
+        for format in ExportFormat.allCases where format != .txt && format != .markdown {
+            let config = htmlConfiguration(for: format, base: base)
+            XCTAssertEqual(config.embedImagesInline, base.embedImagesInline, format.rawValue)
+            XCTAssertEqual(config.linkEmbeddedImages, base.linkEmbeddedImages, format.rawValue)
+        }
+    }
+
+    // MARK: - Format dispatch honours configuration
+
+    func test_textContent_usesTheConfiguredRTFFontAndLaTeXTemplate() {
+        // The shared dispatch hardcoded Helvetica 12 and the default template,
+        // so CLI, MCP and Shortcuts ignored the user's RTF and LaTeX settings.
+        let note = enexNote(html: "<html><body><p>Body</p></body></html>", title: "T")
+
+        let rtf = generateExportTextContent(
+            for: note, format: .rtf, folderName: nil, accountName: nil,
+            rtfFontFamily: "Courier", rtfFontSize: 18
+        )
+        XCTAssertTrue(rtf.contains("Courier"), "configured RTF font was ignored")
+        XCTAssertTrue(rtf.contains("36"), "configured RTF size was ignored (half-points)")
+
+        let tex = generateExportTextContent(
+            for: note, format: .tex, folderName: nil, accountName: nil,
+            latexTemplate: "CUSTOM-TEMPLATE APPLE_NOTES_EXPORTER_NOTE_CONTENT"
+        )
+        XCTAssertTrue(tex.hasPrefix("CUSTOM-TEMPLATE"), "configured LaTeX template was ignored")
+    }
+
+    func test_textContent_writesFolderAndAccountNamesWhenGiven() {
+        // The CLI passed nil for both, so its JSON/XML/CSV carried raw Core
+        // Data folder ids where the app wrote human-readable names.
+        let note = enexNote(html: "<html><body><p>Body</p></body></html>", title: "T")
+
+        let json = generateExportTextContent(
+            for: note, format: .json, folderName: "Work", accountName: "iCloud"
+        )
+        XCTAssertTrue(json.contains("Work"), json)
+        XCTAssertTrue(json.contains("iCloud"), json)
+        XCTAssertFalse(json.contains("\"folder\" : \"10\""), "fell back to the folder id")
+    }
+
+    // MARK: - Output extension recognition
+
+    func test_exportProducedExtensions_coversEveryFormatAndArchive() {
+        // Regression: the MCP copy of this set was hand-written as ["zip"] and
+        // silently missed "tar" when the TAR destination was added.
+        for format in ExportFormat.allCases {
+            XCTAssertTrue(
+                exportProducedExtensions.contains(format.fileExtension),
+                "\(format.rawValue) is not recognised as an output extension"
+            )
+        }
+        for archive in ExportArchiveFormat.allCases {
+            XCTAssertTrue(
+                exportProducedExtensions.contains(archive.fileExtension),
+                "\(archive.rawValue) is not recognised as an output extension"
+            )
+        }
+        XCTAssertFalse(exportProducedExtensions.contains("notes"))
+    }
+
+    // MARK: - Single file assembly
+
+    func test_concatenatedENEX_isOneDocumentWithOneRoot() {
+        // Regression: each note produced a whole <en-export> document and the
+        // parts were simply joined, so the file had N XML declarations and N
+        // root elements. No importer accepts that.
+        // Note that each note's CDATA content is itself an ENML document with
+        // its own <?xml?> declaration, which is correct; it is the *export*
+        // document that must occur exactly once.
+        let parts = (1...3).map { enexNote(html: "<body><p>Note \($0)</p></body>", title: "N\($0)").toENEXNoteElement() }
+        let document = ConcatenatedExport.assemble(parts, format: .enex)
+
+        XCTAssertTrue(document.hasPrefix("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"))
+        XCTAssertEqual(count(of: "<!DOCTYPE en-export", in: document), 1)
+        XCTAssertEqual(count(of: "<en-export ", in: document), 1)
+        XCTAssertEqual(count(of: "</en-export>", in: document), 1)
+        XCTAssertEqual(count(of: "<note>", in: document), 3)
+        XCTAssertEqual(count(of: "</note>", in: document), 3)
+        XCTAssertTrue(document.contains("evernote-export3.dtd"))
+    }
+
+    func test_concatenatedENEX_parsesAsXML() throws {
+        // The structural assertions above would still pass on a file that no
+        // parser accepts, so actually parse it.
+        let parts = (1...3).map {
+            enexNote(html: "<body><p>Note \($0) &amp; more</p></body>", title: "N & \($0)").toENEXNoteElement()
+        }
+        let document = ConcatenatedExport.assemble(parts, format: .enex)
+
+        let parser = XMLParser(data: try XCTUnwrap(document.data(using: .utf8)))
+        parser.shouldResolveExternalEntities = false
+        XCTAssertTrue(
+            parser.parse(),
+            "concatenated ENEX must be well formed: \(parser.parserError?.localizedDescription ?? "unknown")"
+        )
+    }
+
+    func test_concatenatedXMLAndOPML_areOneDocumentEach() throws {
+        // Found by the export matrix: ENEX was fixed but XML and OPML had the
+        // same defect, N complete documents joined into one file.
+        let notes = (1...3).map {
+            enexNote(html: "<html><body><p>Note \($0)</p></body></html>", title: "N\($0)")
+        }
+
+        let xml = ConcatenatedExport.assemble(notes.map { $0.toXMLNoteElement() }, format: .xml)
+        let xmlParser = XMLParser(data: try XCTUnwrap(xml.data(using: .utf8)))
+        XCTAssertTrue(xmlParser.parse(),
+                      "concatenated XML must parse: \(xmlParser.parserError?.localizedDescription ?? "")")
+        XCTAssertEqual(count(of: "<?xml", in: xml), 1)
+        XCTAssertEqual(count(of: "<note>", in: xml), 3)
+
+        let opml = ConcatenatedExport.assemble(notes.map { $0.toOPMLOutline() }, format: .opml)
+        let opmlParser = XMLParser(data: try XCTUnwrap(opml.data(using: .utf8)))
+        XCTAssertTrue(opmlParser.parse(),
+                      "concatenated OPML must parse: \(opmlParser.parserError?.localizedDescription ?? "")")
+        XCTAssertEqual(count(of: "<?xml", in: opml), 1)
+        XCTAssertEqual(count(of: "<opml", in: opml), 1)
+    }
+
+    func test_opmlEscapesEntitiesOnceNotTwice() {
+        // OPML stripped tags but not entities, then escaped, so a note
+        // containing "&" came out as "&amp;amp;".
+        let note = enexNote(html: "<html><body><p>Tom &amp; Jerry &lt;x&gt;</p></body></html>")
+        let opml = note.toOPML()
+
+        XCTAssertTrue(opml.contains("&amp; Jerry"), opml)
+        XCTAssertFalse(opml.contains("&amp;amp;"), "entity was escaped twice")
+        XCTAssertFalse(opml.contains("&amp;lt;"), "entity was escaped twice")
+    }
+
+    func test_singleNoteXML_stillHasNoteAsItsRoot() throws {
+        let xml = enexNote(html: "<html><body><p>Solo</p></body></html>").toXML()
+        let parser = XMLParser(data: try XCTUnwrap(xml.data(using: .utf8)))
+        XCTAssertTrue(parser.parse())
+        XCTAssertEqual(count(of: "<?xml", in: xml), 1)
+        XCTAssertFalse(xml.contains("<notes>"), "a single-note document keeps <note> as its root")
+    }
+
+    func test_singleNoteENEX_stillEmitsCompleteDocument() {
+        let enex = enexNote(html: "<body><p>Solo</p></body>").toENEX()
+        XCTAssertTrue(enex.hasPrefix("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"))
+        XCTAssertEqual(count(of: "<!DOCTYPE en-export", in: enex), 1)
+        XCTAssertEqual(count(of: "<en-export ", in: enex), 1)
+        XCTAssertEqual(count(of: "</en-export>", in: enex), 1)
+        XCTAssertEqual(count(of: "<note>", in: enex), 1)
+    }
+
+    func test_concatenatedJSONIsAnArrayAndCSVGetsItsHeader() {
+        // The CLI applied neither, so its single-file JSON was bare objects
+        // joined by a Markdown rule and its CSV had no header row.
+        let json = ConcatenatedExport.assemble(["{\"a\":1}", "{\"a\":2}"], format: .json)
+        XCTAssertTrue(json.hasPrefix("["))
+        XCTAssertTrue(json.hasSuffix("]"))
+        XCTAssertTrue(json.contains("},\n{"))
+
+        let csv = ConcatenatedExport.assemble(["r1", "r2"], format: .csv)
+        XCTAssertTrue(csv.hasPrefix(NotesNote.csvHeader()))
+        XCTAssertTrue(csv.contains("r1\nr2"))
+    }
+
+    func test_everyConcatenatableFormatHasANonEmptySeparator() {
+        // A format added later must not fall through to a default meant for
+        // prose and end up splicing a Markdown rule into a structured document.
+        for format in ExportFormat.allCases where format.supportsConcatenation {
+            XCTAssertFalse(
+                ConcatenatedExport.separator(for: format).isEmpty,
+                "\(format.rawValue) joins notes with an empty separator"
+            )
+        }
+    }
+
+    // MARK: - ENEX attachment resources
+
+    func test_enex_carriesLinkedAttachmentsAsResources() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let pdfBytes = Data("%PDF-1.4 fake".utf8)
+        let relativePath = "Note (Attachments)/report.pdf"
+        let fileURL = directory.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try pdfBytes.write(to: fileURL)
+
+        let html = "<body><p>See <a href=\"\(relativePath)\">report.pdf</a></p></body>"
+        let resources = linkedAttachmentResources(
+            linkedIn: html, paths: ["att-1": relativePath], outputRoot: directory)
+
+        XCTAssertEqual(resources.count, 1)
+        XCTAssertEqual(resources.first?.mime, "application/pdf")
+        XCTAssertEqual(resources.first?.filename, "report.pdf")
+
+        let enex = enexNote(html: html).toENEX(attachmentResources: resources)
+        XCTAssertTrue(enex.contains("<mime>application/pdf</mime>"))
+        XCTAssertTrue(enex.contains("<file-name>report.pdf</file-name>"))
+        XCTAssertTrue(enex.contains("<en-media"), "the link must become an en-media reference")
+        XCTAssertFalse(enex.contains("href="), "a link to a sibling file cannot survive the import")
+
+        // The en-media hash must be the MD5 of the resource bytes.
+        let hashes = matches(in: enex, pattern: #"<en-media[^>]*hash="([0-9a-f]{32})""#)
+        XCTAssertEqual(hashes.count, 1)
+        let payloads = matches(in: enex, pattern: #"<data encoding="base64">\s*([A-Za-z0-9+/=\s]+?)\s*</data>"#)
+        let raw = try XCTUnwrap(Data(base64Encoded: payloads[0].replacingOccurrences(of: "\n", with: "")))
+        XCTAssertEqual(raw, pdfBytes)
+    }
+
+    func test_enex_doesNotEmbedAttachmentsTheMarkupNeverLinks() throws {
+        // An inline image is already a resource; attaching the file copy too
+        // would put the same bytes on the note twice.
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let relativePath = "Note (Attachments)/photo.png"
+        let fileURL = directory.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG)).write(to: fileURL)
+
+        let html = "<body><img src=\"data:image/png;base64,\(Self.onePixelPNG)\"></body>"
+        let resources = linkedAttachmentResources(
+            linkedIn: html, paths: ["att-1": relativePath], outputRoot: directory)
+
+        XCTAssertTrue(resources.isEmpty, "nothing links to the file, so it must not be embedded again")
+
+        let enex = enexNote(html: html).toENEX(attachmentResources: resources)
+        XCTAssertEqual(count(of: "<resource>", in: enex), 1, "the image should appear exactly once")
     }
 
     private func matches(in text: String, pattern: String) -> [String] {

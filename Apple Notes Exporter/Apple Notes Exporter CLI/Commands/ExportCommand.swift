@@ -57,7 +57,7 @@ struct ExportCommand: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Output directory (will be created if it does not exist).")
     var output: String
 
-    @Option(name: .shortAndLong, help: "Export format: html, markdown (md), rtf, txt, tex, json, jsonl, xml, csv, opml, org, rst, adoc, docx, odt, epub, enex.")
+    @Option(name: .shortAndLong, help: "Export format: \(ExportFormat.advertisedTokens).")
     var format: String = "markdown"
 
     // Note selection filters
@@ -135,7 +135,7 @@ struct ExportCommand: AsyncParsableCommand {
     func run() async throws {
         // Validate format
         guard let exportFormat = ExportFormat(cliString: format) else {
-            CLIOutput.writeError(.repositoryError("Unknown format '\(format)'. Valid formats: html, markdown, rtf, txt, tex, json, jsonl, xml, csv, opml, org, rst, adoc, docx, odt, epub, enex."))
+            CLIOutput.writeError(.repositoryError("Unknown format '\(format)'. Valid formats: \(ExportFormat.advertisedTokens)."))
             throw ExitCode(2)
         }
 
@@ -179,9 +179,7 @@ struct ExportCommand: AsyncParsableCommand {
         // silently becomes a folder called "Notes.md" holding a .txt file.
         if concatenate && archiveFormat == nil {
             let ext = outputURL.pathExtension.lowercased()
-            let ours = Set(ExportFormat.allCases.map(\.fileExtension))
-                .union(ExportArchiveFormat.allCases.map(\.fileExtension))
-            if ours.contains(ext) && ext != exportFormat.fileExtension {
+            if exportProducedExtensions.contains(ext) && ext != exportFormat.fileExtension {
                 CLIOutput.writeError(.incompatibleOptions(
                     "--output ends in .\(ext) but the format is \(exportFormat.rawValue). Name it .\(exportFormat.fileExtension), or pass a directory to get \(concatenatedFileBaseName).\(exportFormat.fileExtension) inside it."
                 ))

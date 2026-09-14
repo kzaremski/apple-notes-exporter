@@ -21,6 +21,7 @@
 import Foundation
 import OSLog
 import Darwin
+import UniformTypeIdentifiers
 
 // MARK: - Logger Categories
 
@@ -597,6 +598,286 @@ func concatenatedExportURL(destination: URL, format: ExportFormat) -> URL {
         : destination.appendingPathComponent("\(concatenatedFileBaseName).\(format.fileExtension)")
 }
 
+/// The CSS cap that keeps an image inside a PDF's printable area.
+///
+/// Derived from the real page size and margins. The CLI used to assume a 36pt
+/// top and bottom margin regardless of configuration, so any non-default margin
+/// gave it a different cap from the app's.
+func imageHeightConstraint(forPDF: Bool, pageSize: CGSize?, margins: NSEdgeInsets?) -> String {
+    guard forPDF, let pageSize, let margins else { return "" }
+    // 20pt of slack so an image never touches the margin.
+    let safeMaxHeight = max(100, pageSize.height - margins.top - margins.bottom - 20)
+    return "max-height: \(safeMaxHeight)pt; height: auto;"
+}
+/// One note paired with where it is written and what it is called there.
+typealias NoteExportPlacement = (note: NotesNote, folderURL: URL, folderName: String, accountName: String)
+
+/// Flatten the account → folder → notes hierarchy into export order.
+///
+/// Sorted, because the hierarchy is a `Dictionary` and its iteration order
+/// varies between runs of the same process. That order decided the order of a
+/// Single File export and, through `buildInternalLinkPathMap`, which of two
+/// notes with the same title got the `(2)` suffix — so an export was not
+/// reproducible, and two engines exporting the same library disagreed.
+func flattenExportHierarchy(
+    _ hierarchy: [String: [String: [NotesNote]]],
+    outputRoot: URL
+) -> [NoteExportPlacement] {
+    var placements: [NoteExportPlacement] = []
+    for accountName in hierarchy.keys.sorted() {
+        guard let folders = hierarchy[accountName] else { continue }
+        let accountURL = outputRoot.appendingPathComponent(sanitizeExportFilename(accountName))
+        for folderPath in folders.keys.sorted() {
+            guard let folderNotes = folders[folderPath] else { continue }
+            let folderURL = accountURL.appendingPathComponent(folderPath)
+            for note in folderNotes {
+                placements.append((note: note, folderURL: folderURL,
+                                   folderName: folderPath, accountName: accountName))
+            }
+        }
+    }
+    return placements
+}
+
+/// The document used when a note's rich body cannot be generated.
+///
+/// Both engines had their own version of this — the app a styled document, the
+/// CLI a bare one — so every export of a note whose protobuf failed to decode
+/// differed between them in HTML, and in TeX, RTF and ENEX, which are all
+/// converted from it.
+func plaintextFallbackHTMLDocument(plaintext: String) -> String {
+    return """
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body { font-family: -apple-system, system-ui; font-size: 12pt; line-height: 1.6; }
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+        </style>
+    </head>
+    <body>
+        <pre>\(plaintext.htmlEscaped)</pre>
+    </body>
+    </html>
+    """
+}
+
+
+/// The HTML document a single exported note is wrapped in.
+///
+/// This existed as two copies that had drifted in ways no one would spot by
+/// eye: the app centred the content with `margin: <n> auto` and the CLI did
+/// not, so CLI and MCP output was left-aligned. Formatting differences also
+/// leaked downstream, because TeX, RTF and ENEX pass whitespace through from
+/// the HTML they are converted from.
+func noteHTMLDocument(
+    title: String,
+    created: String,
+    modified: String,
+    fontFamily: String,
+    fontSize: String,
+    margin: String,
+    imageConstraint: String,
+    body: String
+) -> String {
+    """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="created" content="\(created)">
+        <meta name="modified" content="\(modified)">
+        <title>\(title.htmlEscaped)</title>
+        <style>
+            body {
+                font-family: \(fontFamily);
+                font-size: \(fontSize);
+                max-width: 800px;
+                margin: \(margin) auto;
+                padding: 0 20px;
+                line-height: 1.0;
+            }
+            /* Remove all spacing around headings and paragraphs */
+            h1, h2, h3, h4, h5, h6, p { margin: 0; padding: 0; line-height: 1.0; }
+            /* Remove spacing around lists but keep indentation */
+            ul, ol { margin: 0; margin-left: 1.5em; padding: 0; padding-left: 0.5em; }
+            li { margin: 0; padding: 0; line-height: 1.0; }
+            img { max-width: 100%; \(imageConstraint) }
+        </style>
+    </head>
+    <body>
+        <div class="content">
+            \(body)
+        </div>
+    </body>
+    </html>
+    """
+}
+
+/// How the intermediate HTML should be generated for a given target format.
+///
+/// Most formats want exactly what the user configured. Two do not, and the app
+/// knew that while the CLI did not: `--format markdown` from the CLI wrote
+/// multi-megabyte base64 data URIs into the .md where the app wrote
+/// `![](Note (Attachments)/img.jpg)`.
+///
+/// Exhaustive on purpose: a new format has to state which side it falls on.
+func htmlConfiguration(for format: ExportFormat, base: HTMLConfiguration) -> HTMLConfiguration {
+    var config = base
+    switch format {
+    case .txt:
+        // Plain text has nowhere to put an image, so building the inline
+        // base64 only for the converter to strip it is wasted work.
+        config.embedImagesInline = false
+        config.linkEmbeddedImages = false
+    case .markdown:
+        // Markdown links the exported file rather than carrying the bytes.
+        config.embedImagesInline = false
+        config.linkEmbeddedImages = true
+    case .html, .pdf, .rtf, .tex, .json, .jsonl, .xml, .csv,
+         .opml, .org, .rst, .adoc, .enex, .docx, .odt, .epub:
+        break
+    }
+    return config
+}
+
+/// Every file extension this app writes, archives included.
+///
+/// Used to tell "the user named the output file" from "the user named a
+/// directory that happens to contain a dot". Derived rather than listed: the
+/// MCP copy of this set was written out by hand as `["zip"]` and silently
+/// missed `tar` when the TAR destination was added.
+let exportProducedExtensions: Set<String> = Set(ExportFormat.allCases.map(\.fileExtension))
+    .union(ExportArchiveFormat.allCases.map(\.fileExtension))
+
+/// The id set that "this note was deleted from Apple Notes" is judged against,
+/// or nil when pruning must be skipped this run.
+///
+/// Pruning deletes exported files, so it is only ever safe against the whole
+/// library. When the library could not be read, this returns nil rather than
+/// falling back to the current selection: judging deletion against a subset
+/// would delete the exported files of every note the user simply did not
+/// select this time.
+func prunePresentNoteIds(libraryNoteIds: Set<String>?, selectedNoteIds: [String]) -> Set<String>? {
+    guard let libraryNoteIds else { return nil }
+    return libraryNoteIds.union(selectedNoteIds)
+}
+
+/// Best-effort MIME type for a file extension, for embedding a file in a
+/// container format that has to declare one. Unknown types fall back to the
+/// generic binary type rather than being dropped.
+func mimeType(forPathExtension ext: String) -> String {
+    guard !ext.isEmpty,
+          let type = UTType(filenameExtension: ext.lowercased()),
+          let mime = type.preferredMIMEType else {
+        return "application/octet-stream"
+    }
+    return mime
+}
+
+/// Attachments the exported HTML links to, read back so they can be carried
+/// inside a single-document format instead of as sibling files.
+///
+/// Only paths the markup actually references are included: an image embedded
+/// inline is already a resource, and emitting it again would attach the same
+/// bytes to the note twice.
+func linkedAttachmentResources(
+    linkedIn html: String,
+    paths: [String: String],
+    outputRoot: URL?
+) -> [ENEXResource] {
+    guard let outputRoot else { return [] }
+    var seen = Set<String>()
+    var resources: [ENEXResource] = []
+
+    for relativePath in paths.values.sorted() {
+        guard seen.insert(relativePath).inserted else { continue }
+        guard html.contains("href=\"\(relativePath.htmlEscaped)\"")
+                || html.contains("href=\"\(relativePath)\"") else { continue }
+
+        let fileURL = outputRoot.appendingPathComponent(relativePath)
+        guard let data = try? Data(contentsOf: fileURL) else { continue }
+
+        resources.append(ENEXResource(
+            data: data,
+            mime: mimeType(forPathExtension: fileURL.pathExtension),
+            filename: fileURL.lastPathComponent,
+            relativePath: relativePath
+        ))
+    }
+    return resources
+}
+
+/// Joins per-note output into the one file a Single File export produces.
+///
+/// The app and the CLI each had their own copy of this, and they had drifted:
+/// the CLI had no case for ENEX (so notes were joined with a Markdown rule
+/// inside XML) and applied neither the JSON array nor the CSV header. Both now
+/// go through here so a format only has to be described once.
+enum ConcatenatedExport {
+
+    /// What goes between two notes. Formats that are a single structured
+    /// document get their separator from the syntax; prose formats get a
+    /// visible divider.
+    static func separator(for format: ExportFormat) -> String {
+        switch format {
+        case .html, .pdf:
+            return "\n<hr style=\"page-break-after: always;\">\n"
+        case .markdown:
+            return "\n\n---\n\n"
+        case .txt:
+            return "\n\n" + String(repeating: "=", count: 72) + "\n\n"
+        case .rtf:
+            return "\n\\page\n"
+        case .tex:
+            return "\n\n\\newpage\n\n"
+        case .json:
+            return ",\n"                                    // array elements
+        case .org:
+            return "\n\n" + String(repeating: "-", count: 72) + "\n\n"
+        case .rst:
+            return "\n\n" + String(repeating: "=", count: 72) + "\n\n"
+        case .adoc:
+            return "\n\n'''\n\n"                            // thematic break
+        case .jsonl, .xml, .csv, .opml, .enex:
+            return "\n"
+        case .docx, .odt, .epub:
+            return ""                                       // cannot be joined
+        }
+    }
+
+    /// The joined notes plus whatever wrapper the format's syntax requires.
+    ///
+    /// `parts` for ENEX must be `<note>` elements rather than whole documents,
+    /// since the `<en-export>` root is added here exactly once.
+    /// Exhaustive on purpose, and for the same reason as `separator(for:)`: a
+    /// format that needs a document wrapper must not get one by omission. This
+    /// is the shape that let concatenated ENEX ship as several XML documents
+    /// glued together.
+    static func assemble(_ parts: [String], format: ExportFormat) -> String {
+        let joined = parts.joined(separator: separator(for: format))
+        switch format {
+        case .json:
+            return "[\n" + joined + "\n]"
+        case .csv:
+            return NotesNote.csvHeader() + "\n" + joined
+        case .enex:
+            return ENEXDocument.wrap(joined)
+        case .xml:
+            return XMLNotesDocument.wrap(joined)
+        case .opml:
+            return OPMLDocument.wrap(joined)
+        case .html, .txt, .markdown, .rtf, .tex, .jsonl,
+             .org, .rst, .adoc:
+            return joined                       // no wrapper: notes just abut
+        case .pdf, .docx, .odt, .epub:
+            return joined                       // never concatenated; see supportsConcatenation
+        }
+    }
+}
+
 /// Default root name for an archive export: both the folder inside the archive
 /// and the archive itself when the user has not named one.
 let exportArchiveRootName = "Apple Notes Export"
@@ -974,6 +1255,212 @@ func attachmentExportLocation(
     return (dir, href)
 }
 
+// MARK: - Attachment Export
+
+/// One thing that happened while writing a note's attachments.
+///
+/// The exporter decides *what* happened and how it reads; each surface decides
+/// where it goes and at what threshold. Returning a buffer rather than taking a
+/// log closure is deliberate: the app's log is `@MainActor`, so a closure could
+/// only reach it by hopping, which would reorder these lines against the note's
+/// own. Draining the buffer at the call site preserves the original ordering.
+struct AttachmentExportEvent {
+    enum Severity { case info, warning }
+    let severity: Severity
+    let message: String
+}
+
+struct AttachmentExportResult {
+    /// Attachment id, and each gallery child id, to a path relative to the note.
+    var paths: [String: String] = [:]
+    /// In the order they occurred.
+    var events: [AttachmentExportEvent] = []
+    /// Attachments that could not be written. Already counted on the tracker.
+    var failures: Int = 0
+}
+
+/// Write a note's file attachments to disk and report where they landed.
+///
+/// The app, the CLI, the MCP server and the Shortcuts action all export
+/// attachments through here. This used to exist as four separate copies, and
+/// they drifted: the CLI's had no gallery expansion at all, so every gallery in
+/// a CLI, MCP or Shortcuts export silently lost its images.
+///
+/// Nothing here is isolated, so the file I/O runs off the main thread even when
+/// the app calls it.
+func exportNoteAttachments(
+    _ attachments: [NotesAttachment],
+    toDirectory directory: URL,
+    outputRoot: URL,
+    noteBaseName: String,
+    noteTitle: String,
+    creationDate: Date,
+    modificationDate: Date,
+    sharedAttachmentsFolder: Bool,
+    repository: NotesRepository,
+    tracker: ExportProgressTracker? = nil
+) async throws -> AttachmentExportResult {
+    var result = AttachmentExportResult()
+
+    let fileAttachments = filterFileAttachments(attachments)
+    guard !fileAttachments.isEmpty else { return result }
+
+    let attachmentsURL = attachmentExportLocation(
+        sharedDump: sharedAttachmentsFolder,
+        outputRoot: outputRoot,
+        noteDirectory: directory,
+        noteBaseName: noteBaseName,
+        filename: "placeholder"
+    ).directory
+    try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+
+    // One place to resolve collisions, so a fix cannot reach only half the
+    // branches again. The extension fallback matters: a base name with no
+    // extension previously became "name (2)." with a trailing dot.
+    var usedFilenames: [String: Int] = [:]
+    func claim(_ base: String) -> String {
+        guard let count = usedFilenames[base] else {
+            usedFilenames[base] = 1
+            return base
+        }
+        usedFilenames[base] = count + 1
+        let (name, ext) = splitExportFilename(base)
+        return "\(name) (\(count + 1)).\(ext.isEmpty ? "bin" : ext)"
+    }
+
+    func write(_ data: Data, as filename: String) throws -> String {
+        let loc = attachmentExportLocation(
+            sharedDump: sharedAttachmentsFolder,
+            outputRoot: outputRoot,
+            noteDirectory: directory,
+            noteBaseName: noteBaseName,
+            filename: filename
+        )
+        try FileManager.default.createDirectory(at: loc.directory, withIntermediateDirectories: true)
+        let fileURL = loc.directory.appendingPathComponent(filename)
+        try data.write(to: fileURL)
+        do {
+            try setExportFileTimestamps(fileURL, creationDate: creationDate, modificationDate: modificationDate)
+        } catch {
+            // The bytes are on disk and correct; only the dates are wrong. That
+            // is not worth failing the whole note over, which is what throwing
+            // from here used to do.
+            result.events.append(AttachmentExportEvent(
+                severity: .warning,
+                message: "Could not set timestamps on \(filename): \(error.localizedDescription)"
+            ))
+        }
+        return loc.relativePath
+    }
+
+    for attachment in fileAttachments {
+        try Task.checkCancellation()
+
+        // A gallery is a container and holds no bytes of its own, so asking the
+        // parser for its data fails by design; it has to be expanded.
+        if attachment.typeUTI == "com.apple.notes.gallery" {
+            do {
+                let children = try await repository.fetchGalleryChildren(
+                    galleryId: attachment.id, accountId: nil)
+                for child in children {
+                    let ext = child.filename.flatMap { fn in
+                        fn.components(separatedBy: ".").last.flatMap { e in e.count <= 5 && e != fn ? e : nil }
+                    } ?? child.uti.flatMap { NotesAttachment(id: child.id, typeUTI: $0, filename: nil).fileExtension }
+                      ?? detectFileExtension(from: child.data)
+                      ?? "jpg"
+                    let filename = claim(child.filename ?? "\(child.id).\(ext)")
+                    let relativePath = try write(child.data, as: filename)
+
+                    result.paths[child.id] = relativePath
+                    // The note's markup refers to the container, not the
+                    // children, so point it at the first one.
+                    if result.paths[attachment.id] == nil {
+                        result.paths[attachment.id] = relativePath
+                    }
+                    result.events.append(AttachmentExportEvent(
+                        severity: .info,
+                        message: "✓ Exported attachment: \(filename) for note '\(noteTitle)'"
+                    ))
+                }
+            } catch {
+                result.failures += 1
+                await tracker?.attachmentFailed()
+                result.events.append(AttachmentExportEvent(
+                    severity: .warning,
+                    message: "✗ Gallery expansion failed for \(attachment.id): \(error.localizedDescription)"
+                ))
+                Logger.noteExport.warning(
+                    "Gallery expansion failed for \(attachment.id, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+            continue
+        }
+
+        do {
+            let data = try await repository.fetchAttachment(id: attachment.id)
+
+            let baseFilename: String
+            if let filename = attachment.filename {
+                baseFilename = filename
+            } else if let fetched = await repository.fetchAttachmentFilename(id: attachment.id) {
+                baseFilename = fetched
+            } else {
+                let ext = attachment.fileExtension ?? detectFileExtension(from: data) ?? "bin"
+                baseFilename = "\(attachment.id).\(ext)"
+            }
+
+            let filename = claim(baseFilename)
+            result.paths[attachment.id] = try write(data, as: filename)
+            result.events.append(AttachmentExportEvent(
+                severity: .info,
+                message: "✓ Exported attachment: \(filename) for note '\(noteTitle)'"
+            ))
+        } catch {
+            result.failures += 1
+            await tracker?.attachmentFailed()
+            let details = attachmentFailureDetails(attachment, noteTitle: noteTitle, error: error)
+            result.events.append(AttachmentExportEvent(
+                severity: .warning,
+                message: "✗ Failed to export attachment - \(details)"
+            ))
+            Logger.noteExport.warning("Failed to export attachment: \(details, privacy: .public)")
+            // Carry on; one bad attachment must not cost the others.
+        }
+    }
+
+    do {
+        try setExportFileTimestamps(attachmentsURL, creationDate: creationDate, modificationDate: modificationDate)
+    } catch {
+        result.events.append(AttachmentExportEvent(
+            severity: .warning,
+            message: "Could not set timestamps on the attachments folder: \(error.localizedDescription)"
+        ))
+    }
+
+    return result
+}
+
+/// Everything known about a failed attachment, for the export log.
+private func attachmentFailureDetails(
+    _ attachment: NotesAttachment, noteTitle: String, error: Error
+) -> String {
+    var details = [
+        "Attachment ID: \(attachment.id)",
+        "Type: \(attachment.typeUTI)",
+        "Note: '\(noteTitle)'"
+    ]
+    if let filename = attachment.filename { details.append("Filename: \(filename)") }
+    details.append("Error: \(error.localizedDescription)")
+
+    let nsError = error as NSError
+    details.append("Domain: \(nsError.domain)")
+    details.append("Code: \(nsError.code)")
+    if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+        details.append("Underlying: \(underlying.localizedDescription)")
+    }
+    return details.joined(separator: ", ")
+}
+
 /// Marker comment written into generated folder index.html files so a later
 /// export can tell them apart from a note that happened to be titled "index".
 let htmlFolderIndexMarker = "apple-notes-exporter-folder-index"
@@ -1096,22 +1583,45 @@ func noteWithHTML(_ note: NotesNote, html: String) -> NotesNote {
 }
 
 /// Generate text content for a note in the given format.
-func generateExportTextContent(for note: NotesNote, format: ExportFormat, folderName: String?, accountName: String?) -> String {
+/// Render one note as text in the given format.
+///
+/// `concatenating` matters only for ENEX, where a Single File export needs the
+/// bare `<note>` element so every note can share one `<en-export>` root.
+/// `attachmentResources` carries file attachments that should travel inside the
+/// .enex instead of being linked as sibling files.
+func generateExportTextContent(
+    for note: NotesNote,
+    format: ExportFormat,
+    folderName: String?,
+    accountName: String?,
+    concatenating: Bool = false,
+    attachmentResources: [ENEXResource] = [],
+    rtfFontFamily: String = "Helvetica",
+    rtfFontSize: Double = 12,
+    latexTemplate: String = LaTeXConfiguration.defaultTemplate
+) -> String {
     switch format {
     case .html:     return note.htmlBody ?? ""
     case .txt:      return note.toPlainText()
     case .markdown: return note.toMarkdown()
-    case .rtf:      return note.toRTF(fontFamily: "Helvetica", fontSize: 12)
-    case .tex:      return note.toLatex(template: LaTeXConfiguration.defaultTemplate)
+    case .rtf:      return note.toRTF(fontFamily: rtfFontFamily, fontSize: rtfFontSize)
+    case .tex:      return note.toLatex(template: latexTemplate)
     case .json:     return note.toJSON(folderName: folderName, accountName: accountName)
     case .jsonl:    return note.toJSONL(folderName: folderName, accountName: accountName)
-    case .xml:      return note.toXML(folderName: folderName, accountName: accountName)
+    case .xml:
+        return concatenating
+            ? note.toXMLNoteElement(folderName: folderName, accountName: accountName)
+            : note.toXML(folderName: folderName, accountName: accountName)
     case .csv:      return note.toCSV(folderName: folderName, accountName: accountName)
-    case .opml:     return note.toOPML()
+    case .opml:
+        return concatenating ? note.toOPMLOutline() : note.toOPML()
     case .org:      return note.toOrg()
     case .rst:      return note.toRST()
     case .adoc:     return note.toAsciiDoc()
-    case .enex:     return note.toENEX()
+    case .enex:
+        return concatenating
+            ? note.toENEXNoteElement(attachmentResources: attachmentResources)
+            : note.toENEX(attachmentResources: attachmentResources)
     case .pdf, .docx, .odt, .epub:
         fatalError("Format \(format.rawValue) should not use generateExportTextContent()")
     }

@@ -174,12 +174,25 @@ class ExportViewModel: ObservableObject {
         // save panel, or a plain folder if they picked one before switching
         // modes. Either way the archive's own name becomes the root folder
         // inside it, so "Trip Notes.zip" expands to a "Trip Notes" folder.
+        // With Single File the destination may be the file the user named in the
+        // save panel. Attachments and folder paths still need a directory to work
+        // in, and that has to be the file's containing folder: using the file path
+        // itself buries the whole tree inside a folder called "Exported Notes.md"
+        // and the final write then collides with that folder.
+        let singleFileURL: URL? =
+            (!makeZip && configurations.concatenateOutput && format.supportsConcatenation)
+            ? concatenatedExportURL(destination: destinationURL, format: format)
+            : nil
+
         let archiveURL: URL
         let outputURL: URL
         if makeZip {
             let locations = archiveExportLocations(destination: destinationURL, format: archiveFormat ?? .zip)
             archiveURL = locations.archive
             outputURL = locations.staging
+        } else if let singleFileURL {
+            archiveURL = singleFileURL
+            outputURL = singleFileURL.deletingLastPathComponent()
         } else {
             archiveURL = destinationURL
             outputURL = destinationURL
@@ -194,9 +207,22 @@ class ExportViewModel: ObservableObject {
             // Pruning must be judged against the whole library, not this run's
             // selection, or exporting a subset would delete the files of every
             // note the user did not happen to select this time.
-            let libraryNoteIds: Set<String>? = isSync
-                ? Set(((try? await repository.fetchNotes(includeDeleted: false)) ?? []).map(\.id))
-                : nil
+            // nil means "the library is unknown", which suppresses pruning. A
+            // failed read must keep that meaning: collapsing it to an empty set
+            // would say "the library contains nothing", and every previously
+            // exported note would be pruned from disk as deleted.
+            var libraryNoteIds: Set<String>?
+            if isSync {
+                do {
+                    libraryNoteIds = Set(try await repository.fetchNotes(includeDeleted: false).map(\.id))
+                } catch {
+                    libraryNoteIds = nil
+                    log("⚠︎ Could not read the full library; deleted notes will not be pruned this run.")
+                    Logger.noteExport.warning(
+                        "Library read failed during incremental sync; skipping prune: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
             let existingManifest = isSync ? SyncManifest.load(from: outputURL) : nil
             let syncTracker: SyncManifestTracker?
 
@@ -230,12 +256,12 @@ class ExportViewModel: ObservableObject {
                 // Start from existing manifest so we preserve entries for unchanged notes
                 syncTracker = SyncManifestTracker(manifest: manifest)
                 if notesToExport.isEmpty {
-                    let presentIds = libraryNoteIds.map { $0.union(notes.map(\.id)) } ?? Set(notes.map(\.id))
-                    let removed = await syncTracker!.pruneDeleted(presentNoteIds: presentIds)
-                    for pruned in removed {
-                        deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
-                        log("✓ Pruned deleted note: \(pruned.entry.exportedPath)")
-                    }
+                    let removed: [SyncManifest.PrunedNote] = await pruneIfLibraryKnown(
+                        tracker: syncTracker!,
+                        libraryNoteIds: libraryNoteIds,
+                        selected: notes,
+                        outputRoot: outputURL
+                    )
                     await syncTracker!.finishRun(pruned: removed)
                     let updatedManifest = await syncTracker!.getManifest()
                     try updatedManifest.save(to: outputURL)
@@ -264,28 +290,23 @@ class ExportViewModel: ObservableObject {
             // Group notes by account and folder for organized output
             let hierarchy = try await organizeNotesByHierarchy(notesToExport)
 
-            // Create all directory structure upfront
-            for (accountName, folders) in hierarchy {
-                let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
-                try FileManager.default.createDirectory(at: accountURL, withIntermediateDirectories: true)
+            // Create all directory structure upfront. Single File writes one
+            // file and no tree, so creating it would leave an empty copy of the
+            // whole folder hierarchy sitting beside that file.
+            if singleFileURL == nil {
+                for (accountName, folders) in hierarchy {
+                    let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
+                    try FileManager.default.createDirectory(at: accountURL, withIntermediateDirectories: true)
 
-                for (folderPath, _) in folders {
-                    let folderURL = accountURL.appendingPathComponent(folderPath)
-                    try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+                    for (folderPath, _) in folders {
+                        let folderURL = accountURL.appendingPathComponent(folderPath)
+                        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+                    }
                 }
             }
 
             // Flatten notes with their folder paths for concurrent export
-            var notesWithPaths: [(note: NotesNote, folderURL: URL, folderName: String, accountName: String)] = []
-            for (accountName, folders) in hierarchy {
-                let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
-                for (folderPath, folderNotes) in folders {
-                    let folderURL = accountURL.appendingPathComponent(folderPath)
-                    for note in folderNotes {
-                        notesWithPaths.append((note: note, folderURL: folderURL, folderName: folderPath, accountName: accountName))
-                    }
-                }
-            }
+            let notesWithPaths = flattenExportHierarchy(hierarchy, outputRoot: outputURL)
 
             // Pre-allocate filenames so applenotes:note/UUID internal links can be
             // rewritten to actual relative file paths during rendering.
@@ -310,6 +331,8 @@ class ExportViewModel: ObservableObject {
                     includeAttachments: includeAttachments,
                     totalNotes: notesToExport.count,
                     outputURL: outputURL,
+                    fileURL: singleFileURL
+                        ?? concatenatedExportURL(destination: outputURL, format: format),
                     startTime: startTime
                 )
             } else {
@@ -332,24 +355,30 @@ class ExportViewModel: ObservableObject {
                 return
             }
 
-            // Set folder timestamps based on their notes
-            try await setExportFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
+            // Set folder timestamps based on their notes. Single File writes no
+            // folder tree, and stamping paths that were never created throws.
+            if singleFileURL == nil {
+                try await setExportFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
+            }
 
             // Prune deleted notes from manifest, remove their files, then save.
             if let syncTracker = syncTracker {
-                let presentIds = libraryNoteIds.map { $0.union(notes.map(\.id)) } ?? Set(notes.map(\.id))
-                let removed = await syncTracker.pruneDeleted(presentNoteIds: presentIds)
-                for pruned in removed {
-                    deleteExportedNoteFiles(outputRoot: outputURL, entry: pruned.entry)
-                    log("✓ Pruned deleted note: \(pruned.entry.exportedPath)")
-                }
+                let removed: [SyncManifest.PrunedNote] = await pruneIfLibraryKnown(
+                    tracker: syncTracker,
+                    libraryNoteIds: libraryNoteIds,
+                    selected: notes,
+                    outputRoot: outputURL
+                )
                 await syncTracker.finishRun(pruned: removed)
                 let finalManifest = await syncTracker.getManifest()
                 try finalManifest.save(to: outputURL)
                 log("✓ Sync manifest saved")
             }
 
-            if format == .html && configurations.html.writeFolderIndexes {
+            // Not when concatenating: there is no exported tree to index, and
+            // outputURL is then the folder the user saved the file into, so
+            // this would write an index.html into every directory under it.
+            if format == .html && !configurations.concatenateOutput && configurations.html.writeFolderIndexes {
                 try writeHTMLFolderIndexes(underRoot: outputURL)
             }
 
@@ -360,7 +389,7 @@ class ExportViewModel: ObservableObject {
                 log("✓ Wrote \(archiveURL.lastPathComponent)")
             }
 
-            lastExportArtifactURL = makeZip ? archiveURL : outputURL
+            lastExportArtifactURL = (makeZip || singleFileURL != nil) ? archiveURL : outputURL
 
             // Export completed successfully
             let successfulNotes = notesToExport.count - failedNotesCount
@@ -482,6 +511,7 @@ class ExportViewModel: ObservableObject {
         includeAttachments: Bool,
         totalNotes: Int,
         outputURL: URL,
+        fileURL: URL,
         startTime: Date
     ) async throws {
         var contentParts: [String] = []
@@ -505,20 +535,20 @@ class ExportViewModel: ObservableObject {
                 // Export attachments if needed (into the output root directory)
                 var attachmentPaths: [String: String] = [:]
                 if includeAttachments && note.hasAttachments {
-                    let tracker = ExportProgressTracker()
-                    let baseFilename = note.sanitizedFileName
-                    attachmentPaths = try await exportAttachmentsAndReturnPaths(
+                    let attachments = try await exportNoteAttachments(
                         note.attachments,
                         toDirectory: outputURL,
                         outputRoot: outputURL,
-                        noteBaseName: baseFilename,
+                        noteBaseName: note.sanitizedFileName,
                         noteTitle: note.title,
-                        noteCreationDate: note.creationDate,
-                        noteModificationDate: note.modificationDate,
-                        tracker: tracker
+                        creationDate: note.creationDate,
+                        modificationDate: note.modificationDate,
+                        sharedAttachmentsFolder: configurations.sharedAttachmentsFolder,
+                        repository: repository
                     )
-                    let stats = await tracker.getStats()
-                    failedAttachmentsCount += stats.failedAttachments
+                    attachmentPaths = attachments.paths
+                    failedAttachmentsCount += attachments.failures
+                    for event in attachments.events { log(event.message) }
                 }
 
                 // Generate content for this note
@@ -528,7 +558,8 @@ class ExportViewModel: ObservableObject {
                     attachmentPaths: attachmentPaths,
                     exportDirectory: outputURL,
                     folderName: noteWithPath.folderName,
-                    accountName: noteWithPath.accountName
+                    accountName: noteWithPath.accountName,
+                    concatenating: true
                 )
                 contentParts.append(content)
                 log("✓ Processed note: \(note.title)")
@@ -544,58 +575,12 @@ class ExportViewModel: ObservableObject {
             return
         }
 
-        // Join all content with format-appropriate separators
-        let separator: String
-        switch format {
-        case .html:
-            separator = "\n<hr style=\"page-break-after: always;\">\n"
-        case .pdf:
-            separator = "\n<hr style=\"page-break-after: always;\">\n"
-        case .markdown:
-            separator = "\n\n---\n\n"
-        case .txt:
-            separator = "\n\n" + String(repeating: "=", count: 72) + "\n\n"
-        case .rtf:
-            separator = "\n\\page\n"
-        case .tex:
-            separator = "\n\n\\newpage\n\n"
-        case .json:
-            separator = ",\n"  // Array elements separated by comma
-        case .jsonl:
-            separator = "\n"   // One object per line
-        case .xml:
-            separator = "\n"
-        case .csv:
-            separator = "\n"   // One row per line
-        case .opml:
-            separator = "\n"
-        case .org:
-            separator = "\n\n" + String(repeating: "-", count: 72) + "\n\n"
-        case .rst:
-            separator = "\n\n" + String(repeating: "=", count: 72) + "\n\n"
-        case .adoc:
-            separator = "\n\n'''\n\n"  // AsciiDoc thematic break
-        case .enex:
-            separator = "\n"
-        case .docx, .odt, .epub:
-            separator = ""  // Binary formats cannot be concatenated
-        }
+        // Join the notes and apply whatever wrapper the format needs, shared
+        // with the CLI so the two cannot describe a format differently.
+        let concatenated = ConcatenatedExport.assemble(contentParts, format: format)
 
-        var concatenated = contentParts.joined(separator: separator)
-
-        // Format-specific wrapping for concatenated output
-        if format == .json {
-            // Wrap JSON objects in an array
-            concatenated = "[\n" + concatenated + "\n]"
-        } else if format == .csv {
-            // Prepend CSV header row
-            concatenated = NotesNote.csvHeader() + "\n" + concatenated
-        }
-
-        // Write the single concatenated file
-        // The destination may be the file the user named in the save panel, or
-        // a directory to put the default name in.
-        let fileURL = concatenatedExportURL(destination: outputURL, format: format)
+        // Write the single concatenated file. The caller resolved the path,
+        // since it also had to derive the working directory from it.
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
         )
@@ -739,16 +724,22 @@ class ExportViewModel: ObservableObject {
             // Check for cancellation before processing attachments
             try Task.checkCancellation()
 
-            attachmentPaths = try await exportAttachmentsAndReturnPaths(
+            let attachments = try await exportNoteAttachments(
                 note.attachments,
                 toDirectory: directory,
                 outputRoot: outputRootURL ?? directory,
                 noteBaseName: uniqueBaseName,
                 noteTitle: note.title,
-                noteCreationDate: note.creationDate,
-                noteModificationDate: note.modificationDate,
+                creationDate: note.creationDate,
+                modificationDate: note.modificationDate,
+                sharedAttachmentsFolder: configurations.sharedAttachmentsFolder,
+                repository: repository,
                 tracker: tracker
             )
+            attachmentPaths = attachments.paths
+            // Drained here, back on the main actor, so these lines still
+            // precede the note's own "✓ Exported" line as they always did.
+            for event in attachments.events { log(event.message) }
         }
 
         // Handle PDF export separately (binary format, requires WebKit)
@@ -841,313 +832,6 @@ class ExportViewModel: ObservableObject {
         }
     }
 
-    /// Export attachments for a note and return a map of attachment IDs to relative paths
-    private func exportAttachmentsAndReturnPaths(
-        _ attachments: [NotesAttachment],
-        toDirectory directory: URL,
-        outputRoot: URL,
-        noteBaseName: String,
-        noteTitle: String,
-        noteCreationDate: Date,
-        noteModificationDate: Date,
-        tracker: ExportProgressTracker
-    ) async throws -> [String: String] {
-        var attachmentPaths: [String: String] = [:]
-
-        let fileAttachments = filterFileAttachments(attachments)
-
-        // Skip if no file attachments to export
-        guard !fileAttachments.isEmpty else {
-            return attachmentPaths
-        }
-
-        let attachmentsURL = attachmentExportLocation(
-            sharedDump: configurations.sharedAttachmentsFolder,
-            outputRoot: outputRoot,
-            noteDirectory: directory,
-            noteBaseName: noteBaseName,
-            filename: "placeholder"
-        ).directory
-        try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
-
-        // Track used filenames to handle collisions
-        var usedFilenames: [String: Int] = [:]
-
-        // Export each attachment
-        for attachment in fileAttachments {
-            try Task.checkCancellation()
-
-            // Expand gallery containers into child attachments
-            if attachment.typeUTI == "com.apple.notes.gallery" {
-                do {
-                    let children = try await repository.fetchGalleryChildren(
-                        galleryId: attachment.id, accountId: nil)
-                    for child in children {
-                        let ext = child.filename.flatMap { fn in
-                            fn.components(separatedBy: ".").last.flatMap { e in e.count <= 5 && e != fn ? e : nil }
-                        } ?? child.uti.flatMap { NotesAttachment(id: child.id, typeUTI: $0, filename: nil).fileExtension }
-                          ?? detectFileExtension(from: child.data)
-                          ?? "jpg"
-                        let childBase = child.filename ?? "\(child.id).\(ext)"
-
-                        let childFinal: String
-                        if let count = usedFilenames[childBase] {
-                            let (name, e) = splitExportFilename(childBase)
-                            childFinal = "\(name) (\(count + 1)).\(e)"
-                            usedFilenames[childBase] = count + 1
-                        } else {
-                            childFinal = childBase
-                            usedFilenames[childBase] = 1
-                        }
-
-                        let loc = attachmentExportLocation(
-                            sharedDump: configurations.sharedAttachmentsFolder,
-                            outputRoot: outputRoot,
-                            noteDirectory: directory,
-                            noteBaseName: noteBaseName,
-                            filename: childFinal
-                        )
-                        try FileManager.default.createDirectory(at: loc.directory, withIntermediateDirectories: true)
-                        let fileURL = loc.directory.appendingPathComponent(childFinal)
-                        try child.data.write(to: fileURL)
-                        try? setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
-
-                        let relativePath = loc.relativePath
-                        attachmentPaths[child.id] = relativePath
-                        if attachmentPaths[attachment.id] == nil {
-                            attachmentPaths[attachment.id] = relativePath
-                        }
-                    }
-                } catch {
-                    log("Gallery expansion failed for \(attachment.id): \(error.localizedDescription)")
-                    await tracker.attachmentFailed()
-                }
-                continue
-            }
-
-            do {
-                let data = try await repository.fetchAttachment(id: attachment.id)
-
-                let baseFilename: String
-                if let filename = attachment.filename {
-                    baseFilename = filename
-                } else if let fetchedFilename = await repository.fetchAttachmentFilename(id: attachment.id) {
-                    baseFilename = fetchedFilename
-                } else {
-                    let ext = attachment.fileExtension
-                        ?? detectFileExtension(from: data)
-                        ?? "bin"
-                    baseFilename = "\(attachment.id).\(ext)"
-                }
-
-                let finalFilename: String
-                if let count = usedFilenames[baseFilename] {
-                    let (name, ext) = splitExportFilename(baseFilename)
-                    finalFilename = "\(name) (\(count + 1)).\(ext)"
-                    usedFilenames[baseFilename] = count + 1
-                } else {
-                    finalFilename = baseFilename
-                    usedFilenames[baseFilename] = 1
-                }
-
-                let loc = attachmentExportLocation(
-                    sharedDump: configurations.sharedAttachmentsFolder,
-                    outputRoot: outputRoot,
-                    noteDirectory: directory,
-                    noteBaseName: noteBaseName,
-                    filename: finalFilename
-                )
-                try FileManager.default.createDirectory(at: loc.directory, withIntermediateDirectories: true)
-                let fileURL = loc.directory.appendingPathComponent(finalFilename)
-
-                // Write attachment to disk
-                try data.write(to: fileURL)
-
-                // Set attachment timestamps to match note's dates
-                try setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
-
-                log("✓ Exported attachment: \(finalFilename) for note '\(noteTitle)'")
-
-                attachmentPaths[attachment.id] = loc.relativePath
-
-            } catch {
-                await tracker.attachmentFailed()
-
-                // Build detailed error message for user logs
-                var errorDetails = [
-                    "Attachment ID: \(attachment.id)",
-                    "Type: \(attachment.typeUTI)",
-                    "Note: '\(noteTitle)'"
-                ]
-
-                if let filename = attachment.filename {
-                    errorDetails.append("Filename: \(filename)")
-                }
-
-                // Include detailed error information
-                errorDetails.append("Error: \(error.localizedDescription)")
-
-                if let nsError = error as NSError? {
-                    errorDetails.append("Domain: \(nsError.domain)")
-                    errorDetails.append("Code: \(nsError.code)")
-
-                    if let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
-                        errorDetails.append("Underlying: \(underlyingError.localizedDescription)")
-                    }
-                }
-
-                let detailedMessage = "✗ Failed to export attachment - " + errorDetails.joined(separator: ", ")
-                log(detailedMessage)
-                Logger.noteExport.warning("Failed to export attachment: \(errorDetails.joined(separator: ", "))")
-                // Continue with other attachments even if one fails
-            }
-        }
-
-        // Set attachments folder timestamps to match note's dates
-        if !fileAttachments.isEmpty {
-            try setExportFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
-        }
-
-        return attachmentPaths
-    }
-
-    /// Export attachments for a note (thread-safe version for concurrent export)
-    private func exportAttachmentsSafely(
-        _ attachments: [NotesAttachment],
-        toDirectory directory: URL,
-        noteBaseName: String,
-        noteTitle: String,
-        noteCreationDate: Date,
-        noteModificationDate: Date,
-        tracker: ExportProgressTracker
-    ) async throws {
-        let fileAttachments = filterFileAttachments(attachments)
-
-        // Skip if no file attachments to export
-        guard !fileAttachments.isEmpty else {
-            return
-        }
-
-        // Create attachments subfolder using the unique note base name
-        let attachmentsURL = directory.appendingPathComponent("\(noteBaseName) (Attachments)")
-        try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
-
-        // Track used filenames to handle collisions
-        var usedFilenames: [String: Int] = [:]
-
-        // Export each attachment
-        for attachment in fileAttachments {
-            try Task.checkCancellation()
-
-            // Expand gallery containers into child attachments
-            if attachment.typeUTI == "com.apple.notes.gallery" {
-                do {
-                    let children = try await repository.fetchGalleryChildren(
-                        galleryId: attachment.id, accountId: nil)
-                    for child in children {
-                        let ext = child.filename.flatMap { fn in
-                            fn.components(separatedBy: ".").last.flatMap { e in e.count <= 5 && e != fn ? e : nil }
-                        } ?? child.uti.flatMap { NotesAttachment(id: child.id, typeUTI: $0, filename: nil).fileExtension }
-                          ?? detectFileExtension(from: child.data)
-                          ?? "jpg"
-                        let childBase = child.filename ?? "\(child.id).\(ext)"
-
-                        let childFinal: String
-                        if let count = usedFilenames[childBase] {
-                            let (name, e) = splitExportFilename(childBase)
-                            childFinal = "\(name) (\(count + 1)).\(e)"
-                            usedFilenames[childBase] = count + 1
-                        } else {
-                            childFinal = childBase
-                            usedFilenames[childBase] = 1
-                        }
-
-                        let fileURL = attachmentsURL.appendingPathComponent(childFinal)
-                        try child.data.write(to: fileURL)
-                        try? setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
-
-                    }
-                } catch {
-                    log("Gallery expansion failed for \(attachment.id): \(error.localizedDescription)")
-                    await tracker.attachmentFailed()
-                }
-                continue
-            }
-
-            do {
-                let data = try await repository.fetchAttachment(id: attachment.id)
-
-                let baseFilename: String
-                if let filename = attachment.filename {
-                    baseFilename = filename
-                } else if let fetchedFilename = await repository.fetchAttachmentFilename(id: attachment.id) {
-                    baseFilename = fetchedFilename
-                } else {
-                    let ext = attachment.fileExtension
-                        ?? detectFileExtension(from: data)
-                        ?? "bin"
-                    baseFilename = "\(attachment.id).\(ext)"
-                }
-
-                let finalFilename: String
-                if let count = usedFilenames[baseFilename] {
-                    let (name, ext) = splitExportFilename(baseFilename)
-                    finalFilename = "\(name) (\(count + 1)).\(ext)"
-                    usedFilenames[baseFilename] = count + 1
-                } else {
-                    finalFilename = baseFilename
-                    usedFilenames[baseFilename] = 1
-                }
-
-                let fileURL = attachmentsURL.appendingPathComponent(finalFilename)
-
-                // Write attachment to disk
-                try data.write(to: fileURL)
-
-                // Set attachment timestamps to match note's dates
-                try setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
-
-                log("✓ Exported attachment: \(finalFilename) for note '\(noteTitle)'")
-
-            } catch {
-                await tracker.attachmentFailed()
-
-                // Build detailed error message for user logs
-                var errorDetails = [
-                    "Attachment ID: \(attachment.id)",
-                    "Type: \(attachment.typeUTI)",
-                    "Note: '\(noteTitle)'"
-                ]
-
-                if let filename = attachment.filename {
-                    errorDetails.append("Filename: \(filename)")
-                }
-
-                // Include detailed error information
-                errorDetails.append("Error: \(error.localizedDescription)")
-
-                if let nsError = error as NSError? {
-                    errorDetails.append("Domain: \(nsError.domain)")
-                    errorDetails.append("Code: \(nsError.code)")
-
-                    if let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
-                        errorDetails.append("Underlying: \(underlyingError.localizedDescription)")
-                    }
-                }
-
-                let detailedMessage = "✗ Failed to export attachment - " + errorDetails.joined(separator: ", ")
-                log(detailedMessage)
-                Logger.noteExport.warning("Failed to export attachment: \(errorDetails.joined(separator: ", "))")
-                // Continue with other attachments even if one fails
-            }
-        }
-
-        // Set attachments folder timestamps to match note's dates
-        if !fileAttachments.isEmpty {
-            try setExportFileTimestamps(attachmentsURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
-        }
-    }
-
     /// Cancel the current export operation
     func cancelExport() {
         shouldCancel = true
@@ -1157,6 +841,32 @@ class ExportViewModel: ObservableObject {
     func reset() {
         exportState = .idle
         shouldCancel = false
+    }
+
+    /// Prune manifest entries for notes that have left Apple Notes, and delete
+    /// their exported files.
+    ///
+    /// Only ever called with the full library. `libraryNoteIds` is nil when the
+    /// library could not be read, and pruning is then skipped entirely: judging
+    /// "deleted" against this run's selection would delete the exported files of
+    /// every note the user simply did not select.
+    private func pruneIfLibraryKnown(
+        tracker: SyncManifestTracker,
+        libraryNoteIds: Set<String>?,
+        selected: [NotesNote],
+        outputRoot: URL
+    ) async -> [SyncManifest.PrunedNote] {
+        guard let presentIds = prunePresentNoteIds(
+            libraryNoteIds: libraryNoteIds,
+            selectedNoteIds: selected.map(\.id)
+        ) else { return [] }
+
+        let removed = await tracker.pruneDeleted(presentNoteIds: presentIds)
+        for pruned in removed {
+            deleteExportedNoteFiles(outputRoot: outputRoot, entry: pruned.entry)
+            log("✓ Pruned deleted note: \(pruned.entry.exportedPath)")
+        }
+        return removed
     }
 
     /// Add a log entry (thread-safe)
@@ -1170,126 +880,52 @@ class ExportViewModel: ObservableObject {
     // MARK: - Content Generation
 
     /// Generate content for a note in the specified format
-    private func generateContent(for note: NotesNote, format: ExportFormat, attachmentPaths: [String: String] = [:], exportDirectory: URL? = nil, folderName: String? = nil, accountName: String? = nil) async throws -> String {
-        switch format {
-        case .html:
-            return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-        case .txt:
-            // Generate HTML first, then convert to plain text (includes tables, links, hashtags)
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = NotesNote(
-                id: note.id,
-                title: note.title,
-                plaintext: note.plaintext,
-                htmlBody: html,
-                creationDate: note.creationDate,
-                modificationDate: note.modificationDate,
-                folderId: note.folderId,
-                accountId: note.accountId,
-                attachments: note.attachments
-            )
-            return noteWithHTML.toPlainText()
-        case .markdown:
-            // For markdown and other formats, generate HTML first then convert
-            var markdownHTMLConfig = configurations.html
-            markdownHTMLConfig.embedImagesInline = false
-            markdownHTMLConfig.linkEmbeddedImages = true
-
-            let html = try await generateHTML(
-                for: note,
-                config: markdownHTMLConfig,
-                attachmentPaths: attachmentPaths,
-                exportDirectory: exportDirectory
-            )
-            
-            let noteWithHTML = NotesNote(
-                id: note.id,
-                title: note.title,
-                plaintext: note.plaintext,
-                htmlBody: html,
-                creationDate: note.creationDate,
-                modificationDate: note.modificationDate,
-                folderId: note.folderId,
-                accountId: note.accountId,
-                attachments: note.attachments
-            )
-            
-            return noteWithHTML.toMarkdown()
-        case .rtf:
-            // Generate HTML first, then convert to RTF
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = NotesNote(
-                id: note.id,
-                title: note.title,
-                plaintext: note.plaintext,
-                htmlBody: html,
-                creationDate: note.creationDate,
-                modificationDate: note.modificationDate,
-                folderId: note.folderId,
-                accountId: note.accountId,
-                attachments: note.attachments
-            )
-            return noteWithHTML.toRTF(
-                fontFamily: configurations.rtf.fontFamily.rtfFontName,
-                fontSize: configurations.rtf.fontSizePoints
-            )
-        case .tex:
-            // Generate HTML first, then convert to LaTeX
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = NotesNote(
-                id: note.id,
-                title: note.title,
-                plaintext: note.plaintext,
-                htmlBody: html,
-                creationDate: note.creationDate,
-                modificationDate: note.modificationDate,
-                folderId: note.folderId,
-                accountId: note.accountId,
-                attachments: note.attachments
-            )
-            return noteWithHTML.toLatex(template: configurations.latex.template)
-        case .pdf:
-            return try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-        case .json:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toJSON(folderName: folderName, accountName: accountName)
-        case .jsonl:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toJSONL(folderName: folderName, accountName: accountName)
-        case .xml:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toXML(folderName: folderName, accountName: accountName)
-        case .csv:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toCSV(folderName: folderName, accountName: accountName)
-        case .opml:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toOPML()
-        case .org:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toOrg()
-        case .rst:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toRST()
-        case .adoc:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toAsciiDoc()
-        case .enex:
-            let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
-            let noteWithHTML = noteWithBody(note, html: html)
-            return noteWithHTML.toENEX()
-        case .docx, .odt, .epub:
-            // Binary formats should use generateBinaryContent() instead
+    /// Render one note as text in the given format.
+    ///
+    /// This used to be a switch of its own, parallel to the CLI's. They drifted:
+    /// the app's honoured `concatenating` for ENEX only, so a Single File XML or
+    /// OPML export nested a whole document per note inside the wrapper, and the
+    /// per-format HTML settings were spelled out again in each case.
+    private func generateContent(
+        for note: NotesNote,
+        format: ExportFormat,
+        attachmentPaths: [String: String] = [:],
+        exportDirectory: URL? = nil,
+        folderName: String? = nil,
+        accountName: String? = nil,
+        concatenating: Bool = false
+    ) async throws -> String {
+        if format.isBinaryFormat {
             fatalError("Binary format \(format.rawValue) should not use generateContent(). Use generateBinaryContent() instead.")
         }
+        let html = try await generateHTML(
+            for: note,
+            attachmentPaths: attachmentPaths,
+            exportDirectory: exportDirectory,
+            targetFormat: format
+        )
+        // PDF is rendered from this HTML rather than converted from it.
+        if format == .html || format == .pdf { return html }
+        let enrichedNote = noteWithBody(note, html: html)
+
+        // A .enex is a single document, so a link to a sibling file does not
+        // survive the import. Anything the markup links to travels inside the
+        // note as a resource, the way images already do.
+        let resources = format == .enex
+            ? linkedAttachmentResources(linkedIn: html, paths: attachmentPaths, outputRoot: exportDirectory)
+            : []
+
+        return generateExportTextContent(
+            for: enrichedNote,
+            format: format,
+            folderName: folderName,
+            accountName: accountName,
+            concatenating: concatenating,
+            attachmentResources: resources,
+            rtfFontFamily: configurations.rtf.fontFamily.rtfFontName,
+            rtfFontSize: configurations.rtf.fontSizePoints,
+            latexTemplate: configurations.latex.template
+        )
     }
 
     /// Generate binary content for ZIP-based formats (DOCX, ODT, EPUB)
@@ -1346,6 +982,7 @@ class ExportViewModel: ObservableObject {
         forPDF: Bool = false,
         attachmentPaths: [String: String] = [:],
         exportDirectory: URL? = nil,
+        targetFormat: ExportFormat? = nil,
         pdfPageSize: CGSize? = nil,
         pdfMargins: NSEdgeInsets? = nil
     ) async throws -> String {
@@ -1354,7 +991,11 @@ class ExportViewModel: ObservableObject {
         dateFormatter.timeStyle = .short
 
         // Use provided config or default from configurations
-        let htmlConfig = config ?? configurations.html
+        // Shared with the CLI so the two cannot disagree about, say, whether
+        // Markdown carries its images inline.
+        let htmlConfig = config
+            ?? targetFormat.map { htmlConfiguration(for: $0, base: configurations.html) }
+            ?? configurations.html
 
         // Generate HTML on-demand during export if not already present
         let htmlBody: String
@@ -1367,22 +1008,7 @@ class ExportViewModel: ObservableObject {
             } catch {
                 // Fallback to plaintext if HTML generation fails (corrupted protobuf, etc.)
                 Logger.noteExport.warning("Failed to generate HTML for note \(note.id), falling back to plaintext: \(error)")
-                // Create a properly structured HTML document for PDF rendering
-                htmlBody = """
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <style>
-                        body { font-family: -apple-system, system-ui; font-size: 12pt; line-height: 1.6; }
-                        pre { white-space: pre-wrap; word-wrap: break-word; }
-                    </style>
-                </head>
-                <body>
-                    <pre>\(note.plaintext.htmlEscaped)</pre>
-                </body>
-                </html>
-                """
+                htmlBody = plaintextFallbackHTMLDocument(plaintext: note.plaintext)
             }
         }
 
@@ -1399,10 +1025,6 @@ class ExportViewModel: ObservableObject {
         // Strip the NoteHTMLGenerator's outer <html><body>...</body></html> wrapper
         // since we wrap the content in our own full HTML document below.
         var processedHTML = linkRewrittenBody
-        if let bodyStart = processedHTML.range(of: "<body>"),
-           let bodyEnd = processedHTML.range(of: "</body>") {
-            processedHTML = String(processedHTML[bodyStart.upperBound..<bodyEnd.lowerBound])
-        }
 
         // Only process attachments if we have a database connection and attachments to process
         if !note.attachments.isEmpty {
@@ -1424,6 +1046,12 @@ class ExportViewModel: ObservableObject {
             }
         }
 
+        // The note's own markup carries an <html><body> wrapper, which has to
+        // come off before it is embedded in the document built below. This used
+        // to run *before* attachment processing and was then overwritten by it,
+        // so any note with an attachment kept a nested <html><body>.
+        processedHTML = extractHTMLBody(processedHTML)
+
         // Build CSS for font and margin
         let fontFamily = htmlConfig.fontFamily.cssFontStack
         let fontSize = "\(htmlConfig.fontSizePoints)pt"
@@ -1432,74 +1060,22 @@ class ExportViewModel: ObservableObject {
         // For HTML export, use the configured margin value
         let marginValue = forPDF ? "0" : "\(htmlConfig.marginSize)\(htmlConfig.marginUnit.displayName)"
 
-        return """
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta name="created" content="\(dateFormatter.string(from: note.creationDate))">
-            <meta name="modified" content="\(dateFormatter.string(from: note.modificationDate))">
-            <title>\(note.title.htmlEscaped)</title>
-            <style>
-                body {
-                    font-family: \(fontFamily);
-                    font-size: \(fontSize);
-                    max-width: 800px;
-                    margin: \(marginValue) auto;
-                    padding: 0 20px;
-                    line-height: 1.0;
-                }
-                /* Remove all spacing around headings and paragraphs */
-                h1, h2, h3, h4, h5, h6, p {
-                    margin: 0;
-                    padding: 0;
-                    line-height: 1.0;
-                }
-                /* Remove spacing around lists but keep indentation */
-                ul, ol {
-                    margin: 0;
-                    margin-left: 1.5em;
-                    padding: 0;
-                    padding-left: 0.5em;
-                }
-                li {
-                    margin: 0;
-                    padding: 0;
-                    line-height: 1.0;
-                }
-                img {
-                    max-width: 100%;
-                    \(generateImageHeightConstraint(forPDF: forPDF, pageSize: pdfPageSize, margins: pdfMargins))
-                }
-            </style>
-        </head>
-        <body>
-            <div class="content">
-                \(processedHTML)
-            </div>
-        </body>
-        </html>
-        """
+        return noteHTMLDocument(
+            title: note.title,
+            created: dateFormatter.string(from: note.creationDate),
+            modified: dateFormatter.string(from: note.modificationDate),
+            fontFamily: fontFamily,
+            fontSize: fontSize,
+            margin: marginValue,
+            imageConstraint: imageHeightConstraint(
+                forPDF: forPDF, pageSize: pdfPageSize, margins: pdfMargins),
+            body: processedHTML
+        )
     }
 
     // MARK: - Helper Methods
 
     /// Generate CSS constraint for image height in PDFs
-    private func generateImageHeightConstraint(forPDF: Bool, pageSize: CGSize?, margins: NSEdgeInsets?) -> String {
-        guard forPDF, let pageSize = pageSize, let margins = margins else {
-            return "" // No constraint for non-PDF exports
-        }
-
-        // Calculate maximum image height: page height - top margin - bottom margin
-        // Use points as CSS unit (1 point = 1/72 inch, standard for PDF)
-        let maxHeight = pageSize.height - margins.top - margins.bottom
-
-        // Add some padding to ensure images don't touch margins (subtract 20pt)
-        let safeMaxHeight = max(100, maxHeight - 20)
-
-        return "max-height: \(safeMaxHeight)pt; height: auto;"
-    }
 
     /// Organize notes by account and folder hierarchy
     private func organizeNotesByHierarchy(_ notes: [NotesNote]) async throws -> [String: [String: [NotesNote]]] {

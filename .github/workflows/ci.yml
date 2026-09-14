@@ -10,7 +10,7 @@ jobs:
   build:
     name: Build
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -33,6 +33,30 @@ jobs:
             exit 1
           fi
           echo "✓ project file is valid and carries no signing settings"
+
+      - name: No orphaned source files
+        run: |
+          # A .swift file that is on disk but absent from project.pbxproj is
+          # compiled into nothing. It builds, it tests clean, and the feature it
+          # implements simply does not exist in the app. AppIntents.swift was in
+          # this state, so the whole Shortcuts integration shipped as dead text.
+          PROJ="Apple Notes Exporter/Apple Notes Exporter.xcodeproj/project.pbxproj"
+          orphans=0
+          while IFS= read -r f; do
+            base=$(basename "$f")
+            if ! grep -q "$base" "$PROJ"; then
+              echo "::error file=$f::$base is not referenced by project.pbxproj, so it is not compiled"
+              orphans=$((orphans+1))
+            fi
+          done < <(find "Apple Notes Exporter/Apple Notes Exporter" \
+                        "Apple Notes Exporter/Apple Notes Exporter CLI" \
+                        "Apple Notes Exporter/Apple Notes Exporter MCP" \
+                        -name '*.swift' -not -path '*/build/*')
+          if [ "$orphans" -gt 0 ]; then
+            echo "$orphans source file(s) are not in the project."
+            exit 1
+          fi
+          echo "✓ every source file is in the project"
 
       - name: Resolve Swift Package dependencies
         run: >
@@ -65,6 +89,22 @@ jobs:
       - name: Verify CLI help runs
         run: |
           "build/Build/Products/Debug/Apple Notes Exporter.app/Contents/SharedSupport/notes-export" --help > /dev/null
+
+      # Both suites are offline: the unit tests need no Notes database, and the
+      # CLI checks drive the embedded binary against fixtures. They reuse the
+      # Debug build above, so this costs only the run time.
+      - name: Unit tests
+        run: make test BUILD_DIR=build
+
+      - name: Offline CLI checks
+        run: make test-cli BUILD_DIR=build
+
+      # Exports all 18 formats into all 4 destinations against a generated
+      # fixture database and opens the results. This is the check that would
+      # have caught concatenated ENEX, XML and OPML shipping as several XML
+      # documents glued into one file.
+      - name: Export matrix
+        run: make test-matrix BUILD_DIR=build
 
       - name: Build Release (unsigned)
         run: >

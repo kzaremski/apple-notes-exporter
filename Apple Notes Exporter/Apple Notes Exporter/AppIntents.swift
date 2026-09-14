@@ -158,10 +158,10 @@ struct ExportNotesIntent: AppIntent {
     @Parameter(title: "Title Contains", description: "Only export notes whose title contains this text.", default: nil)
     var titleContains: String?
 
-    @Parameter(title: "Modified After", description: "Only export notes modified after this date.", default: nil)
+    @Parameter(title: "Modified After", description: "Only export notes modified after this date.")
     var modifiedAfter: Date?
 
-    @Parameter(title: "Modified Before", description: "Only export notes modified before this date.", default: nil)
+    @Parameter(title: "Modified Before", description: "Only export notes modified before this date.")
     var modifiedBefore: Date?
 
     @Parameter(title: "Include Recently Deleted", description: "Include notes in Recently Deleted.", default: false)
@@ -262,7 +262,15 @@ struct ExportNotesIntent: AppIntent {
             archiveURL = nil
             workingURL = destinationURL
         }
-        try FileManager.default.createDirectory(at: workingURL, withIntermediateDirectories: true)
+        // With Single File the destination may name the file itself, in which
+        // case the directory to create is the one containing it. Creating a
+        // directory at the file's own path makes the later write collide with
+        // it; the CLI and MCP have always done this and Shortcuts did not.
+        let directoryToCreate = (concatenate && archiveFormat == nil
+            && workingURL.pathExtension.lowercased() == exportFormat.fileExtension)
+            ? workingURL.deletingLastPathComponent()
+            : workingURL
+        try FileManager.default.createDirectory(at: directoryToCreate, withIntermediateDirectories: true)
 
         if resetSync {
             try? FileManager.default.removeItem(at: workingURL.appendingPathComponent(SyncManifest.filename))
@@ -458,10 +466,10 @@ struct ListNotesIntent: AppIntent {
     @Parameter(title: "Title Contains", description: "Only list notes whose title contains this text.", default: nil)
     var titleContains: String?
 
-    @Parameter(title: "Modified After", description: "Only list notes modified after this date.", default: nil)
+    @Parameter(title: "Modified After", description: "Only list notes modified after this date.")
     var modifiedAfter: Date?
 
-    @Parameter(title: "Modified Before", description: "Only list notes modified before this date.", default: nil)
+    @Parameter(title: "Modified Before", description: "Only list notes modified before this date.")
     var modifiedBefore: Date?
 
     @Parameter(title: "Include Recently Deleted", description: "Include notes in Recently Deleted.", default: false)
@@ -602,177 +610,4 @@ struct ANEShortcuts: AppShortcutsProvider {
             systemImageName: "folder"
         )
     }
-}
-
-// MARK: - Intent-specific Helpers
-
-@available(macOS 13.0, *)
-private func intentGenerateHTML(
-    for note: NotesNote,
-    repo: DatabaseNotesRepository,
-    databasePath: String,
-    attachmentPaths: [String: String],
-    exportDirectory: URL,
-    forPDF: Bool
-) async throws -> String {
-    let dateFormatter = DateFormatter()
-    dateFormatter.dateStyle = .medium
-    dateFormatter.timeStyle = .short
-
-    let htmlBody: String
-    if let existingHTML = note.htmlBody {
-        htmlBody = existingHTML
-    } else {
-        do {
-            htmlBody = try await repo.generateHTML(forNoteId: note.id)
-        } catch {
-            htmlBody = "<html><body><pre>\(note.plaintext.htmlEscaped)</pre></body></html>"
-        }
-    }
-
-    var processedHTML = htmlBody
-    if let bodyStart = processedHTML.range(of: "<body>"),
-       let bodyEnd = processedHTML.range(of: "</body>") {
-        processedHTML = String(processedHTML[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
-
-    if !note.attachments.isEmpty {
-        if let parserHandle = ane_open(databasePath) {
-            defer { ane_close(parserHandle) }
-            if let rawHandle = ane_get_sqlite_handle(parserHandle) {
-                let database = OpaquePointer(rawHandle)
-                let processor = HTMLAttachmentProcessor(database: database)
-                processedHTML = processor.processHTML(
-                    html: htmlBody,
-                    attachments: note.attachments,
-                    attachmentPaths: attachmentPaths,
-                    exportDirectory: exportDirectory.path,
-                    embedImages: true,
-                    linkEmbeddedImages: false
-                )
-            }
-        }
-    }
-
-    let fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-    let marginValue = forPDF ? "0" : "36pt auto"
-    let imageConstraint = forPDF ? "max-height: 648pt; height: auto;" : ""
-
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta name="created" content="\(dateFormatter.string(from: note.creationDate))">
-        <meta name="modified" content="\(dateFormatter.string(from: note.modificationDate))">
-        <title>\(note.title.htmlEscaped)</title>
-        <style>
-            body { font-family: \(fontFamily); font-size: 14pt; max-width: 800px; margin: \(marginValue); padding: 0 20px; line-height: 1.0; }
-            h1, h2, h3, h4, h5, h6, p { margin: 0; padding: 0; line-height: 1.0; }
-            ul, ol { margin: 0; margin-left: 1.5em; padding: 0; padding-left: 0.5em; }
-            li { margin: 0; padding: 0; line-height: 1.0; }
-            img { max-width: 100%; \(imageConstraint) }
-        </style>
-    </head>
-    <body>
-        <div class="content">\(processedHTML)</div>
-    </body>
-    </html>
-    """
-}
-
-@available(macOS 13.0, *)
-private func intentExportAttachments(
-    note: NotesNote,
-    toDirectory directory: URL,
-    noteBaseName: String,
-    repo: DatabaseNotesRepository
-) async throws -> [String: String] {
-    var attachmentPaths: [String: String] = [:]
-
-    let fileAttachments = filterFileAttachments(note.attachments)
-    guard !fileAttachments.isEmpty else { return [:] }
-
-    let attachmentsURL = directory.appendingPathComponent("\(noteBaseName) (Attachments)")
-    try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
-
-    var usedFilenames: [String: Int] = [:]
-
-    for attachment in fileAttachments {
-        // Expand gallery containers into child attachments
-        if attachment.typeUTI == "com.apple.notes.gallery" {
-            do {
-                let children = try await repo.fetchGalleryChildren(
-                    galleryId: attachment.id, accountId: nil)
-                for child in children {
-                    let ext = child.filename.flatMap { fn in
-                        fn.components(separatedBy: ".").last.flatMap { e in e.count <= 5 && e != fn ? e : nil }
-                    } ?? child.uti.flatMap { NotesAttachment(id: child.id, typeUTI: $0, filename: nil).fileExtension }
-                      ?? detectFileExtension(from: child.data)
-                      ?? "jpg"
-                    let childBase = child.filename ?? "\(child.id).\(ext)"
-
-                    let childFinal: String
-                    if let count = usedFilenames[childBase] {
-                        let (name, e) = splitExportFilename(childBase)
-                        childFinal = "\(name) (\(count + 1)).\(e)"
-                        usedFilenames[childBase] = count + 1
-                    } else {
-                        childFinal = childBase
-                        usedFilenames[childBase] = 1
-                    }
-
-                    let fileURL = attachmentsURL.appendingPathComponent(childFinal)
-                    try child.data.write(to: fileURL)
-                    try? setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
-
-                    let relativePath = "\(noteBaseName) (Attachments)/\(childFinal)"
-                    attachmentPaths[child.id] = relativePath
-                    if attachmentPaths[attachment.id] == nil {
-                        attachmentPaths[attachment.id] = relativePath
-                    }
-                }
-            } catch {
-                Logger.noteExport.warning("Gallery expansion failed for \(attachment.id): \(error.localizedDescription)")
-            }
-            continue
-        }
-
-        do {
-            let data = try await repo.fetchAttachment(id: attachment.id)
-
-            let baseFilename: String
-            if let filename = attachment.filename {
-                baseFilename = filename
-            } else if let fetchedFilename = await repo.fetchAttachmentFilename(id: attachment.id) {
-                baseFilename = fetchedFilename
-            } else {
-                let ext = attachment.fileExtension
-                    ?? detectFileExtension(from: data)
-                    ?? "bin"
-                baseFilename = "\(attachment.id).\(ext)"
-            }
-
-            let finalFilename: String
-            if let count = usedFilenames[baseFilename] {
-                let (name, ext) = splitExportFilename(baseFilename)
-                finalFilename = "\(name) (\(count + 1)).\(ext.isEmpty ? "bin" : ext)"
-                usedFilenames[baseFilename] = count + 1
-            } else {
-                finalFilename = baseFilename
-                usedFilenames[baseFilename] = 1
-            }
-
-            let fileURL = attachmentsURL.appendingPathComponent(finalFilename)
-            try data.write(to: fileURL)
-            try? setExportFileTimestamps(fileURL, creationDate: note.creationDate, modificationDate: note.modificationDate)
-
-            attachmentPaths[attachment.id] = "\(noteBaseName) (Attachments)/\(finalFilename)"
-        } catch {
-            Logger.noteExport.warning("Shortcut: attachment \(attachment.id) failed: \(error.localizedDescription)")
-        }
-    }
-
-    return attachmentPaths
 }

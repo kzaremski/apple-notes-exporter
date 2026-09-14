@@ -326,6 +326,39 @@ enum FilenameDateFormat: String, Codable, CaseIterable {
 
 // MARK: - Export Configuration Container
 
+/// Where and how an export is delivered: a layout (one tree of files, or one
+/// joined file) inside a container (a plain folder, or an archive).
+///
+/// The two axes are independent. A single joined file inside a .zip is a
+/// supported combination, so they cannot be collapsed into one enum.
+struct ExportDestination: Codable, Equatable {
+    enum Layout: String, Codable, CaseIterable {
+        case tree
+        case singleFile
+    }
+
+    enum Container: String, Codable, CaseIterable {
+        case folder
+        case zip
+        case tar
+    }
+
+    var layout: Layout = .tree
+    var container: Container = .folder
+
+    /// Exhaustive: a fourth container has to state its archive format rather
+    /// than silently resolving to "no archive".
+    var archiveFormat: ExportArchiveFormat? {
+        switch container {
+        case .folder: return nil
+        case .zip:    return .zip
+        case .tar:    return .tar
+        }
+    }
+
+    var isConcatenated: Bool { layout == .singleFile }
+}
+
 struct ExportConfigurations: Codable {
     var html: HTMLConfiguration
     var pdf: PDFConfiguration
@@ -339,19 +372,46 @@ struct ExportConfigurations: Codable {
     /// When true, write every attachment under <output>/Attachments/ instead of
     /// a per-note " (Attachments)" folder beside the note file.
     var sharedAttachmentsFolder: Bool = false
-    var concatenateOutput: Bool = false
     var incrementalSync: Bool = false
+
+    /// How the export is delivered.
+    ///
+    /// Replaces three independent booleans that could express nonsense
+    /// (`zipOutput && tarOutput`) and that four separate places each derived a
+    /// precedence from by hand. It is deliberately two axes rather than one
+    /// list of destinations: `--zip --concatenate` is a supported combination,
+    /// one joined file inside an archive, which a single four-case enum would
+    /// have made unrepresentable.
+    var destination: ExportDestination = ExportDestination()
+
+    // The booleans stay as accessors so call sites keep reading naturally,
+    // but they now project a state that cannot be self-contradictory.
+
+    var concatenateOutput: Bool {
+        get { destination.layout == .singleFile }
+        set { destination.layout = newValue ? .singleFile : .tree }
+    }
+
     /// Deliver the export as a single .zip instead of a folder tree.
-    var zipOutput: Bool = false
+    var zipOutput: Bool {
+        get { destination.container == .zip }
+        set {
+            if newValue { destination.container = .zip }
+            else if destination.container == .zip { destination.container = .folder }
+        }
+    }
+
     /// Deliver the export as a single .tar instead of a folder tree.
-    var tarOutput: Bool = false
+    var tarOutput: Bool {
+        get { destination.container == .tar }
+        set {
+            if newValue { destination.container = .tar }
+            else if destination.container == .tar { destination.container = .folder }
+        }
+    }
 
     /// The archive being produced, or nil when writing a folder tree.
-    var archiveFormat: ExportArchiveFormat? {
-        if zipOutput { return .zip }
-        if tarOutput { return .tar }
-        return nil
-    }
+    var archiveFormat: ExportArchiveFormat? { destination.archiveFormat }
 
     static var `default`: ExportConfigurations {
         ExportConfigurations(
@@ -383,7 +443,11 @@ struct ExportConfigurations: Codable {
     enum CodingKeys: String, CodingKey {
         case html, pdf, latex, rtf
         case addDateToFilename, filenameDateFormat, includeAttachments
-        case sharedAttachmentsFolder, concatenateOutput, incrementalSync, zipOutput, tarOutput
+        case sharedAttachmentsFolder, incrementalSync
+        case destination
+        // Read-only now: settings saved before the destination became one
+        // value still decode. Nothing writes them any more.
+        case concatenateOutput, zipOutput, tarOutput
     }
 
     init(html: HTMLConfiguration, pdf: PDFConfiguration, latex: LaTeXConfiguration, rtf: RTFConfiguration,
@@ -415,10 +479,22 @@ struct ExportConfigurations: Codable {
         filenameDateFormat = try c.decodeIfPresent(FilenameDateFormat.self, forKey: .filenameDateFormat) ?? .iso
         includeAttachments = try c.decodeIfPresent(Bool.self, forKey: .includeAttachments) ?? true
         sharedAttachmentsFolder = try c.decodeIfPresent(Bool.self, forKey: .sharedAttachmentsFolder) ?? false
-        concatenateOutput = try c.decodeIfPresent(Bool.self, forKey: .concatenateOutput) ?? false
         incrementalSync = try c.decodeIfPresent(Bool.self, forKey: .incrementalSync) ?? false
-        zipOutput = try c.decodeIfPresent(Bool.self, forKey: .zipOutput) ?? false
-        tarOutput = try c.decodeIfPresent(Bool.self, forKey: .tarOutput) ?? false
+
+        // Prefer the current key; fall back to the three legacy booleans so a
+        // ZIP or Single File choice saved by an earlier build survives.
+        if let stored = try c.decodeIfPresent(ExportDestination.self, forKey: .destination) {
+            destination = stored
+        } else {
+            let legacyZip = try c.decodeIfPresent(Bool.self, forKey: .zipOutput) ?? false
+            let legacyTar = try c.decodeIfPresent(Bool.self, forKey: .tarOutput) ?? false
+            let legacySingle = try c.decodeIfPresent(Bool.self, forKey: .concatenateOutput) ?? false
+            destination = ExportDestination(
+                layout: legacySingle ? .singleFile : .tree,
+                // zip won over tar when both were somehow set, so preserve that.
+                container: legacyZip ? .zip : (legacyTar ? .tar : .folder)
+            )
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -431,9 +507,10 @@ struct ExportConfigurations: Codable {
         try c.encode(filenameDateFormat, forKey: .filenameDateFormat)
         try c.encode(includeAttachments, forKey: .includeAttachments)
         try c.encode(sharedAttachmentsFolder, forKey: .sharedAttachmentsFolder)
-        try c.encode(concatenateOutput, forKey: .concatenateOutput)
         try c.encode(incrementalSync, forKey: .incrementalSync)
-        try c.encode(zipOutput, forKey: .zipOutput)
-        try c.encode(tarOutput, forKey: .tarOutput)
+        // One key, one source of truth. The legacy booleans are still decoded
+        // above but are no longer written, so they cannot come back and
+        // contradict the destination.
+        try c.encode(destination, forKey: .destination)
     }
 }

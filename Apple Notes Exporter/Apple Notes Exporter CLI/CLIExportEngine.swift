@@ -157,33 +157,29 @@ actor CLIExportEngine {
         // Build account/folder hierarchy for output directory structure
         let hierarchy = try await organizeNotesByHierarchy(notesToExport)
 
-        // Create directory structure
-        for (accountName, folders) in hierarchy {
-            let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
-            try FileManager.default.createDirectory(at: accountURL, withIntermediateDirectories: true)
-            for (folderPath, _) in folders {
-                let folderURL = accountURL.appendingPathComponent(folderPath)
-                try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        // Create directory structure. Concatenating writes one file and no
+        // tree, so creating it would leave empty account and folder directories
+        // beside the file, and when --output names the file it would create a
+        // directory at that exact path for the final write to collide with.
+        if !configurations.concatenateOutput {
+            for (accountName, folders) in hierarchy {
+                let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
+                try FileManager.default.createDirectory(at: accountURL, withIntermediateDirectories: true)
+                for (folderPath, _) in folders {
+                    let folderURL = accountURL.appendingPathComponent(folderPath)
+                    try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+                }
             }
         }
 
         // Flatten for concurrent export
-        var notesWithPaths: [(note: NotesNote, folderURL: URL)] = []
-        for (accountName, folders) in hierarchy {
-            let accountURL = outputURL.appendingPathComponent(sanitizeExportFilename(accountName))
-            for (folderPath, folderNotes) in folders {
-                let folderURL = accountURL.appendingPathComponent(folderPath)
-                for note in folderNotes {
-                    notesWithPaths.append((note: note, folderURL: folderURL))
-                }
-            }
-        }
+        let notesWithPaths = flattenExportHierarchy(hierarchy, outputRoot: outputURL)
 
         // Pre-allocate filenames so applenotes:note/UUID links can be rewritten
         // to real relative paths during rendering.
         self.internalLinkMap = buildInternalLinkPathMap(
             allNotes: notes,
-            notesWithPaths: notesWithPaths,
+            notesWithPaths: notesWithPaths.map { (note: $0.note, folderURL: $0.folderURL) },
             outputRoot: outputURL,
             format: format,
             addDatePrefix: configurations.addDateToFilename,
@@ -214,8 +210,12 @@ actor CLIExportEngine {
             )
         }
 
-        // Set folder timestamps
-        try await setExportFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
+        // Set folder timestamps. Concatenating creates no tree (see above), and
+        // stamping a directory that was never created throws, which would fail
+        // the run after the file had already been written successfully.
+        if !configurations.concatenateOutput {
+            try await setExportFolderTimestamps(hierarchy: hierarchy, outputURL: outputURL)
+        }
 
         // Prune deleted notes from the manifest, remove their files, then save.
         if let syncTracker = syncTracker {
@@ -254,7 +254,7 @@ actor CLIExportEngine {
     // MARK: - Concurrent Export
 
     private func exportNotesConcurrently(
-        _ notesWithPaths: [(note: NotesNote, folderURL: URL)],
+        _ notesWithPaths: [(note: NotesNote, folderURL: URL, folderName: String, accountName: String)],
         format: ExportFormat,
         includeAttachments: Bool,
         totalNotes: Int,
@@ -282,6 +282,8 @@ actor CLIExportEngine {
                         syncTracker: syncTracker,
                         overrideRelativePath: overridePath,
                         outputRootURL: outputRootURL,
+                        folderName: noteWithPath.folderName,
+                        accountName: noteWithPath.accountName,
                         verbose: verbose
                     )
                 }
@@ -304,6 +306,8 @@ actor CLIExportEngine {
                             syncTracker: syncTracker,
                             overrideRelativePath: overridePath,
                             outputRootURL: outputRootURL,
+                            folderName: noteWithPath.folderName,
+                            accountName: noteWithPath.accountName,
                             verbose: verbose
                         )
                     }
@@ -313,7 +317,7 @@ actor CLIExportEngine {
     }
 
     private func exportNotesConcatenated(
-        _ notesWithPaths: [(note: NotesNote, folderURL: URL)],
+        _ notesWithPaths: [(note: NotesNote, folderURL: URL, folderName: String, accountName: String)],
         format: ExportFormat,
         includeAttachments: Bool,
         outputURL: URL,
@@ -335,18 +339,31 @@ actor CLIExportEngine {
                     let attachmentRoot = outputURL.pathExtension.lowercased() == format.fileExtension
                         ? outputURL.deletingLastPathComponent()
                         : outputURL
-                    attachmentPaths = try await exportAttachmentsAndReturnPaths(
+                    let attachments = try await exportNoteAttachments(
                         note.attachments, toDirectory: attachmentRoot,
                         outputRoot: attachmentRoot,
                         noteBaseName: note.sanitizedFileName,
                         noteTitle: note.title,
-                        noteCreationDate: note.creationDate,
-                        noteModificationDate: note.modificationDate,
+                        creationDate: note.creationDate,
+                        modificationDate: note.modificationDate,
+                        sharedAttachmentsFolder: configurations.sharedAttachmentsFolder,
+                        repository: repository,
                         tracker: tracker
                     )
+                    attachmentPaths = attachments.paths
+                    report(attachments.events, verbose: verbose)
                 }
-                let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: outputURL)
+                let content = try await generateContent(
+                    for: note, format: format,
+                    attachmentPaths: attachmentPaths, exportDirectory: outputURL,
+                    folderName: noteWithPath.folderName, accountName: noteWithPath.accountName,
+                    concatenating: true
+                )
                 contentParts.append(content)
+                // Without this the run reports "exported: 0" while writing a
+                // perfectly good file, so anything scripting the CLI sees a
+                // successful export as having done nothing.
+                _ = await tracker.noteCompleted()
                 if verbose { CLIOutput.writeStderr("✓ Processed: \(note.title)") }
             } catch {
                 await tracker.noteFailed()
@@ -354,17 +371,10 @@ actor CLIExportEngine {
             }
         }
 
-        let separator: String
-        switch format {
-        case .html:     separator = "\n<hr style=\"page-break-after: always;\">\n"
-        case .markdown: separator = "\n\n---\n\n"
-        case .txt:      separator = "\n\n" + String(repeating: "=", count: 72) + "\n\n"
-        case .rtf:      separator = "\n\\page\n"
-        case .tex:      separator = "\n\n\\newpage\n\n"
-        default:        separator = "\n\n---\n\n"
-        }
-
-        let concatenated = contentParts.joined(separator: separator)
+        // Shared with the app: this switch used to have no ENEX case, so notes
+        // were joined with a Markdown rule inside an XML document, and neither
+        // the JSON array nor the CSV header was applied.
+        let concatenated = ConcatenatedExport.assemble(contentParts, format: format)
         // The destination may be the file the user named or a directory to put
         // the default name in, matching how the app resolves it.
         let fileURL = concatenatedExportURL(destination: outputURL, format: format)
@@ -376,6 +386,15 @@ actor CLIExportEngine {
 
     // MARK: - Single Note Export
 
+    /// Send attachment events to stderr. Warnings always: a failed attachment
+    /// used to be swallowed entirely by the CLI, with nothing printed even
+    /// under --verbose.
+    private func report(_ events: [AttachmentExportEvent], verbose: Bool) {
+        for event in events where verbose || event.severity == .warning {
+            CLIOutput.writeStderr(event.message)
+        }
+    }
+
     private func exportNoteSafelyWrapped(
         _ note: NotesNote,
         toDirectory directory: URL,
@@ -385,6 +404,8 @@ actor CLIExportEngine {
         syncTracker: SyncManifestTracker?,
         overrideRelativePath: String?,
         outputRootURL: URL?,
+        folderName: String,
+        accountName: String,
         verbose: Bool
     ) async {
         do {
@@ -393,7 +414,10 @@ actor CLIExportEngine {
                 includeAttachments: includeAttachments,
                 tracker: tracker, syncTracker: syncTracker,
                 overrideRelativePath: overrideRelativePath,
-                outputRootURL: outputRootURL
+                outputRootURL: outputRootURL,
+                folderName: folderName,
+                accountName: accountName,
+                verbose: verbose
             )
             _ = await tracker.noteCompleted()
             if verbose { CLIOutput.writeStderr("✓ Exported: \(note.title)") }
@@ -411,7 +435,10 @@ actor CLIExportEngine {
         tracker: ExportProgressTracker,
         syncTracker: SyncManifestTracker?,
         overrideRelativePath: String?,
-        outputRootURL: URL?
+        outputRootURL: URL?,
+        folderName: String,
+        accountName: String,
+        verbose: Bool
     ) async throws {
         try Task.checkCancellation()
 
@@ -446,15 +473,19 @@ actor CLIExportEngine {
         var attachmentPaths: [String: String] = [:]
         if includeAttachments && note.hasAttachments {
             try Task.checkCancellation()
-            attachmentPaths = try await exportAttachmentsAndReturnPaths(
+            let attachments = try await exportNoteAttachments(
                 note.attachments, toDirectory: directory,
                 outputRoot: outputRootURL ?? directory,
                 noteBaseName: uniqueBaseName,
                 noteTitle: note.title,
-                noteCreationDate: note.creationDate,
-                noteModificationDate: note.modificationDate,
+                creationDate: note.creationDate,
+                modificationDate: note.modificationDate,
+                sharedAttachmentsFolder: configurations.sharedAttachmentsFolder,
+                repository: repository,
                 tracker: tracker
             )
+            attachmentPaths = attachments.paths
+            report(attachments.events, verbose: verbose)
         }
 
         if format == .pdf {
@@ -463,7 +494,11 @@ actor CLIExportEngine {
             let data = try await generateBinaryContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
             try data.write(to: fileURL)
         } else {
-            let content = try await generateContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
+            let content = try await generateContent(
+                for: note, format: format,
+                attachmentPaths: attachmentPaths, exportDirectory: directory,
+                folderName: folderName, accountName: accountName
+            )
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
             if format == .enex,
                let warning = ENEXLimits.oversizeWarning(title: note.title, byteCount: content.utf8.count) {
@@ -491,91 +526,6 @@ actor CLIExportEngine {
 
     // MARK: - Attachment Export
 
-    private func exportAttachmentsAndReturnPaths(
-        _ attachments: [NotesAttachment],
-        toDirectory directory: URL,
-        outputRoot: URL,
-        noteBaseName: String,
-        noteTitle: String,
-        noteCreationDate: Date,
-        noteModificationDate: Date,
-        tracker: ExportProgressTracker
-    ) async throws -> [String: String] {
-        var attachmentPaths: [String: String] = [:]
-
-        let nonFileAttachmentPrefixes = [
-            "com.apple.notes.table",
-            "com.apple.notes.inlinetextattachment",
-            "com.apple.notes.inlinehashtagattachment",
-            "com.apple.notes.inlinementionattachment",
-            "public.url"
-        ]
-
-        let fileAttachments = attachments.filter { attachment in
-            !nonFileAttachmentPrefixes.contains { attachment.typeUTI.hasPrefix($0) }
-        }
-
-        guard !fileAttachments.isEmpty else { return attachmentPaths }
-
-        let plan = attachmentExportLocation(
-            sharedDump: configurations.sharedAttachmentsFolder,
-            outputRoot: outputRoot,
-            noteDirectory: directory,
-            noteBaseName: noteBaseName,
-            filename: "placeholder"
-        )
-        try FileManager.default.createDirectory(at: plan.directory, withIntermediateDirectories: true)
-
-        var usedFilenames: [String: Int] = [:]
-
-        for attachment in fileAttachments {
-            try Task.checkCancellation()
-            do {
-                let data = try await repository.fetchAttachment(id: attachment.id)
-
-                let baseFilename: String
-                if let filename = attachment.filename {
-                    baseFilename = filename
-                } else if let fetchedFilename = await repository.fetchAttachmentFilename(id: attachment.id) {
-                    baseFilename = fetchedFilename
-                } else {
-                    baseFilename = "\(attachment.id).\(attachment.fileExtension ?? "bin")"
-                }
-
-                let finalFilename: String
-                if let count = usedFilenames[baseFilename] {
-                    let (name, ext) = splitExportFilename(baseFilename)
-                    finalFilename = "\(name) (\(count + 1)).\(ext)"
-                    usedFilenames[baseFilename] = count + 1
-                } else {
-                    finalFilename = baseFilename
-                    usedFilenames[baseFilename] = 1
-                }
-
-                let loc = attachmentExportLocation(
-                    sharedDump: configurations.sharedAttachmentsFolder,
-                    outputRoot: outputRoot,
-                    noteDirectory: directory,
-                    noteBaseName: noteBaseName,
-                    filename: finalFilename
-                )
-                try FileManager.default.createDirectory(at: loc.directory, withIntermediateDirectories: true)
-                let fileURL = loc.directory.appendingPathComponent(finalFilename)
-                try data.write(to: fileURL)
-                try setExportFileTimestamps(fileURL, creationDate: noteCreationDate, modificationDate: noteModificationDate)
-
-                attachmentPaths[attachment.id] = loc.relativePath
-            } catch {
-                await tracker.attachmentFailed()
-            }
-        }
-
-        if !fileAttachments.isEmpty {
-            try setExportFileTimestamps(plan.directory, creationDate: noteCreationDate, modificationDate: noteModificationDate)
-        }
-
-        return attachmentPaths
-    }
 
     // MARK: - Content Generation
 
@@ -646,15 +596,40 @@ actor CLIExportEngine {
         for note: NotesNote,
         format: ExportFormat,
         attachmentPaths: [String: String] = [:],
-        exportDirectory: URL? = nil
+        exportDirectory: URL? = nil,
+        folderName: String? = nil,
+        accountName: String? = nil,
+        concatenating: Bool = false
     ) async throws -> String {
         if format == .pdf {
             throw CLIError.unsupportedFormat(format)
         }
-        let html = try await generateHTML(for: note, attachmentPaths: attachmentPaths, exportDirectory: exportDirectory)
+        let html = try await generateHTML(
+            for: note,
+            attachmentPaths: attachmentPaths,
+            exportDirectory: exportDirectory,
+            targetFormat: format
+        )
         if format == .html { return html }
         let enrichedNote = noteWithHTML(note, html: html)
-        return generateExportTextContent(for: enrichedNote, format: format, folderName: nil, accountName: nil)
+
+        // A .enex is a single document, so anything the markup links to has to
+        // travel inside it rather than as a sibling file.
+        let resources = format == .enex
+            ? linkedAttachmentResources(linkedIn: html, paths: attachmentPaths, outputRoot: exportDirectory)
+            : []
+
+        return generateExportTextContent(
+            for: enrichedNote,
+            format: format,
+            folderName: folderName,
+            accountName: accountName,
+            concatenating: concatenating,
+            attachmentResources: resources,
+            rtfFontFamily: configurations.rtf.fontFamily.rtfFontName,
+            rtfFontSize: configurations.rtf.fontSizePoints,
+            latexTemplate: configurations.latex.template
+        )
     }
 
     private func generateHTML(
@@ -662,9 +637,13 @@ actor CLIExportEngine {
         attachmentPaths: [String: String] = [:],
         exportDirectory: URL? = nil,
         forPDF: Bool = false,
+        targetFormat: ExportFormat? = nil,
         embedImagesInlineOverride: Bool? = nil
     ) async throws -> String {
-        var htmlConfig = configurations.html
+        // Shared with the app so the two cannot disagree about, say, whether
+        // Markdown carries its images inline.
+        var htmlConfig = targetFormat.map { htmlConfiguration(for: $0, base: configurations.html) }
+            ?? configurations.html
         if let override = embedImagesInlineOverride {
             htmlConfig.embedImagesInline = override
             if override { htmlConfig.linkEmbeddedImages = false }
@@ -678,7 +657,7 @@ actor CLIExportEngine {
                 htmlBody = try await repository.generateHTML(forNoteId: note.id)
             } catch {
                 // Fallback to plaintext
-                htmlBody = "<html><body><pre>\(note.plaintext.htmlEscaped)</pre></body></html>"
+                htmlBody = plaintextFallbackHTMLDocument(plaintext: note.plaintext)
             }
         }
 
@@ -711,56 +690,38 @@ actor CLIExportEngine {
             }
         }
 
+        // Strip the note's own <html><body> wrapper before embedding it in the
+        // document below. The CLI never did this, so its HTML nested a second
+        // document inside the first where the app's did not.
+        processedHTML = extractHTMLBody(processedHTML)
+
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
 
         let fontFamily = htmlConfig.fontFamily.cssFontStack
         let fontSize = "\(htmlConfig.fontSizePoints)pt"
-        let marginValue = forPDF ? "0" : "\(htmlConfig.marginSize)\(htmlConfig.marginUnit.displayName) auto"
+        let marginValue = forPDF ? "0" : "\(htmlConfig.marginSize)\(htmlConfig.marginUnit.displayName)"
 
-        // For PDF, constrain image height to stay within the safe print area
-        let imageConstraint: String
-        if forPDF {
-            // Conservative: assume a default 36pt top+bottom margin, then 20pt padding.
-            let dims = configurations.pdf.pageSize.dimensions
-            let safe = max(100, dims.height - 72 - 20)
-            imageConstraint = "max-height: \(Int(safe))pt; height: auto;"
-        } else {
-            imageConstraint = ""
-        }
+        // Shared with the app, from the configured page size and margins. This
+        // used to assume a 36pt top and bottom margin regardless of settings.
+        let pdfDimensions = configurations.pdf.pageSize.dimensions
+        let imageConstraint = imageHeightConstraint(
+            forPDF: forPDF,
+            pageSize: CGSize(width: pdfDimensions.width, height: pdfDimensions.height),
+            margins: configurations.pdf.htmlConfiguration.toNSEdgeInsets()
+        )
 
-        return """
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta name="created" content="\(dateFormatter.string(from: note.creationDate))">
-            <meta name="modified" content="\(dateFormatter.string(from: note.modificationDate))">
-            <title>\(note.title.htmlEscaped)</title>
-            <style>
-                body {
-                    font-family: \(fontFamily);
-                    font-size: \(fontSize);
-                    max-width: 800px;
-                    margin: \(marginValue);
-                    padding: 0 20px;
-                    line-height: 1.0;
-                }
-                h1, h2, h3, h4, h5, h6, p { margin: 0; padding: 0; line-height: 1.0; }
-                ul, ol { margin: 0; margin-left: 1.5em; padding: 0; padding-left: 0.5em; }
-                li { margin: 0; padding: 0; line-height: 1.0; }
-                img { max-width: 100%; \(imageConstraint) }
-            </style>
-        </head>
-        <body>
-            <div class="content">
-                \(processedHTML)
-            </div>
-        </body>
-        </html>
-        """
+        return noteHTMLDocument(
+            title: note.title,
+            created: dateFormatter.string(from: note.creationDate),
+            modified: dateFormatter.string(from: note.modificationDate),
+            fontFamily: fontFamily,
+            fontSize: fontSize,
+            margin: marginValue,
+            imageConstraint: imageConstraint,
+            body: processedHTML
+        )
     }
 
     // MARK: - Hierarchy Organisation

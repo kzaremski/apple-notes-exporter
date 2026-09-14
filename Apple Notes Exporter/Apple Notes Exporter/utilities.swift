@@ -24,23 +24,3 @@ import Foundation
 
 let APP_VERSION = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1"
 
-let OUTPUT_FORMATS: [String] = [
-    "HTML",
-    "PDF",
-    "TEX",
-    "MD",
-    "RTF",
-    "TXT",
-    "JSON",
-    "JSONL",
-    "XML",
-    "CSV",
-    "OPML",
-    "ORG",
-    "RST",
-    "ADOC",
-    "DOCX",
-    "ODT",
-    "EPUB",
-    "ENEX",
-]

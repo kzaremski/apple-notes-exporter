@@ -40,93 +40,6 @@ struct AppleNotesExporterView: View {
     @EnvironmentObject var notesViewModel: NotesViewModel
     @EnvironmentObject var exportViewModel: ExportViewModel
 
-    /// Get description for each export format
-    private func formatDescription(for format: String) -> String {
-        switch format {
-        case "HTML":
-            return "Standard web format with full styling and images."
-        case "PDF":
-            return "Portable document format for sharing and printing."
-        case "MD":
-            return "Markdown format for documentation, wikis, and Obsidian, etc."
-        case "TXT":
-            return "Plain text format compatible with any editor."
-        case "RTF":
-            return "Rich text format for word processors."
-        case "TEX":
-            return "For typesetting within LaTeX software."
-        case "JSON":
-            return "Structured note data for APIs and data processing."
-        case "JSONL":
-            return "One JSON object per line for LLM and RAG pipelines."
-        case "XML":
-            return "Structured note data in XML for interoperability."
-        case "CSV":
-            return "Flat table format for spreadsheets and databases."
-        case "OPML":
-            return "Outline format for RSS readers and outliners."
-        case "ORG":
-            return "Emacs Org-mode format for notes and task management."
-        case "RST":
-            return "reStructuredText for Sphinx and Python documentation."
-        case "ADOC":
-            return "AsciiDoc format for technical documentation."
-        case "DOCX":
-            return "Microsoft Word format for Office and Google Docs."
-        case "ODT":
-            return "OpenDocument text for LibreOffice and open-source editors."
-        case "EPUB":
-            return "E-book format for Kindle, Apple Books, and readers."
-        case "ENEX":
-            return "Evernote export format for import into Evernote, Joplin, etc."
-        default:
-            return ""
-        }
-    }
-
-    /// Get SF Symbol icon name for each export format
-    private func formatIcon(for format: String) -> String {
-        switch format {
-        case "HTML":
-            return "globe"
-        case "PDF":
-            return "doc.richtext"
-        case "TEX":
-            return "function"
-        case "MD":
-            return "number"
-        case "RTF":
-            return "doc.text"
-        case "TXT":
-            return "text.alignleft"
-        case "JSON":
-            return "curlybraces"
-        case "JSONL":
-            return "list.dash"
-        case "XML":
-            return "chevron.left.forwardslash.chevron.right"
-        case "CSV":
-            return "rectangle.split.3x3"
-        case "OPML":
-            return "list.bullet.indent"
-        case "ORG":
-            return "leaf"
-        case "RST":
-            return "text.book.closed"
-        case "ADOC":
-            return "doc.plaintext"
-        case "DOCX":
-            return "doc.fill"
-        case "ODT":
-            return "doc.text.fill"
-        case "EPUB":
-            return "book"
-        case "ENEX":
-            return "square.and.arrow.up.on.square"
-        default:
-            return "doc"
-        }
-    }
 
     func setProgressWindow(_ state: Bool?) {
         self.sharedState.showProgressWindow = state ?? !self.sharedState.showProgressWindow
@@ -410,23 +323,24 @@ struct AppleNotesExporterView: View {
 
             // Format selector grid: 3 rows of 6
             let columns = 6
-            let rows = Int(ceil(Double(OUTPUT_FORMATS.count) / Double(columns)))
+            let formats = ExportFormat.allCases
+            let rows = Int(ceil(Double(formats.count) / Double(columns)))
             VStack(spacing: 4) {
                 ForEach(0..<rows, id: \.self) { row in
                     HStack(spacing: selectionTileSpacing) {
                         ForEach(0..<columns, id: \.self) { col in
                             let index = row * columns + col
-                            if index < OUTPUT_FORMATS.count {
-                                let format = OUTPUT_FORMATS[index]
-                                let isSelected = outputFormat == format
+                            if index < formats.count {
+                                let format = formats[index]
+                                let isSelected = outputFormat == format.rawValue
                                 Button(action: {
-                                    outputFormat = format
+                                    outputFormat = format.rawValue
                                 }) {
                                     VStack(spacing: 3) {
-                                        Image(systemName: formatIcon(for: format))
+                                        Image(systemName: format.systemImage)
                                             .font(.system(size: 16))
                                             .frame(height: 20)
-                                        Text(format)
+                                        Text(format.rawValue)
                                             .font(.system(size: 11, weight: .medium))
                                     }
                                     .frame(maxWidth: .infinity)
@@ -459,20 +373,20 @@ struct AppleNotesExporterView: View {
             HStack {
                 Image(systemName: "info.circle")
                     .foregroundColor(.secondary)
-                Text(formatDescription(for: outputFormat))
+                Text(ExportFormat(rawValue: outputFormat)?.blurb ?? "")
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .animation(.easeInOut(duration: 0.15), value: outputFormat)
 
                 Button {
-                    let configurableFormats = ["HTML", "PDF", "TEX", "RTF"]
-                    if configurableFormats.contains(outputFormat) {
+                    
+                    if ExportFormat(rawValue: outputFormat)?.hasOptionsSheet == true {
                         showFormatOptionsView = true
                     } else {
                         showConfigurePopover = true
                     }
                 } label: {
-                    let isConfigurable = ["HTML", "PDF", "TEX", "RTF"].contains(outputFormat)
+                    let isConfigurable = ExportFormat(rawValue: outputFormat)?.hasOptionsSheet == true
                     Image(systemName: "gear")
                         .foregroundColor(isConfigurable ? .primary : .secondary)
                         .opacity(isConfigurable ? 1.0 : 0.8)

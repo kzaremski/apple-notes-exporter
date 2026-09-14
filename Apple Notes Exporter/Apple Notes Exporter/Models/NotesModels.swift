@@ -522,6 +522,95 @@ enum ExportFormat: String, CaseIterable {
         rawValue.lowercased()
     }
 
+    /// The token this format is advertised by on the command line and in the
+    /// MCP schema. `init?(cliString:)` also accepts aliases; this is the one
+    /// we print.
+    ///
+    /// Exists so the lists of formats in help text, error messages and the MCP
+    /// JSON schema can be derived rather than hand-written. They were
+    /// hand-written, and had drifted: the CLI's "Valid formats:" line omitted
+    /// pdf entirely.
+    var cliToken: String {
+        switch self {
+        case .markdown:
+            return "markdown"                   // "md" is accepted as an alias
+        case .html, .pdf, .rtf, .txt, .tex, .json, .jsonl, .xml, .csv,
+             .opml, .org, .rst, .adoc, .docx, .odt, .epub, .enex:
+            return fileExtension
+        }
+    }
+
+    /// Every format's advertised token, comma separated.
+    static var advertisedTokens: String {
+        allCases.map(\.cliToken).joined(separator: ", ")
+    }
+
+    /// One-line description shown under the format grid.
+    ///
+    /// Lives on the enum, exhaustively, because the view switched over the raw
+    /// `String` with `default: return ""` -- a newly added format silently got
+    /// a blank description and nothing failed to build.
+    var blurb: String {
+        switch self {
+        case .html:     return "Standard web format with full styling and images."
+        case .pdf:      return "Portable document format for sharing and printing."
+        case .markdown: return "Markdown format for documentation, wikis, and Obsidian, etc."
+        case .txt:      return "Plain text format compatible with any editor."
+        case .rtf:      return "Rich text format for word processors."
+        case .tex:      return "For typesetting within LaTeX software."
+        case .json:     return "Structured note data for APIs and data processing."
+        case .jsonl:    return "One JSON object per line for LLM and RAG pipelines."
+        case .xml:      return "Structured note data in XML for interoperability."
+        case .csv:      return "Flat table format for spreadsheets and databases."
+        case .opml:     return "Outline format for RSS readers and outliners."
+        case .org:      return "Emacs Org-mode format for notes and task management."
+        case .rst:      return "reStructuredText for Sphinx and Python documentation."
+        case .adoc:     return "AsciiDoc format for technical documentation."
+        case .docx:     return "Microsoft Word format for Office and Google Docs."
+        case .odt:      return "OpenDocument text for LibreOffice and open-source editors."
+        case .epub:     return "E-book format for Kindle, Apple Books, and readers."
+        case .enex:     return "Evernote export format for import into Evernote, Joplin, etc."
+        }
+    }
+
+    /// SF Symbol for the format tile. Exhaustive for the same reason as
+    /// `blurb`: the view's `default: return "doc"` hid new formats behind a
+    /// generic icon.
+    var systemImage: String {
+        switch self {
+        case .html:     return "globe"
+        case .pdf:      return "doc.richtext"
+        case .tex:      return "function"
+        case .markdown: return "number"
+        case .rtf:      return "doc.text"
+        case .txt:      return "text.alignleft"
+        case .json:     return "curlybraces"
+        case .jsonl:    return "list.dash"
+        case .xml:      return "chevron.left.forwardslash.chevron.right"
+        case .csv:      return "rectangle.split.3x3"
+        case .opml:     return "list.bullet.indent"
+        case .org:      return "leaf"
+        case .rst:      return "text.book.closed"
+        case .adoc:     return "doc.plaintext"
+        case .docx:     return "doc.fill"
+        case .odt:      return "doc.text.fill"
+        case .epub:     return "book"
+        case .enex:     return "square.and.arrow.up.on.square"
+        }
+    }
+
+    /// Whether this format has an options sheet in the app. The list was
+    /// written out twice, three lines apart, in the view.
+    var hasOptionsSheet: Bool {
+        switch self {
+        case .html, .pdf, .tex, .rtf:
+            return true
+        case .markdown, .txt, .json, .jsonl, .xml, .csv,
+             .opml, .org, .rst, .adoc, .docx, .odt, .epub, .enex:
+            return false
+        }
+    }
+
     /// Whether every note can be joined into one file.
     ///
     /// The packaged formats (PDF, DOCX, ODT, EPUB) are containers with their
@@ -532,11 +621,15 @@ enum ExportFormat: String, CaseIterable {
     var supportsConcatenation: Bool { !isBinaryFormat }
 
     /// Whether this format produces binary (Data) output instead of text (String)
+    /// Exhaustive on purpose. Under a `default:` a newly added packaged format
+    /// would silently be treated as text and written with `String.write(to:)`,
+    /// and `supportsConcatenation` above would silently call it joinable.
     var isBinaryFormat: Bool {
         switch self {
         case .pdf, .docx, .odt, .epub:
             return true
-        default:
+        case .html, .txt, .markdown, .rtf, .tex, .json, .jsonl, .xml, .csv,
+             .opml, .org, .rst, .adoc, .enex:
             return false
         }
     }

@@ -93,6 +93,17 @@ extension NotesNote {
         return HTMLToXMLConverter.convert(self, folderName: folderName, accountName: accountName)
     }
 
+    /// The `<note>` element alone; a concatenated export shares one root.
+    func toXMLNoteElement(folderName: String? = nil, accountName: String? = nil) -> String {
+        return HTMLToXMLConverter.noteElement(self, folderName: folderName, accountName: accountName)
+    }
+
+    /// This note as a single OPML `<outline>`; a concatenated export shares one
+    /// `<opml>` document.
+    func toOPMLOutline() -> String {
+        return HTMLToOPMLConverter.noteOutline(self)
+    }
+
     /// Convert note to CSV row format
     /// Returns a single CSV row: title, folder, account, created, modified, body, attachment count
     /// Call `csvHeader()` separately for the header row
@@ -131,8 +142,15 @@ extension NotesNote {
 
     /// Convert note to ENEX (Evernote export) format
     /// Compatible with Evernote, Joplin, and other importers
-    func toENEX() -> String {
-        return HTMLToENEXConverter.convert(self)
+    func toENEX(attachmentResources: [ENEXResource] = []) -> String {
+        return ENEXDocument.wrap(HTMLToENEXConverter.noteElement(self, attachmentResources: attachmentResources))
+    }
+
+    /// The `<note>` element alone, without the surrounding `<en-export>`
+    /// document. Concatenated output needs every note under one root, so the
+    /// wrapper is emitted once by the caller rather than once per note.
+    func toENEXNoteElement(attachmentResources: [ENEXResource] = []) -> String {
+        return HTMLToENEXConverter.noteElement(self, attachmentResources: attachmentResources)
     }
 
     /// Convert note to DOCX format (returns raw ZIP data)
@@ -258,13 +276,19 @@ private struct HTMLToJSONLConverter {
 // MARK: - XML Converter
 
 private struct HTMLToXMLConverter {
+    /// A whole document for one note.
     static func convert(_ note: NotesNote, folderName: String?, accountName: String?) -> String {
+        XMLNotesDocument.wrapSingle(noteElement(note, folderName: folderName, accountName: accountName))
+    }
+
+    /// The `<note>` element alone, so a concatenated export can put every note
+    /// under one root instead of writing several documents into one file.
+    static func noteElement(_ note: NotesNote, folderName: String?, accountName: String?) -> String {
         let plainText = HTMLToPlainTextConverter.convert(note.htmlBody ?? "")
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
         var lines: [String] = []
-        lines.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
         lines.append("<note>")
         lines.append("  <title>\(escapeXML(note.title))</title>")
         lines.append("  <body>\(escapeXML(plainText))</body>")
@@ -334,6 +358,7 @@ private struct HTMLToCSVConverter {
 // MARK: - OPML Converter
 
 private struct HTMLToOPMLConverter {
+    /// A whole document for one note.
     static func convert(_ note: NotesNote) -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
@@ -347,23 +372,28 @@ private struct HTMLToOPMLConverter {
         lines.append("    <dateModified>\(dateFormatter.string(from: note.modificationDate))</dateModified>")
         lines.append("  </head>")
         lines.append("  <body>")
-
-        // Parse HTML body into outline elements
-        let outlineLines = parseHTMLToOutline(note.htmlBody ?? "")
-        for line in outlineLines {
-            lines.append("    \(line)")
-        }
-
+        lines.append(noteOutline(note))
         lines.append("  </body>")
         lines.append("</opml>")
 
         return lines.joined(separator: "\n")
     }
 
-    private static func parseHTMLToOutline(_ html: String) -> [String] {
-        guard let bodyContent = extractBodyContent(html) else {
-            return ["<outline text=\"\(HTMLToXMLConverter.escapeXML(html))\" />"]
+    /// One note as a single `<outline>` holding its lines, so a concatenated
+    /// export is one OPML document with one outline per note rather than a
+    /// stack of complete documents.
+    static func noteOutline(_ note: NotesNote) -> String {
+        var lines: [String] = []
+        lines.append("    <outline text=\"\(HTMLToXMLConverter.escapeXML(note.title))\">")
+        for line in parseHTMLToOutline(note.htmlBody ?? "") {
+            lines.append("      \(line)")
         }
+        lines.append("    </outline>")
+        return lines.joined(separator: "\n")
+    }
+
+    private static func parseHTMLToOutline(_ html: String) -> [String] {
+        let bodyContent = extractHTMLBody(html)
 
         var outlines: [String] = []
 
@@ -375,8 +405,10 @@ private struct HTMLToOPMLConverter {
             .components(separatedBy: "\n")
 
         for line in lines {
+            // Decode before escaping below, or the escapes get escaped: the
+            // note's "&" arrived here as "&amp;" and went out as "&amp;amp;".
             var stripped = line.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            stripped = stripped.trimmingCharacters(in: .whitespacesAndNewlines)
+            stripped = decodeHTMLEntities(stripped).trimmingCharacters(in: .whitespacesAndNewlines)
 
             if stripped.isEmpty { continue }
 
@@ -392,7 +424,8 @@ private struct HTMLToOPMLConverter {
 
         if outlines.isEmpty {
             // Fallback: single outline with all plain text
-            let plainText = bodyContent.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            let stripped = bodyContent.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            let plainText = decodeHTMLEntities(stripped)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             outlines.append("<outline text=\"\(HTMLToXMLConverter.escapeXML(plainText))\" />")
         }
@@ -400,22 +433,13 @@ private struct HTMLToOPMLConverter {
         return outlines
     }
 
-    private static func extractBodyContent(_ html: String) -> String? {
-        guard let bodyStart = html.range(of: "<body>"),
-              let bodyEnd = html.range(of: "</body>") else {
-            return html
-        }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
 }
 
 // MARK: - Org-mode Converter
 
 private struct HTMLToOrgConverter {
     static func convert(_ html: String, title: String, creationDate: Date, modificationDate: Date) -> String {
-        guard let bodyContent = extractBodyContent(html) else {
-            return "#+TITLE: \(title)\n\n\(html)"
-        }
+        let bodyContent = extractHTMLBody(html)
 
         let isoFormatter = DateFormatter()
         isoFormatter.dateFormat = "yyyy-MM-dd EEE HH:mm"
@@ -496,22 +520,13 @@ private struct HTMLToOrgConverter {
         return result
     }
 
-    private static func extractBodyContent(_ html: String) -> String? {
-        guard let bodyStart = html.range(of: "<body>"),
-              let bodyEnd = html.range(of: "</body>") else {
-            return html
-        }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
 }
 
 // MARK: - reStructuredText Converter
 
 private struct HTMLToRSTConverter {
     static func convert(_ html: String, title: String) -> String {
-        guard let bodyContent = extractBodyContent(html) else {
-            return "\(title)\n\(String(repeating: "=", count: title.count))\n\n\(html)"
-        }
+        let bodyContent = extractHTMLBody(html)
 
         var result = ""
 
@@ -589,22 +604,13 @@ private struct HTMLToRSTConverter {
         return result
     }
 
-    private static func extractBodyContent(_ html: String) -> String? {
-        guard let bodyStart = html.range(of: "<body>"),
-              let bodyEnd = html.range(of: "</body>") else {
-            return html
-        }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
 }
 
 // MARK: - AsciiDoc Converter
 
 private struct HTMLToAsciiDocConverter {
     static func convert(_ html: String, title: String) -> String {
-        guard let bodyContent = extractBodyContent(html) else {
-            return "= \(title)\n\n\(html)"
-        }
+        let bodyContent = extractHTMLBody(html)
 
         var result = ""
 
@@ -680,13 +686,6 @@ private struct HTMLToAsciiDocConverter {
         return result
     }
 
-    private static func extractBodyContent(_ html: String) -> String? {
-        guard let bodyStart = html.range(of: "<body>"),
-              let bodyEnd = html.range(of: "</body>") else {
-            return html
-        }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
 }
 
 // MARK: - LaTeX String Extension
@@ -714,9 +713,7 @@ private struct HTMLToPlainTextConverter {
         var listDepth = 0
 
         // Extract content between <body> tags
-        guard let bodyContent = extractBodyContent(html) else {
-            return html
-        }
+        let bodyContent = extractHTMLBody(html)
 
         // Simple HTML parsing - process tag by tag
         var currentText = bodyContent
@@ -741,8 +738,16 @@ private struct HTMLToPlainTextConverter {
         currentText = currentText.replacingOccurrences(of: "<code>", with: "")
         currentText = currentText.replacingOccurrences(of: "</code>", with: "")
 
+        // Drop elements that carry no text of their own. An <img> left in place
+        // survives the strip below as its entire src attribute, which for an
+        // inline image is a multi-megabyte base64 data URI.
+        currentText = removeNonTextElements(currentText)
+
         // Strip remaining HTML tags but keep content
         currentText = stripHTMLTags(currentText)
+
+        // Entities only escaped the markup that has now been removed.
+        currentText = decodeHTMLEntities(currentText)
 
         // Clean up multiple consecutive newlines
         currentText = currentText.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
@@ -750,13 +755,22 @@ private struct HTMLToPlainTextConverter {
         return currentText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func extractBodyContent(_ html: String) -> String? {
-        // Extract content between <body> and </body>
-        guard let bodyStart = html.range(of: "<body>"),
-              let bodyEnd = html.range(of: "</body>") else {
-            return html
+    /// Remove elements whose contents are not note text.
+    private static func removeNonTextElements(_ html: String) -> String {
+        var result = html
+        for tag in ["script", "style", "head", "title"] {
+            result = result.replacingOccurrences(
+                of: "<\(tag)[^>]*>[\\s\\S]*?</\(tag)>",
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
         }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
+        // <img> has no closing tag, so it has to be dropped as a whole element
+        // to take its src with it.
+        result = result.replacingOccurrences(
+            of: "<img[^>]*>", with: "", options: [.regularExpression, .caseInsensitive]
+        )
+        return result
     }
 
     private static func processTables(_ html: String) -> String {
@@ -814,21 +828,15 @@ private struct HTMLToPlainTextConverter {
     }
 
     private static func stripHTMLTags(_ html: String) -> String {
-        var result = html
+        // Anchors first, so the URL survives the generic strip that follows.
+        var result = html.replacingOccurrences(of: "<a href=[\"']([^\"']*)[\"'][^>]*>([^<]*)</a>",
+                                               with: "$2 ($1)",
+                                               options: .regularExpression)
 
-        // Remove common formatting tags but keep content
-        let tagsToStrip = ["b", "i", "u", "s", "a", "strong", "em", "span", "div"]
-        for tag in tagsToStrip {
-            result = result.replacingOccurrences(of: "<\(tag)>", with: "", options: .caseInsensitive)
-            result = result.replacingOccurrences(of: "</\(tag)>", with: "", options: .caseInsensitive)
-            // Handle tags with attributes
-            result = result.replacingOccurrences(of: "<\(tag) [^>]*>", with: "", options: .regularExpression)
-        }
-
-        // Handle anchor tags specially to preserve URLs
-        result = result.replacingOccurrences(of: "<a href=[\"']([^\"']*)[\"'][^>]*>([^<]*)</a>",
-                                            with: "$2 ($1)",
-                                            options: .regularExpression)
+        // Then remove every tag that is left. Naming the tags to strip one by
+        // one let every unnamed tag (html, body, p, img) through into what is
+        // supposed to be plain text.
+        result = result.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
 
         return result
     }
@@ -838,9 +846,7 @@ private struct HTMLToPlainTextConverter {
 
 private struct HTMLToMarkdownConverter {
     static func convert(_ html: String) -> String {
-        guard let bodyContent = extractBodyContent(html) else {
-            return html
-        }
+        let bodyContent = extractHTMLBody(html)
 
         var result = bodyContent
 
@@ -997,13 +1003,6 @@ private struct HTMLToMarkdownConverter {
         return result
     }
 
-    private static func extractBodyContent(_ html: String) -> String? {
-        guard let bodyStart = html.range(of: "<body>"),
-              let bodyEnd = html.range(of: "</body>") else {
-            return html
-        }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
 
     private static func stripRemainingTags(_ html: String) -> String {
         var result = html
@@ -1024,9 +1023,7 @@ private struct HTMLToRTFConverter {
         """
         let rtfFooter = "\n}"
 
-        guard let bodyContent = extractBodyContent(html) else {
-            return rtfHeader + escapeRTFText(html) + rtfFooter
-        }
+        let bodyContent = extractHTMLBody(html)
 
         // IMPORTANT: We must escape text content BEFORE converting HTML tags to RTF codes.
         // Otherwise escapeRTF would destroy the RTF control characters we insert.
@@ -1096,13 +1093,6 @@ private struct HTMLToRTFConverter {
         return rtfHeader + "\\f0\\fs\(baseFontSize) " + result + rtfFooter
     }
 
-    private static func extractBodyContent(_ html: String) -> String? {
-        guard let bodyStart = html.range(of: "<body>"),
-              let bodyEnd = html.range(of: "</body>") else {
-            return html
-        }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
 
     /// Escape RTF special characters in plain text (not containing RTF codes)
     private static func escapeRTFText(_ text: String) -> String {
@@ -1200,9 +1190,7 @@ private struct HTMLToLatexConverter {
         """
         let latexFooter = "\n\\end{document}\n"
 
-        guard let bodyContent = extractBodyContent(html) else {
-            return latexHeader + escapeLatex(html) + latexFooter
-        }
+        let bodyContent = extractHTMLBody(html)
 
         var result = bodyContent
 
@@ -1253,13 +1241,6 @@ private struct HTMLToLatexConverter {
         return latexHeader + result + latexFooter
     }
 
-    private static func extractBodyContent(_ html: String) -> String? {
-        guard let bodyStart = html.range(of: "<body>"),
-              let bodyEnd = html.range(of: "</body>") else {
-            return html
-        }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
 
     private static func escapeLatex(_ text: String) -> String {
         var result = text
@@ -1278,7 +1259,129 @@ private struct HTMLToLatexConverter {
     }
 }
 
+// MARK: - XML-family document wrappers
+
+/// The `<notes>` document that wraps one or more `<note>` elements.
+///
+/// Same reasoning as `ENEXDocument`: an XML file is one document with one root.
+/// Concatenating whole documents produced a file with an XML declaration per
+/// note, which no parser accepts.
+enum XMLNotesDocument {
+    static func wrap(_ noteElements: String) -> String {
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <notes>
+        \(noteElements)
+        </notes>
+        """
+    }
+
+    /// A single-note document keeps `<note>` as the root, which is what
+    /// per-note XML exports have always written.
+    static func wrapSingle(_ noteElement: String) -> String {
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + noteElement
+    }
+}
+
+/// The `<opml>` document that wraps one outline per note.
+enum OPMLDocument {
+    static func wrap(_ outlines: String) -> String {
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <opml version="2.0">
+          <head>
+            <title>\(concatenatedFileBaseName)</title>
+          </head>
+          <body>
+        \(outlines)
+          </body>
+        </opml>
+        """
+    }
+}
+
+// MARK: - Shared HTML helpers
+
+/// Turn HTML entities back into the characters they stand for.
+///
+/// Any converter that strips tags and then escapes for its own syntax needs
+/// this in between, or it escapes the escapes: OPML was emitting `&amp;amp;`
+/// where the note said `&`.
+func decodeHTMLEntities(_ text: String) -> String {
+    var result = text
+    for (entity, character) in [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""),
+                                ("&#39;", "'"), ("&apos;", "'"), ("&nbsp;", " ")] {
+        result = result.replacingOccurrences(of: entity, with: character)
+    }
+    // &amp; last, so "&amp;lt;" becomes "&lt;" rather than "<".
+    return result.replacingOccurrences(of: "&amp;", with: "&")
+}
+
+/// The content between `<body>` and `</body>`, or the whole string when there
+/// is no body element.
+///
+/// Every converter needs this and each had its own copy matching the literal
+/// `"<body>"` and returning the input unchanged on failure. Adding a single
+/// attribute to `<body>` in either document template would therefore have
+/// pushed the entire HTML wrapper through seven escapers as if it were note
+/// text, silently. This tolerates attributes, any case, and a missing closing
+/// tag.
+///
+/// The closing tag is matched from the end: a note's own `<html><body>` is
+/// nested inside the export wrapper's, and the outermost span is the one that
+/// holds all of the content.
+func extractHTMLBody(_ html: String) -> String {
+    guard let bodyStart = html.range(of: "<body[^>]*>",
+                                     options: [.regularExpression, .caseInsensitive]) else {
+        return html
+    }
+    let afterOpen = html[bodyStart.upperBound...]
+    guard let bodyEnd = afterOpen.range(of: "</body>",
+                                        options: [.caseInsensitive, .backwards]) else {
+        return String(afterOpen).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    // Trimmed: the surrounding template's indentation is not note content, and
+    // whether it survives used to depend on which engine built the document.
+    return String(afterOpen[..<bodyEnd.lowerBound])
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 // MARK: - ENEX (Evernote Export) Converter
+
+/// A file attachment carried inside a .enex as a `<resource>` rather than
+/// written beside the note and linked by path.
+struct ENEXResource {
+    let data: Data
+    let mime: String
+    let filename: String
+    /// The href the exported HTML used for this attachment, so the anchor can
+    /// be swapped for the `<en-media>` element that references the resource.
+    let relativePath: String
+}
+
+/// The `<en-export>` document that wraps one or more `<note>` elements.
+///
+/// A .enex is a single XML document. Producing one complete document per note
+/// and joining them gives a file with several XML declarations and several
+/// root elements, which no importer accepts, so the wrapper is applied once
+/// around however many notes the export contains.
+enum ENEXDocument {
+    static func wrap(_ noteElements: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+
+        return [
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+            // export3 is the widely supported declaration. export4 only adds
+            // task and reminder elements, which we do not emit.
+            "<!DOCTYPE en-export SYSTEM \"http://xml.evernote.com/pub/evernote-export3.dtd\">",
+            "<en-export export-date=\"\(formatter.string(from: Date()))\" application=\"Apple Notes Exporter\" version=\"2.1\">",
+            noteElements,
+            "</en-export>"
+        ].joined(separator: "\n")
+    }
+}
 
 private struct HTMLToENEXConverter {
     static let contentLengthMax = ENEXLimits.noteContentMax
@@ -1313,7 +1416,7 @@ private struct HTMLToENEXConverter {
         "col": ["span", "width", "align"], "colgroup": ["span", "width", "align"]
     ]
 
-    static func convert(_ note: NotesNote) -> String {
+    static func noteElement(_ note: NotesNote, attachmentResources: [ENEXResource] = []) -> String {
         let enexFormatter = DateFormatter()
         enexFormatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
         enexFormatter.timeZone = TimeZone(identifier: "UTC")
@@ -1354,6 +1457,17 @@ private struct HTMLToENEXConverter {
             resources.append(resourceElement(for: image, mime: mime))
         }
 
+        // Non-image attachments (PDFs, audio, arbitrary files) reach the HTML as
+        // links to a file beside the note. A .enex is a single document, so a
+        // link to a sibling file does not survive the import: the bytes have to
+        // travel inside it as a resource, exactly as images now do.
+        for resource in attachmentResources {
+            let hash = md5Hex(resource.data)
+            let media = "<en-media type=\"\(resource.mime)\" hash=\"\(hash)\"/>"
+            enmlBody = replaceLink(to: resource.relativePath, with: media, in: enmlBody)
+            resources.append(resourceElement(for: resource, hash: hash))
+        }
+
         enmlBody = sanitizeENML(enmlBody)
 
         let enContent = """
@@ -1371,11 +1485,6 @@ private struct HTMLToENEXConverter {
         }
 
         var lines: [String] = []
-        lines.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-        // export3 is the widely supported declaration. export4 only adds task
-        // and reminder elements, which we do not emit.
-        lines.append("<!DOCTYPE en-export SYSTEM \"http://xml.evernote.com/pub/evernote-export3.dtd\">")
-        lines.append("<en-export export-date=\"\(enexFormatter.string(from: Date()))\" application=\"Apple Notes Exporter\" version=\"2.1\">")
         lines.append("  <note>")
         lines.append("    <title>\(HTMLToXMLConverter.escapeXML(note.title))</title>")
         lines.append("    <content><![CDATA[\(escapeForCDATA(enContent))]]></content>")
@@ -1388,14 +1497,45 @@ private struct HTMLToENEXConverter {
         // note-attributes?, resource*), so resources come last.
         lines.append(contentsOf: resources)
         lines.append("  </note>")
-        lines.append("</en-export>")
 
         // The whole-note ceiling is checked by the caller, which can put the
         // warning in front of the user rather than only in Console.
         return lines.joined(separator: "\n")
     }
 
+    /// Swap the anchor pointing at an exported attachment for an `<en-media>`
+    /// reference. The link text is dropped: Evernote renders the resource
+    /// itself, and its file name travels in `<resource-attributes>`.
+    private static func replaceLink(to relativePath: String, with media: String, in html: String) -> String {
+        guard !relativePath.isEmpty else { return html }
+        let escaped = NSRegularExpression.escapedPattern(for: relativePath.htmlEscaped)
+        let rawEscaped = NSRegularExpression.escapedPattern(for: relativePath)
+        var result = html
+        for target in Set([escaped, rawEscaped]) {
+            result = result.replacingOccurrences(
+                of: "<a[^>]*href=[\"']\(target)[\"'][^>]*>[\\s\\S]*?</a>",
+                with: media,
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+        return result
+    }
+
     // MARK: - Resources
+
+    fileprivate static func resourceElement(for resource: ENEXResource, hash: String) -> String {
+        var out: [String] = []
+        out.append("    <resource>")
+        out.append("      <data encoding=\"base64\">")
+        out.append(wrapBase64(resource.data.base64EncodedString()))
+        out.append("      </data>")
+        out.append("      <mime>\(resource.mime)</mime>")
+        out.append("      <resource-attributes>")
+        out.append("        <file-name>\(HTMLToXMLConverter.escapeXML(resource.filename))</file-name>")
+        out.append("      </resource-attributes>")
+        out.append("    </resource>")
+        return out.joined(separator: "\n")
+    }
 
     private static func resourceElement(for image: EmbeddedImageRef, mime: String) -> String {
         var out: [String] = []

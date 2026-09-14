@@ -106,22 +106,30 @@ struct ExportView: View {
                 }
 
                 if case .completed = exportViewModel.exportState {
-                    // Opening a .zip hands it to Archive Utility, which expands
-                    // it right back into a folder. Reveal the archive instead.
+                    // Opening an archive hands it to Archive Utility, which
+                    // expands it right back into a folder, and opening a single
+                    // exported file launches whatever app owns the extension.
+                    // Reveal anything that is not a folder instead.
                     let artifact = exportViewModel.lastExportArtifactURL
                         ?? (outputPath.isEmpty ? nil : URL(fileURLWithPath: outputPath))
-                    let isArchive = artifact?.pathExtension.lowercased() == "zip"
+                    let archive = artifact
+                        .flatMap { ExportArchiveFormat(rawValue: $0.pathExtension.lowercased()) }
+                    let isFolder = artifact.map(Self.isDirectory) ?? true
 
                     Button {
                         guard let artifact else { return }
-                        if isArchive {
-                            NSWorkspace.shared.activateFileViewerSelecting([artifact])
-                        } else {
+                        if isFolder {
                             NSWorkspace.shared.open(artifact)
+                        } else {
+                            NSWorkspace.shared.activateFileViewerSelecting([artifact])
                         }
                     } label: {
-                        Image(systemName: isArchive ? "doc.zipper" : "folder")
-                        Text(isArchive ? "Show ZIP File in Finder" : "Open Output Folder")
+                        Image(systemName: archive?.systemImage ?? (isFolder ? "folder" : "doc.text"))
+                        if let archive {
+                            Text("Show \(archive.fileExtension.uppercased()) File in Finder")
+                        } else {
+                            Text(isFolder ? "Open Output Folder" : "Show File in Finder")
+                        }
                     }
                     .disabled(artifact == nil)
                 }
@@ -148,6 +156,14 @@ struct ExportView: View {
             }
         }
         .padding(15)
+    }
+
+    /// Whether the export landed as a folder rather than a single file, which
+    /// decides between opening it and revealing it in Finder.
+    static func isDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        return exists && isDirectory.boolValue
     }
 }
 

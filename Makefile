@@ -144,7 +144,18 @@ test-cli: build
 	@if [ ! -x "$(MCP_BIN)" ]; then echo "❌ MCP not found at $(MCP_BIN)"; exit 1; fi
 	@bash scripts/test-cli-offline.sh "$(CLI_BIN)"
 
-test-all: test test-cli
+# Export every format into every destination against a generated fixture
+# database and validate what comes out: XML parses with one root, JSON is an
+# array when joined, packages open as zips, and so on. Needs no Notes library
+# and no Full Disk Access, so it runs in CI.
+FIXTURE_DB = $(BUILD_DIR)/fixture/NoteStore.sqlite
+
+test-matrix: build
+	@if [ ! -x "$(CLI_BIN)" ]; then echo "❌ CLI not found at $(CLI_BIN)"; exit 1; fi
+	@bash scripts/make-fixture-notestore.sh "$(FIXTURE_DB)"
+	@python3 scripts/test-export-matrix.py "$(CLI_BIN)" "$(FIXTURE_DB)"
+
+test-all: test test-cli test-matrix
 
 # Build and run
 run: build

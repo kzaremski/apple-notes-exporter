@@ -92,12 +92,11 @@ enum MCPToolHandlers {
                     "format": .object([
                         "type": .string("string"),
                         "description": .string("Rendering for the note body (default: markdown). Packaged formats are not available here because they are binary."),
-                        "enum": .array([
-                            .string("markdown"), .string("html"), .string("txt"), .string("tex"),
-                            .string("rtf"), .string("json"), .string("jsonl"), .string("xml"),
-                            .string("csv"), .string("opml"), .string("org"), .string("rst"),
-                            .string("adoc"), .string("enex")
-                        ])
+                        // Derived: a format added later appears here without
+                        // anyone remembering to edit a second list.
+                        "enum": .array(ExportFormat.allCases
+                            .filter { !$0.isBinaryFormat }
+                            .map { .string($0.cliToken) })
                     ]),
                     "include_deleted": .object(["type": .string("boolean"),
                         "description": .string("Allow fetching a note in Recently Deleted.")])
@@ -116,7 +115,7 @@ enum MCPToolHandlers {
                     "format": .object([
                         "type": .string("string"),
                         "description": .string("Export format."),
-                        "enum": .array([.string("html"), .string("pdf"), .string("markdown"), .string("rtf"), .string("txt"), .string("tex"), .string("json"), .string("jsonl"), .string("xml"), .string("csv"), .string("opml"), .string("org"), .string("rst"), .string("adoc"), .string("docx"), .string("odt"), .string("epub"), .string("enex")])
+                        "enum": .array(ExportFormat.allCases.map { .string($0.cliToken) })
                     ]),
                     "notes": .object(["type": .string("string"),
                         "description": .string("Comma-separated note IDs to export (omit to export all matching).")]),
@@ -370,8 +369,7 @@ enum MCPToolHandlers {
         }
         if args["concatenate"]?.boolValue ?? false {
             let ext = outputURL.pathExtension.lowercased()
-            let ours = Set(ExportFormat.allCases.map(\.fileExtension)).union(["zip"])
-            if ours.contains(ext) && ext != exportFormat.fileExtension {
+            if exportProducedExtensions.contains(ext) && ext != exportFormat.fileExtension {
                 return errorText("'output' ends in .\(ext) but the format is \(exportFormat.rawValue). Name it .\(exportFormat.fileExtension), or pass a directory to get \(concatenatedFileBaseName).\(exportFormat.fileExtension) inside it.")
             }
         }
