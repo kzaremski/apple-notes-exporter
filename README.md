@@ -41,15 +41,6 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 * **Mistyped folder filters fail loudly.** `--folder` with a name that matches nothing used to fall through to "no filter" and export the entire library; it now errors and lists the folders that do exist.
 * **Incremental sync no longer deletes filtered-out notes.** Pruning is judged against the whole library rather than the current run's selection, so exporting one folder into an existing sync directory does not remove the others.
 
-## What's New in v2.0
-
-* **Command-line interface** (`notes-export`) with subcommands for listing accounts, folders, and notes, plus full export support. JSON output for scripting.
-* **Model Context Protocol server** (`notes-export-mcp`) exposes the exporter as MCP tools for AI assistants like Claude Desktop.
-* **Apple Shortcuts support** via App Intents: Export Notes, List Accounts, and List Folders actions.
-* **12 new export formats** in addition to the original 6 (18 total).
-* **New app icon** designed by [Sascha Schneppmüller](https://github.com/Schneppi).
-* **Gallery attachment fixes** for On My Mac notes, handwritten note title resolution on macOS 15+, and correct file extensions for attachments without a database filename.
-
 ## Export Formats
 
 ### Rich / document formats
