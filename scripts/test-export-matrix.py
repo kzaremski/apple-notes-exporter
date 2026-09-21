@@ -27,10 +27,10 @@ import zipfile
 # Formats the CLI advertises, and whether each can be joined into one file.
 TEXT_FORMATS = ["html", "markdown", "rtf", "txt", "tex", "json", "jsonl",
                 "xml", "csv", "opml", "org", "rst", "adoc", "enex"]
-PACKAGED_FORMATS = ["pdf", "docx", "odt", "epub"]
+PACKAGED_FORMATS = ["pdf", "pdf-vector", "docx", "odt", "epub"]
 ALL_FORMATS = TEXT_FORMATS + PACKAGED_FORMATS
 
-EXTENSION = {"markdown": "md"}          # advertised token -> file extension
+EXTENSION = {"markdown": "md", "pdf-vector": "pdf"}   # advertised token -> file extension
 
 ARCHIVE_MEMBER = {
     "docx": "word/document.xml",
@@ -133,6 +133,7 @@ VALIDATORS = {
     "csv": validate_csv,
     "txt": validate_text_is_not_html,
     "pdf": validate_pdf,
+    "pdf-vector": validate_pdf,
     "docx": validate_package("docx"),
     "odt": validate_package("odt"),
     "epub": validate_package("epub"),

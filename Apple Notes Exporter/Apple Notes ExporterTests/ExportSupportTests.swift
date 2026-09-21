@@ -743,7 +743,7 @@ final class ExportSupportTests: XCTestCase {
 
     func test_supportsConcatenation_excludesOnlyPackagedFormats() {
         let blocked = ExportFormat.allCases.filter { !$0.supportsConcatenation }
-        XCTAssertEqual(Set(blocked), Set([.pdf, .docx, .odt, .epub]))
+        XCTAssertEqual(Set(blocked), Set([.pdf, .pdfVector, .docx, .odt, .epub]))
         XCTAssertEqual(ExportFormat.allCases.filter(\.supportsConcatenation).count, 14)
     }
 

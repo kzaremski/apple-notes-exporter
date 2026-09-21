@@ -5,3 +5,4 @@ Contributors:
 - Sascha Schneppmüller (GitHub: @Schneppi) - Redesigned app icon
 - David Ginsburg (GitHub: @davideg) - Fixed Markdown export to decode HTML entities
 - Vaughan Risher (GitHub: @vrisher) - Preserved image attachments in Markdown exports
+- Muhannad (GitHub: @MuhannadYT) - Added Vector PDF export, redrawing handwritten notes as vector art split across pages

@@ -27,7 +27,7 @@ struct FormatOptionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("\(format.rawValue) Export Options")
+            Text("\(format.displayName) Export Options")
                 .font(.title)
                 .padding(.bottom, 5)
 
@@ -43,6 +43,8 @@ struct FormatOptionsView: View {
                             HTMLOptionsView(config: $exportViewModel.configurations.html)
                         case .pdf:
                             PDFOptionsView(config: $exportViewModel.configurations.pdf)
+                        case .pdfVector:
+                            PDFVectorOptionsView(config: $exportViewModel.configurations.pdfVector)
                         case .rtf:
                             RTFOptionsView(config: $exportViewModel.configurations.rtf)
                         default:
@@ -215,6 +217,150 @@ struct PDFOptionsView: View {
                 }
                 .frame(width: 150)
             }
+        }
+    }
+}
+
+// MARK: - Vector PDF Options
+
+struct PDFVectorOptionsView: View {
+    @Binding var config: PDFVectorConfiguration
+
+    private let labelWidth: CGFloat = 120
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Page")
+                .font(.headline)
+
+            HStack {
+                Text("Page Size:")
+                    .frame(width: labelWidth, alignment: .leading)
+                Picker("", selection: $config.pageSize) {
+                    ForEach(PDFConfiguration.PageSize.allCases, id: \.self) { size in
+                        Text(size.rawValue).tag(size)
+                    }
+                }
+                .frame(width: 150)
+            }
+
+            HStack {
+                Text("Orientation:")
+                    .frame(width: labelWidth, alignment: .leading)
+                Picker("", selection: $config.orientation) {
+                    ForEach(PDFVectorConfiguration.Orientation.allCases, id: \.self) { orientation in
+                        Text(orientation.rawValue).tag(orientation)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+            }
+
+            HStack {
+                Text("Margin:")
+                    .frame(width: labelWidth, alignment: .leading)
+                TextField("", text: Binding(
+                    get: { String(format: "%.0f", config.margin) },
+                    set: { config.margin = Double($0) ?? config.margin }
+                ))
+                    .frame(width: 60)
+                Stepper("", value: $config.margin, in: 0...144, step: 4)
+                Text("pt")
+                    .foregroundColor(.secondary)
+            }
+
+            Divider()
+
+            Text("Split Page")
+                .font(.headline)
+
+            HStack {
+                Text("Split:")
+                    .frame(width: labelWidth, alignment: .leading)
+                Picker("", selection: $config.splitMode) {
+                    ForEach(PDFVectorConfiguration.SplitMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+            }
+
+            Text(config.splitMode.blurb)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.leading, labelWidth)
+
+            // iPad pickers only mean anything for the iPad split, so they
+            // stay visible but inert otherwise rather than making the sheet
+            // jump around as the mode changes.
+            HStack {
+                Text("iPad Size:")
+                    .frame(width: labelWidth, alignment: .leading)
+                Picker("", selection: $config.iPadModel) {
+                    ForEach(PDFVectorConfiguration.IPadModel.allCases, id: \.self) { model in
+                        Text(model.displayName).tag(model)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+            }
+            .disabled(config.splitMode != .iPadScreen)
+
+            HStack {
+                Text("iPad Orientation:")
+                    .frame(width: labelWidth, alignment: .leading)
+                Picker("", selection: $config.iPadOrientation) {
+                    ForEach(PDFVectorConfiguration.Orientation.allCases, id: \.self) { orientation in
+                        Text(orientation.rawValue).tag(orientation)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+            }
+            .disabled(config.splitMode != .iPadScreen)
+
+            Divider()
+
+            Text("Handwriting")
+                .font(.headline)
+
+            Toggle(isOn: $config.maximizeContent) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Maximize writing size")
+                    Text("Trim the empty canvas and scale the writing up to fill the page.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Toggle(isOn: $config.avoidSplittingStrokes) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Never split a stroke across pages")
+                    Text("Break between strokes so a line of writing is not cut in half.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack {
+                Text("Maximum Zoom:")
+                    .frame(width: labelWidth, alignment: .leading)
+                TextField("", text: Binding(
+                    get: { String(format: "%.1f", config.maximumScale) },
+                    set: { config.maximumScale = Double($0) ?? config.maximumScale }
+                ))
+                    .frame(width: 60)
+                Stepper("", value: $config.maximumScale, in: 1...12, step: 0.5)
+                Text("×")
+                    .foregroundColor(.secondary)
+            }
+            .disabled(!config.maximizeContent)
+
+            Text("Handwriting is redrawn as vector paths, so it stays sharp at any zoom or print size. Notes without Apple Pencil handwriting export as a regular PDF.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

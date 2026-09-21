@@ -488,7 +488,21 @@ actor CLIExportEngine {
             report(attachments.events, verbose: verbose)
         }
 
-        if format == .pdf {
+        // Vector handwriting: nil means the note has none, and the ordinary
+        // PDF pipeline takes over.
+        var vectorPages: Int?
+        if format == .pdfVector {
+            vectorPages = try writePaperVectorPDF(for: note, to: fileURL, configuration: configurations.pdfVector)
+        }
+
+        // The vector case has to come first: Vector PDF is a binary format, so
+        // otherwise a note it had already written would fall through to the
+        // DOCX/ODT/EPUB branch and be overwritten.
+        if let vectorPages {
+            if verbose {
+                CLIOutput.writeStderr("Rendered \(vectorPages) vector page\(vectorPages == 1 ? "" : "s") for '\(note.title)'")
+            }
+        } else if format == .pdf || format == .pdfVector {
             try await renderPDF(for: note, to: fileURL, attachmentPaths: attachmentPaths, exportDirectory: directory)
         } else if format.isBinaryFormat {
             let data = try await generateBinaryContent(for: note, format: format, attachmentPaths: attachmentPaths, exportDirectory: directory)
@@ -601,7 +615,7 @@ actor CLIExportEngine {
         accountName: String? = nil,
         concatenating: Bool = false
     ) async throws -> String {
-        if format == .pdf {
+        if format == .pdf || format == .pdfVector {
             throw CLIError.unsupportedFormat(format)
         }
         let html = try await generateHTML(

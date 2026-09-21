@@ -208,6 +208,18 @@ struct PDFConfiguration: ExportConfigurable {
         }
     }
 
+    /// Page sizes as named on the command line, case-insensitively.
+    ///
+    /// Shared by the PDF and Vector PDF exports so `--page-size legal` means
+    /// the same thing whichever one is running.
+    static func pageSize(argument: String) -> PageSize? {
+        PageSize.allCases.first { $0.rawValue.lowercased() == argument.lowercased() }
+    }
+
+    static var advertisedPageSizes: String {
+        PageSize.allCases.map { $0.rawValue.lowercased() }.joined(separator: ", ")
+    }
+
     static var defaultConfiguration: PDFConfiguration {
         // Locale-aware default: Letter for US, A4 for rest of world
         let isUS: Bool
@@ -221,6 +233,208 @@ struct PDFConfiguration: ExportConfigurable {
         return PDFConfiguration(
             htmlConfiguration: .defaultConfiguration,
             pageSize: defaultPageSize
+        )
+    }
+}
+
+// MARK: - Vector PDF Configuration
+
+/// Settings for vector handwriting export.
+///
+/// Deliberately not a `PDFConfiguration`: nothing in this path renders HTML, so
+/// the font, margin-unit and image-embedding knobs the HTML-to-PDF pipeline
+/// needs have no meaning here, and the two would only be confusing if merged.
+struct PDFVectorConfiguration: ExportConfigurable {
+    var pageSize: PDFConfiguration.PageSize
+    var orientation: Orientation
+    /// Page margin in points.
+    var margin: Double
+    /// Trim the blank canvas around writing and scale what is left to the
+    /// full text width. This is what makes the handwriting bigger on the page
+    /// than it was in Notes rather than smaller.
+    var maximizeContent: Bool
+    /// Break pages between strokes instead of at a fixed offset, so no line of
+    /// writing is cut in half.
+    var avoidSplittingStrokes: Bool
+    /// Ceiling on the magnification `maximizeContent` applies, so a two-word
+    /// note does not fill a page with two enormous words.
+    var maximumScale: Double
+    /// How much canvas each page carries.
+    var splitMode: SplitMode
+    /// Which iPad the `.iPadScreen` split imitates.
+    var iPadModel: IPadModel
+    var iPadOrientation: Orientation
+
+    enum Orientation: String, Codable, CaseIterable {
+        case portrait = "Portrait"
+        case landscape = "Landscape"
+    }
+
+    enum SplitMode: String, Codable, CaseIterable {
+        /// Fill each sheet of paper with as much writing as it holds. The
+        /// right choice for Letter or A4: nothing is wasted.
+        case fitPage = "Fit Page"
+        /// Give each page exactly one iPad screen's worth of canvas, so the
+        /// pages break where they would on the iPad the note was written on.
+        /// Leaves bands of white when the paper is a different shape.
+        case iPadScreen = "iPad Screen"
+
+        var displayName: String { rawValue }
+
+        var blurb: String {
+            switch self {
+            case .fitPage:
+                return "Fit as much writing on each page as it will hold."
+            case .iPadScreen:
+                return "One iPad screen of canvas per page, letterboxed to fit the paper."
+            }
+        }
+    }
+
+    /// Screen sizes in logical points. Exact values differ a little between
+    /// models; only the shape matters here, since the page is scaled to it.
+    enum IPadModel: String, Codable, CaseIterable {
+        case elevenInch = "11-inch"
+        case thirteenInch = "13-inch"
+
+        var points: (width: Double, height: Double) {
+            switch self {
+            case .elevenInch:   return (834, 1194)
+            case .thirteenInch: return (1024, 1366)
+            }
+        }
+
+        var displayName: String { rawValue }
+    }
+
+    /// Page dimensions with the orientation applied.
+    var pageDimensions: (width: CGFloat, height: CGFloat) {
+        let base = pageSize.dimensions
+        switch orientation {
+        case .portrait:  return base
+        case .landscape: return (base.height, base.width)
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case pageSize, orientation, margin, maximizeContent, avoidSplittingStrokes, maximumScale
+        case splitMode, iPadModel, iPadOrientation
+    }
+
+    init(pageSize: PDFConfiguration.PageSize,
+         orientation: Orientation = .portrait,
+         margin: Double = 28,
+         maximizeContent: Bool = true,
+         avoidSplittingStrokes: Bool = true,
+         maximumScale: Double = 4,
+         splitMode: SplitMode = .fitPage,
+         iPadModel: IPadModel = .elevenInch,
+         iPadOrientation: Orientation = .portrait) {
+        self.pageSize = pageSize
+        self.orientation = orientation
+        self.margin = margin
+        self.maximizeContent = maximizeContent
+        self.avoidSplittingStrokes = avoidSplittingStrokes
+        self.maximumScale = maximumScale
+        self.splitMode = splitMode
+        self.iPadModel = iPadModel
+        self.iPadOrientation = iPadOrientation
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pageSize = try c.decodeIfPresent(PDFConfiguration.PageSize.self, forKey: .pageSize)
+            ?? PDFVectorConfiguration.defaultConfiguration.pageSize
+        orientation = try c.decodeIfPresent(Orientation.self, forKey: .orientation) ?? .portrait
+        margin = try c.decodeIfPresent(Double.self, forKey: .margin) ?? 28
+        maximizeContent = try c.decodeIfPresent(Bool.self, forKey: .maximizeContent) ?? true
+        avoidSplittingStrokes = try c.decodeIfPresent(Bool.self, forKey: .avoidSplittingStrokes) ?? true
+        maximumScale = try c.decodeIfPresent(Double.self, forKey: .maximumScale) ?? 4
+        splitMode = try c.decodeIfPresent(SplitMode.self, forKey: .splitMode) ?? .fitPage
+        iPadModel = try c.decodeIfPresent(IPadModel.self, forKey: .iPadModel) ?? .elevenInch
+        iPadOrientation = try c.decodeIfPresent(Orientation.self, forKey: .iPadOrientation) ?? .portrait
+    }
+
+    static var defaultConfiguration: PDFVectorConfiguration {
+        PDFVectorConfiguration(pageSize: PDFConfiguration.defaultConfiguration.pageSize)
+    }
+
+    /// How a `--split` argument names a split. One token carries the mode and,
+    /// for the iPad splits, which iPad and which way up, because those three
+    /// are only meaningful together.
+    enum SplitToken: String, CaseIterable {
+        case fitPage = "fit-page"
+        case iPad11Portrait = "ipad-11-portrait"
+        case iPad11Landscape = "ipad-11-landscape"
+        case iPad13Portrait = "ipad-13-portrait"
+        case iPad13Landscape = "ipad-13-landscape"
+
+        /// Accepts the advertised spelling plus the obvious short forms. The
+        /// CLI switches over arbitrary user text, so this cannot be
+        /// exhaustive; `advertisedTokens` is what we print.
+        init?(argument: String) {
+            switch argument.lowercased() {
+            case "fit-page", "fit", "page":     self = .fitPage
+            case "ipad-11-portrait", "ipad-11": self = .iPad11Portrait
+            case "ipad-11-landscape":           self = .iPad11Landscape
+            case "ipad-13-portrait", "ipad-13": self = .iPad13Portrait
+            case "ipad-13-landscape":           self = .iPad13Landscape
+            default:                            return nil
+            }
+        }
+
+        /// Derived rather than written out, so a token added here reaches the
+        /// help text and the error message without being listed again.
+        static var advertisedTokens: String {
+            allCases.map(\.rawValue).joined(separator: ", ")
+        }
+    }
+
+    /// Adopt the split a token names.
+    ///
+    /// Exhaustive on purpose: a token added to `SplitToken` has to say what it
+    /// means here rather than silently falling back to filling the page.
+    mutating func apply(_ token: SplitToken) {
+        switch token {
+        case .fitPage:
+            splitMode = .fitPage
+        case .iPad11Portrait:
+            splitMode = .iPadScreen; iPadModel = .elevenInch;   iPadOrientation = .portrait
+        case .iPad11Landscape:
+            splitMode = .iPadScreen; iPadModel = .elevenInch;   iPadOrientation = .landscape
+        case .iPad13Portrait:
+            splitMode = .iPadScreen; iPadModel = .thirteenInch; iPadOrientation = .portrait
+        case .iPad13Landscape:
+            splitMode = .iPadScreen; iPadModel = .thirteenInch; iPadOrientation = .landscape
+        }
+    }
+
+    /// Height-to-width ratio of one page of canvas, or nil to fill the page.
+    var sliceAspectRatio: Double? {
+        guard splitMode == .iPadScreen else { return nil }
+        let screen = iPadModel.points
+        switch iPadOrientation {
+        case .portrait:  return screen.height / screen.width
+        case .landscape: return screen.width / screen.height
+        }
+    }
+
+    /// Bridge to the renderer, which knows nothing about user defaults.
+    ///
+    /// Values are clamped here rather than trusted: the GUI steppers keep them
+    /// sane, but the CLI, MCP and Shortcuts all reach the same settings, and a
+    /// margin wider than half the page would leave a negative text column.
+    func renderOptions() -> PaperVectorPDFOptions {
+        let size = pageDimensions
+        let safeMargin = max(0, min(margin, Double(min(size.width, size.height)) / 3))
+        return PaperVectorPDFOptions(
+            pageSize: CGSize(width: size.width, height: size.height),
+            margin: safeMargin,
+            maximizeContent: maximizeContent,
+            cropToContent: maximizeContent,
+            breakAtWhitespace: avoidSplittingStrokes,
+            maximumScale: max(1, maximumScale),
+            sliceAspectRatio: sliceAspectRatio
         )
     }
 }
@@ -362,6 +576,7 @@ struct ExportDestination: Codable, Equatable {
 struct ExportConfigurations: Codable {
     var html: HTMLConfiguration
     var pdf: PDFConfiguration
+    var pdfVector: PDFVectorConfiguration
     var latex: LaTeXConfiguration
     var rtf: RTFConfiguration
 
@@ -417,6 +632,7 @@ struct ExportConfigurations: Codable {
         ExportConfigurations(
             html: .defaultConfiguration,
             pdf: .defaultConfiguration,
+            pdfVector: .defaultConfiguration,
             latex: .defaultConfiguration,
             rtf: .defaultConfiguration
         )
@@ -441,7 +657,7 @@ struct ExportConfigurations: Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case html, pdf, latex, rtf
+        case html, pdf, pdfVector, latex, rtf
         case addDateToFilename, filenameDateFormat, includeAttachments
         case sharedAttachmentsFolder, incrementalSync
         case destination
@@ -450,13 +666,16 @@ struct ExportConfigurations: Codable {
         case concatenateOutput, zipOutput, tarOutput
     }
 
-    init(html: HTMLConfiguration, pdf: PDFConfiguration, latex: LaTeXConfiguration, rtf: RTFConfiguration,
+    init(html: HTMLConfiguration, pdf: PDFConfiguration,
+         pdfVector: PDFVectorConfiguration = .defaultConfiguration,
+         latex: LaTeXConfiguration, rtf: RTFConfiguration,
          addDateToFilename: Bool = false, filenameDateFormat: FilenameDateFormat = .iso,
          includeAttachments: Bool = true, sharedAttachmentsFolder: Bool = false,
          concatenateOutput: Bool = false, incrementalSync: Bool = false,
          zipOutput: Bool = false, tarOutput: Bool = false) {
         self.html = html
         self.pdf = pdf
+        self.pdfVector = pdfVector
         self.latex = latex
         self.rtf = rtf
         self.addDateToFilename = addDateToFilename
@@ -473,6 +692,9 @@ struct ExportConfigurations: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         html = try c.decode(HTMLConfiguration.self, forKey: .html)
         pdf = try c.decode(PDFConfiguration.self, forKey: .pdf)
+        // Added after the first release, so settings saved by an older build
+        // decode without it.
+        pdfVector = try c.decodeIfPresent(PDFVectorConfiguration.self, forKey: .pdfVector) ?? .defaultConfiguration
         latex = try c.decode(LaTeXConfiguration.self, forKey: .latex)
         rtf = try c.decode(RTFConfiguration.self, forKey: .rtf)
         addDateToFilename = try c.decodeIfPresent(Bool.self, forKey: .addDateToFilename) ?? false
@@ -501,6 +723,7 @@ struct ExportConfigurations: Codable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(html, forKey: .html)
         try c.encode(pdf, forKey: .pdf)
+        try c.encode(pdfVector, forKey: .pdfVector)
         try c.encode(latex, forKey: .latex)
         try c.encode(rtf, forKey: .rtf)
         try c.encode(addDateToFilename, forKey: .addDateToFilename)

@@ -29,6 +29,7 @@ import HtmlToPdf
 enum ExportFormatOption: String, AppEnum {
     case html = "HTML"
     case pdf = "PDF"
+    case pdfVector = "PDFVECTOR"
     case tex = "TEX"
     case markdown = "MD"
     case rtf = "RTF"
@@ -51,6 +52,7 @@ enum ExportFormatOption: String, AppEnum {
     static var caseDisplayRepresentations: [ExportFormatOption: DisplayRepresentation] = [
         .html: "HTML",
         .pdf: "PDF",
+        .pdfVector: "Vector PDF",
         .tex: "LaTeX",
         .markdown: "Markdown",
         .rtf: "RTF",
