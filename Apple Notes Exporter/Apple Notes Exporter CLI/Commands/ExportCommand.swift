@@ -32,12 +32,18 @@ struct ExportCommand: AsyncParsableCommand {
         an optional "<note> (Attachments)/" folder for any images, PDFs,
         drawings, and other attachments.
 
-        Supported formats (18):
-          Documents:  html, pdf, markdown, rtf, txt, tex, docx, odt, epub
+        Supported formats (\(ExportFormat.allCases.count)):
+          Documents:  html, pdf, pdf-vector, markdown, rtf, txt, tex, docx, odt, epub
           Data:       json, jsonl, xml, csv
           Outlines:   opml, org, rst, adoc
           Interchange: enex
         PDF uses headless WebKit and may take a few seconds per note.
+        PDF-VECTOR redraws Apple Pencil handwriting as vector art instead of
+        the low-resolution image Notes keeps for it, splitting the canvas
+        across pages. Notes without handwriting fall back to plain PDF.
+        --page-size and --landscape set the paper; --split sets how much
+        canvas each page carries, e.g. --split ipad-11-portrait for one
+        11-inch iPad screen per page.
 
         Incremental sync (--incremental) writes a sync manifest to the
         output directory so subsequent runs only re-export changed notes.
@@ -125,6 +131,16 @@ struct ExportCommand: AsyncParsableCommand {
 
     @Option(name: .long, help: "Font size in points (default: 14).")
     var fontSize: Double = 14.0
+
+    // Page setup, for pdf and pdf-vector
+    @Option(name: .long, help: "Page size for pdf and pdf-vector: \(PDFConfiguration.advertisedPageSizes). Defaults to letter in the US, a4 elsewhere.")
+    var pageSize: String?
+
+    @Flag(name: .long, help: "Lay pdf-vector pages out on their side.")
+    var landscape: Bool = false
+
+    @Option(name: .long, help: "How pdf-vector splits a canvas across pages: \(PDFVectorConfiguration.SplitToken.advertisedTokens). fit-page (the default) fills each sheet; the ipad ones put one iPad screen of canvas on each page.")
+    var split: String?
 
     // Output control
     @Flag(name: .shortAndLong, help: "Print per-note progress to stderr.")
@@ -246,6 +262,27 @@ struct ExportCommand: AsyncParsableCommand {
                 linkEmbeddedImages: configs.html.linkEmbeddedImages,
                 writeFolderIndexes: htmlIndexes
             )
+        }
+
+        // Page setup. Rejected rather than ignored: a misspelled --split would
+        // otherwise silently produce a differently paginated export.
+        if let pageSize {
+            guard let size = PDFConfiguration.pageSize(argument: pageSize) else {
+                CLIOutput.writeError(.incompatibleOptions(
+                    "Unknown page size '\(pageSize)'. Valid sizes: \(PDFConfiguration.advertisedPageSizes)."))
+                throw ExitCode(2)
+            }
+            configs.pdf.pageSize = size
+            configs.pdfVector.pageSize = size
+        }
+        configs.pdfVector.orientation = landscape ? .landscape : .portrait
+        if let split {
+            guard let token = PDFVectorConfiguration.SplitToken(argument: split) else {
+                CLIOutput.writeError(.incompatibleOptions(
+                    "Unknown split '\(split)'. Valid splits: \(PDFVectorConfiguration.SplitToken.advertisedTokens)."))
+                throw ExitCode(2)
+            }
+            configs.pdfVector.apply(token)
         }
 
         let engine = CLIExportEngine(databasePath: dbOptions.resolvedDB, configurations: configs)

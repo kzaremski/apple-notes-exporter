@@ -340,8 +340,10 @@ struct AppleNotesExporterView: View {
                                         Image(systemName: format.systemImage)
                                             .font(.system(size: 16))
                                             .frame(height: 20)
-                                        Text(format.rawValue)
+                                        Text(format.displayName)
                                             .font(.system(size: 11, weight: .medium))
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.75)
                                     }
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 8)

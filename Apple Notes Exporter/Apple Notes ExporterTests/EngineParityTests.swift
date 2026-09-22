@@ -247,14 +247,19 @@ final class EngineParityTests: XCTestCase {
     /// DOCX, ODT and EPUB are zip containers whose bytes differ every run, so
     /// compare what is inside them instead: the same files, in the same places.
     ///
-    /// PDF is left out. It renders through WebKit asynchronously, which makes
-    /// it the one format whose output this test cannot compare cheaply — the
-    /// export matrix covers it structurally instead.
+    /// The formats that write a .pdf are left out: a PDF is a flat document
+    /// rather than a zip container, so it has no members to compare. PDF also
+    /// renders through WebKit asynchronously, which makes it the one format
+    /// whose output this test cannot compare cheaply: the export matrix
+    /// covers both structurally instead.
     func test_appAndCLIProduceTheSamePackagedStructure() async throws {
         let db = try makeFixtureDatabase()
         var mismatches: [String] = []
 
-        for format in ExportFormat.allCases where format.isBinaryFormat && format != .pdf {
+        // Derived rather than an exclusion list, so a future format that
+        // writes a .pdf does not silently land in a zip comparison.
+        for format in ExportFormat.allCases
+        where format.isBinaryFormat && format.fileExtension != "pdf" {
             let appOut = try makeOutputDirectory()
             let cliOut = try makeOutputDirectory()
 

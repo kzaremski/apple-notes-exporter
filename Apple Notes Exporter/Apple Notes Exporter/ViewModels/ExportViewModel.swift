@@ -742,8 +742,25 @@ class ExportViewModel: ObservableObject {
             for event in attachments.events { log(event.message) }
         }
 
-        // Handle PDF export separately (binary format, requires WebKit)
-        if format == .pdf {
+        // Vector handwriting: redraw the note's paper canvas as real paths.
+        // nil means there was nothing to redraw -- a typed note, or one whose
+        // canvas is blank -- and the ordinary PDF pipeline takes over below.
+        var vectorPages: Int?
+        if format == .pdfVector {
+            try Task.checkCancellation()
+            vectorPages = try writePaperVectorPDF(for: note, to: fileURL, configuration: configurations.pdfVector)
+        }
+
+        // Handle PDF export separately (binary format, requires WebKit).
+        // The vector case has to come first: Vector PDF is a binary format, so
+        // otherwise a note it had already written would fall through to the
+        // DOCX/ODT/EPUB branch and be overwritten.
+        if let vectorPages {
+            log("✓ Exported Vector PDF: \(note.title) (\(vectorPages) page\(vectorPages == 1 ? "" : "s"), vector)")
+        } else if format == .pdf || format == .pdfVector {
+            if format == .pdfVector {
+                log("• No handwriting in \(note.title); exporting as a regular PDF")
+            }
             // Check for cancellation before expensive PDF generation
             try Task.checkCancellation()
 

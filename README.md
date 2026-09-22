@@ -46,6 +46,7 @@ Many choose to do all of their note taking and planning through Apple Notes beca
 ### Rich / document formats
 * **HTML** - Native format returned by the Apple Notes database. Images included inline via base64 embed syntax. Optional `index.html` in each folder (off by default) so the tree is browsable in a web browser. **Configurable:** font family, font size, margins, folder indexes.
 * **PDF** - Generated from HTML, preserves all formatting and images. **Configurable:** font family, font size, margins, page size (Letter, A4, A5, Legal, Tabloid).
+* **Vector PDF** - Handwriting to vector. This format reads the strokes themselves out of the note's paper bundle and redraws them as vector paths, so the writing stays sharp. **Configurable:** page size, orientation, margin, split mode (fill the page, or 1 iPad screen per page for 11/13-inch iPad in either orientation), maximum zoom.
 * **TEX** - LaTeX format for typesetting. Notes can be compiled individually or combined. **Configurable:** custom template with placeholders for title, dates, author, and content.
 * **MD** - Markdown format. Useful for moving to other Markdown-based apps like Obsidian. Images included inline via base64 embed syntax.
 * **RTF** - Rich text format. Opens in WordPad (Windows) or TextEdit (macOS). **Configurable:** font family and font size.

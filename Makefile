@@ -101,7 +101,7 @@ build:
 #   make test-formats OUTPUT=/path FILTER=test FORMATS="pdf html md"  # subset of formats
 OUTPUT ?= $(HOME)/Downloads/ane-format-test
 FILTER ?=
-FORMATS ?= html pdf markdown rtf txt tex json jsonl xml csv opml org rst adoc docx odt epub enex
+FORMATS ?= html pdf pdf-vector markdown rtf txt tex json jsonl xml csv opml org rst adoc docx odt epub enex
 
 test-formats: build
 	@CLI="$(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export"; \

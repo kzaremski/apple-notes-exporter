@@ -501,6 +501,10 @@ struct NotesSelectionState {
 enum ExportFormat: String, CaseIterable {
     case html = "HTML"
     case pdf = "PDF"
+    /// Apple Pencil handwriting redrawn as vector art instead of the canvas
+    /// thumbnail Notes hands out. Writes a .pdf like `pdf` does; see
+    /// PaperVector.swift.
+    case pdfVector = "PDFVECTOR"
     case tex = "TEX"
     case markdown = "MD"
     case rtf = "RTF"
@@ -519,7 +523,15 @@ enum ExportFormat: String, CaseIterable {
     case enex = "ENEX"
 
     var fileExtension: String {
-        rawValue.lowercased()
+        // Vector PDF is a way of producing a PDF, so must not write ".pdfvector".
+        if self == .pdfVector { return "pdf" }
+        return rawValue.lowercased()
+    }
+
+    /// What the user sees. Every other format's raw value already reads as a
+    /// name; "PDFVECTOR" does not.
+    var displayName: String {
+        self == .pdfVector ? "Vector PDF" : rawValue
     }
 
     /// The token this format is advertised by on the command line and in the
@@ -534,6 +546,10 @@ enum ExportFormat: String, CaseIterable {
         switch self {
         case .markdown:
             return "markdown"                   // "md" is accepted as an alias
+        case .pdfVector:
+            // Cannot be `fileExtension`: that is "pdf", which already names
+            // another format, so the token has to be spelled out.
+            return "pdf-vector"
         case .html, .pdf, .rtf, .txt, .tex, .json, .jsonl, .xml, .csv,
              .opml, .org, .rst, .adoc, .docx, .odt, .epub, .enex:
             return fileExtension
@@ -554,6 +570,7 @@ enum ExportFormat: String, CaseIterable {
         switch self {
         case .html:     return "Standard web format with full styling and images."
         case .pdf:      return "Portable document format for sharing and printing."
+        case .pdfVector:   return "Handwriting as sharp vector art, split across pages."
         case .markdown: return "Markdown format for documentation, wikis, and Obsidian, etc."
         case .txt:      return "Plain text format compatible with any editor."
         case .rtf:      return "Rich text format for word processors."
@@ -580,6 +597,7 @@ enum ExportFormat: String, CaseIterable {
         switch self {
         case .html:     return "globe"
         case .pdf:      return "doc.richtext"
+        case .pdfVector:   return "scribble.variable"
         case .tex:      return "function"
         case .markdown: return "number"
         case .rtf:      return "doc.text"
@@ -603,7 +621,7 @@ enum ExportFormat: String, CaseIterable {
     /// written out twice, three lines apart, in the view.
     var hasOptionsSheet: Bool {
         switch self {
-        case .html, .pdf, .tex, .rtf:
+        case .html, .pdf, .pdfVector, .tex, .rtf:
             return true
         case .markdown, .txt, .json, .jsonl, .xml, .csv,
              .opml, .org, .rst, .adoc, .docx, .odt, .epub, .enex:
@@ -626,7 +644,7 @@ enum ExportFormat: String, CaseIterable {
     /// and `supportsConcatenation` above would silently call it joinable.
     var isBinaryFormat: Bool {
         switch self {
-        case .pdf, .docx, .odt, .epub:
+        case .pdf, .pdfVector, .docx, .odt, .epub:
             return true
         case .html, .txt, .markdown, .rtf, .tex, .json, .jsonl, .xml, .csv,
              .opml, .org, .rst, .adoc, .enex:

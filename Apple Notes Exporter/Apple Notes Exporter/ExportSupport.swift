@@ -736,7 +736,7 @@ func htmlConfiguration(for format: ExportFormat, base: HTMLConfiguration) -> HTM
         // Markdown links the exported file rather than carrying the bytes.
         config.embedImagesInline = false
         config.linkEmbeddedImages = true
-    case .html, .pdf, .rtf, .tex, .json, .jsonl, .xml, .csv,
+    case .html, .pdf, .pdfVector, .rtf, .tex, .json, .jsonl, .xml, .csv,
          .opml, .org, .rst, .adoc, .enex, .docx, .odt, .epub:
         break
     }
@@ -843,7 +843,7 @@ enum ConcatenatedExport {
             return "\n\n'''\n\n"                            // thematic break
         case .jsonl, .xml, .csv, .opml, .enex:
             return "\n"
-        case .docx, .odt, .epub:
+        case .pdfVector, .docx, .odt, .epub:
             return ""                                       // cannot be joined
         }
     }
@@ -872,7 +872,7 @@ enum ConcatenatedExport {
         case .html, .txt, .markdown, .rtf, .tex, .jsonl,
              .org, .rst, .adoc:
             return joined                       // no wrapper: notes just abut
-        case .pdf, .docx, .odt, .epub:
+        case .pdf, .pdfVector, .docx, .odt, .epub:
             return joined                       // never concatenated; see supportsConcatenation
         }
     }
@@ -1582,6 +1582,42 @@ func noteWithHTML(_ note: NotesNote, html: String) -> NotesNote {
     )
 }
 
+// MARK: - Vector handwriting export
+
+/// UTIs whose attachment content lives in a paper bundle rather than in Media.
+/// Only these can be redrawn as vector art; a `com.apple.drawing` sketch from
+/// an older Notes version stores its strokes elsewhere and still falls back to
+/// the ordinary PDF pipeline.
+let paperAttachmentUTIs: Set<String> = ["com.apple.paper"]
+
+/// Write a note's handwriting to `url` as a vector PDF.
+///
+/// Returns the page count, or nil when the note carries nothing this path can
+/// draw -- a typed note, or one whose bundle is missing because Notes has not
+/// synced it down. Callers fall back to the ordinary PDF export in that case,
+/// choosing Vector PDF for a whole folder still exports the typed notes in it.
+func writePaperVectorPDF(for note: NotesNote,
+                         to url: URL,
+                         configuration: PDFVectorConfiguration) throws -> Int? {
+    let paperAttachments = note.attachments.filter { paperAttachmentUTIs.contains($0.typeUTI) }
+    guard !paperAttachments.isEmpty else { return nil }
+
+    var documents: [PaperDocument] = []
+    for attachment in paperAttachments {
+        guard let bundleURL = PaperBundleLocator.bundleURL(forAttachmentID: attachment.id) else { continue }
+        // One unreadable canvas must not lose the others in the same note.
+        guard let reader = try? PaperBundleReader(bundleURL: bundleURL),
+              let document = try? reader.read(), !document.isEmpty else { continue }
+        documents.append(document)
+    }
+    guard !documents.isEmpty else { return nil }
+
+    return try PaperVectorPDF.write(documents,
+                                    to: url,
+                                    title: note.title,
+                                    options: configuration.renderOptions())
+}
+
 /// Generate text content for a note in the given format.
 /// Render one note as text in the given format.
 ///
@@ -1622,7 +1658,7 @@ func generateExportTextContent(
         return concatenating
             ? note.toENEXNoteElement(attachmentResources: attachmentResources)
             : note.toENEX(attachmentResources: attachmentResources)
-    case .pdf, .docx, .odt, .epub:
+    case .pdf, .pdfVector, .docx, .odt, .epub:
         fatalError("Format \(format.rawValue) should not use generateExportTextContent()")
     }
 }

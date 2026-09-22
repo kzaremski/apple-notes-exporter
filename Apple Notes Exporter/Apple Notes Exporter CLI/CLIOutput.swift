@@ -80,6 +80,8 @@ extension ExportFormat {
         case "txt", "text":          self = .txt
         case "tex", "latex":         self = .tex
         case "pdf":                  self = .pdf
+        case "pdf-vector", "pdfvector", "vector-pdf":
+                                     self = .pdfVector
         case "json":                 self = .json
         case "jsonl", "ndjson":      self = .jsonl
         case "xml":                  self = .xml
