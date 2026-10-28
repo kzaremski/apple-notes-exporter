@@ -135,7 +135,7 @@ final class EngineParityTests: XCTestCase {
         format: ExportFormat, db: String, to output: URL, configure: (inout ExportConfigurations) -> Void = { _ in }
     ) async throws {
         let repository = DatabaseNotesRepository(databasePath: db)
-        let viewModel = ExportViewModel(repository: repository, databasePath: db)
+        let viewModel = ExportViewModel(repository: repository)
         // Not ExportConfigurations.load(): that reads this machine's real
         // preferences and would make the comparison depend on them.
         var configs = ExportConfigurations.default

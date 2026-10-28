@@ -121,13 +121,11 @@ class ExportViewModel: ObservableObject {
     // MARK: - Dependencies
 
     private let repository: NotesRepository
-    private let databasePath: String
 
     // MARK: - Initialization
 
-    init(repository: NotesRepository = DatabaseNotesRepository(), databasePath: String = defaultNotesDatabasePath()) {
+    init(repository: NotesRepository = DatabaseNotesRepository()) {
         self.repository = repository
-        self.databasePath = resolvedFilePath(databasePath)
         self.configurations = ExportConfigurations.load()
     }
 
@@ -1028,22 +1026,14 @@ class ExportViewModel: ObservableObject {
 
         // Only process attachments if we have a database connection and attachments to process
         if !note.attachments.isEmpty {
-            // Open a C parser handle and extract the sqlite3 pointer for HTMLAttachmentProcessor
-            if let parserHandle = ane_open(databasePath) {
-                defer { ane_close(parserHandle) }
-                if let rawHandle = ane_get_sqlite_handle(parserHandle) {
-                    let database = OpaquePointer(rawHandle)
-                    let processor = HTMLAttachmentProcessor(database: database)
-                    processedHTML = processor.processHTML(
-                        html: linkRewrittenBody,
-                        attachments: note.attachments,
-                        attachmentPaths: attachmentPaths,
-                        exportDirectory: exportDirectory?.path,
-                        embedImages: htmlConfig.embedImagesInline,
-                        linkEmbeddedImages: htmlConfig.linkEmbeddedImages
-                    )
-                }
-            }
+            processedHTML = await repository.processAttachmentHTML(
+                linkRewrittenBody,
+                attachments: note.attachments,
+                attachmentPaths: attachmentPaths,
+                exportDirectory: exportDirectory?.path,
+                embedImages: htmlConfig.embedImagesInline,
+                linkEmbeddedImages: htmlConfig.linkEmbeddedImages
+            )
         }
 
         // The note's own markup carries an <html><body> wrapper, which has to

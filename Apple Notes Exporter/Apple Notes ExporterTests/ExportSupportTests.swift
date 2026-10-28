@@ -852,6 +852,10 @@ final class ExportSupportTests: XCTestCase {
         func fetchFolders() async throws -> [NotesFolder] { [] }
         func fetchNotes(includeDeleted: Bool) async throws -> [NotesNote] { [] }
         func generateHTML(forNoteId noteId: String) async throws -> String { "" }
+        func processAttachmentHTML(
+            _ html: String, attachments: [NotesAttachment], attachmentPaths: [String: String],
+            exportDirectory: String?, embedImages: Bool, linkEmbeddedImages: Bool
+        ) async -> String { html }
         func fetchHierarchy(sortBy: NoteSortOption, foldersOnTop: Bool) async throws -> NotesHierarchy {
             NotesHierarchy.build(accounts: [], folders: [], notes: [], sortBy: sortBy, foldersOnTop: foldersOnTop)
         }

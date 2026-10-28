@@ -47,6 +47,16 @@ protocol NotesRepository {
     /// Generate HTML for a specific note (called during export)
     func generateHTML(forNoteId noteId: String) async throws -> String
 
+    /// Replace attachment placeholders in a note's HTML (called during export)
+    func processAttachmentHTML(
+        _ html: String,
+        attachments: [NotesAttachment],
+        attachmentPaths: [String: String],
+        exportDirectory: String?,
+        embedImages: Bool,
+        linkEmbeddedImages: Bool
+    ) async -> String
+
     /// Build complete hierarchy of accounts, folders, and notes
     func fetchHierarchy(sortBy: NoteSortOption, foldersOnTop: Bool) async throws -> NotesHierarchy
 
@@ -508,6 +518,45 @@ class DatabaseNotesRepository: NotesRepository, @unchecked Sendable {
         }
     }
 
+    func processAttachmentHTML(
+        _ html: String,
+        attachments: [NotesAttachment],
+        attachmentPaths: [String: String],
+        exportDirectory: String?,
+        embedImages: Bool,
+        linkEmbeddedImages: Bool
+    ) async -> String {
+        await withCheckedContinuation { continuation in
+            self.dbQueue.async {
+                guard let db = self.openDB() else {
+                    continuation.resume(returning: html)
+                    return
+                }
+                // Shared snapshot handle; closed in deinit. ane_open copies the
+                // whole NoteStore, so callers must not open one per note.
+
+                guard let sqliteHandle = ane_get_sqlite_handle(db) else {
+                    continuation.resume(returning: html)
+                    return
+                }
+
+                // dbQueue drains no autorelease pool between blocks, and image
+                // conversion autoreleases large AppKit buffers.
+                let processed = autoreleasepool {
+                    HTMLAttachmentProcessor(database: OpaquePointer(sqliteHandle)).processHTML(
+                        html: html,
+                        attachments: attachments,
+                        attachmentPaths: attachmentPaths,
+                        exportDirectory: exportDirectory,
+                        embedImages: embedImages,
+                        linkEmbeddedImages: linkEmbeddedImages
+                    )
+                }
+                continuation.resume(returning: processed)
+            }
+        }
+    }
+
     func fetchHierarchy(sortBy: NoteSortOption = .dateModified, foldersOnTop: Bool = true) async throws -> NotesHierarchy {
         // Fetch all data in parallel
         async let accounts = fetchAccounts()
@@ -569,6 +618,17 @@ class MockNotesRepository: NotesRepository {
     func generateHTML(forNoteId noteId: String) async throws -> String {
         try await Task.sleep(nanoseconds: 100_000_000)
         return "<html><body><p>Mock HTML for note \(noteId)</p></body></html>"
+    }
+
+    func processAttachmentHTML(
+        _ html: String,
+        attachments: [NotesAttachment],
+        attachmentPaths: [String: String],
+        exportDirectory: String?,
+        embedImages: Bool,
+        linkEmbeddedImages: Bool
+    ) async -> String {
+        html
     }
 
     func fetchHierarchy(sortBy: NoteSortOption = .dateModified, foldersOnTop: Bool = true) async throws -> NotesHierarchy {

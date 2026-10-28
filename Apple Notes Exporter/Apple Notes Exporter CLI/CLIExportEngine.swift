@@ -46,7 +46,6 @@ actor CLIExportEngine {
 
     private let repository: NotesRepository
     let configurations: ExportConfigurations
-    private let databasePath: String
 
     /// Map of note ID to relative file path (from output root), populated at the start of each export
     /// and used to rewrite applenotes:note/UUID links in generated HTML.
@@ -66,9 +65,8 @@ actor CLIExportEngine {
         databasePath: String = defaultNotesDatabasePath(),
         configurations: ExportConfigurations = .default
     ) {
-        self.databasePath = resolvedFilePath(databasePath)
         self.configurations = configurations
-        self.repository = DatabaseNotesRepository(databasePath: self.databasePath)
+        self.repository = DatabaseNotesRepository(databasePath: databasePath)
     }
 
     // MARK: - Public API
@@ -673,21 +671,14 @@ actor CLIExportEngine {
 
         var processedHTML = bodyAfterLinkRewrite
         if !note.attachments.isEmpty {
-            if let parserHandle = ane_open(databasePath) {
-                defer { ane_close(parserHandle) }
-                if let rawHandle = ane_get_sqlite_handle(parserHandle) {
-                    let database = OpaquePointer(rawHandle)
-                    let processor = HTMLAttachmentProcessor(database: database)
-                    processedHTML = processor.processHTML(
-                        html: bodyAfterLinkRewrite,
-                        attachments: note.attachments,
-                        attachmentPaths: attachmentPaths,
-                        exportDirectory: exportDirectory?.path,
-                        embedImages: htmlConfig.embedImagesInline,
-                        linkEmbeddedImages: htmlConfig.linkEmbeddedImages
-                    )
-                }
-            }
+            processedHTML = await repository.processAttachmentHTML(
+                bodyAfterLinkRewrite,
+                attachments: note.attachments,
+                attachmentPaths: attachmentPaths,
+                exportDirectory: exportDirectory?.path,
+                embedImages: htmlConfig.embedImagesInline,
+                linkEmbeddedImages: htmlConfig.linkEmbeddedImages
+            )
         }
 
         // Strip the note's own <html><body> wrapper before embedding it in the

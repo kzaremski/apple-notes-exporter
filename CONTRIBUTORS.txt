@@ -5,3 +5,4 @@ Contributors:
 - Sascha Schneppmüller (GitHub: @Schneppi) - Redesigned app icon
 - David Ginsburg (GitHub: @davideg) - Fixed Markdown export to decode HTML entities
 - Vaughan Risher (GitHub: @vrisher) - Preserved image attachments in Markdown exports
+- Vasily Zakharov (GitHub: @vzd3v) - Stopped exports from copying the Notes database once per note with attachments
