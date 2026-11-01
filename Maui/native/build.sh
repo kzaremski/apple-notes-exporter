@@ -59,6 +59,7 @@ autobuild() {
             return 1
         }
         if [[ "$name" == libimobiledevice ]]; then
+            make -C 3rd_party -j"$JOBS"
             make -C common -j"$JOBS"
             make -C src -j"$JOBS"
             make -C src install
