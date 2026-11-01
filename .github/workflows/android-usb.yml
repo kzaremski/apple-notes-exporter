@@ -65,3 +65,9 @@ jobs:
           name: NotesCableTransfer-arm64
           path: artifacts/
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: native-build-diagnostics
+          path: Maui/native/.build/android/sources/**/config.log
+          if-no-files-found: ignore

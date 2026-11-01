@@ -28,6 +28,7 @@ int use_logfile = 0;
 static pthread_mutex_t transfer_lock = PTHREAD_MUTEX_INITIALIZER;
 static atomic_bool cancelled;
 static atomic_bool mux_stopped;
+static atomic_bool mux_failed;
 static notes_progress progress;
 static int listener = -1;
 
@@ -64,6 +65,7 @@ static void *mux_loop(void *unused)
 {
     (void)unused;
     struct fdlist descriptors;
+    bool had_device = false;
     fdlist_create(&descriptors);
     while (!atomic_load(&mux_stopped) && !atomic_load(&cancelled)) {
         fdlist_reset(&descriptors);
@@ -79,6 +81,7 @@ static void *mux_loop(void *unused)
         int ready = poll(descriptors.fds, descriptors.count, timeout);
         if (ready < 0 && errno != EINTR) {
             notes_report("USB event processing failed.");
+            atomic_store(&mux_failed, true);
             break;
         }
         for (int i = 0; i < descriptors.count; ++i) {
@@ -91,8 +94,16 @@ static void *mux_loop(void *unused)
         }
         if (usb_process() < 0) {
             notes_report("USB connection lost. Reconnect the cable and try again.");
+            atomic_store(&mux_failed, true);
             break;
         }
+        int count = device_get_count(1);
+        if (had_device && count == 0) {
+            notes_report("The iPhone was disconnected.");
+            atomic_store(&mux_failed, true);
+            break;
+        }
+        had_device = had_device || count > 0;
         device_check_timeouts();
     }
     fdlist_free(&descriptors);
@@ -100,6 +111,7 @@ static void *mux_loop(void *unused)
     usb_shutdown();
     device_shutdown();
     client_shutdown();
+    shutdown(listener, SHUT_RDWR);
     return NULL;
 }
 
@@ -133,6 +145,7 @@ int notes_transfer(int usb_fd, const char *private_directory, const char *backup
     sigaddset(&blocked, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &blocked, &previous);
     atomic_store(&mux_stopped, false);
+    atomic_store(&mux_failed, false);
 
     if (!private_directory || !backup_directory || usb_fd < 0 || atomic_load(&cancelled))
         goto cleanup;
@@ -176,7 +189,7 @@ int notes_transfer(int usb_fd, const char *private_directory, const char *backup
         goto cleanup;
     thread_started = true;
 
-    for (int attempt = 0; attempt < 150 && !atomic_load(&cancelled); ++attempt) {
+    for (int attempt = 0; attempt < 150 && !atomic_load(&cancelled) && !atomic_load(&mux_failed); ++attempt) {
         if (idevice_new_with_options(&device, NULL, IDEVICE_LOOKUP_USBMUX) == IDEVICE_E_SUCCESS)
             break;
         usleep(100000);
@@ -188,7 +201,7 @@ int notes_transfer(int usb_fd, const char *private_directory, const char *backup
     idevice_get_udid(device, &udid);
     notes_report("Unlock the iPhone, accept Trust, and enter its passcode.");
     lockdownd_error_t error = LOCKDOWN_E_UNKNOWN_ERROR;
-    for (int attempt = 0; attempt < 120 && !atomic_load(&cancelled); ++attempt) {
+    for (int attempt = 0; attempt < 120 && !atomic_load(&cancelled) && !atomic_load(&mux_failed); ++attempt) {
         error = lockdownd_client_new_with_handshake(device, &lockdown, "Notes Cable Transfer");
         if (error == LOCKDOWN_E_SUCCESS)
             break;
@@ -251,6 +264,10 @@ cleanup:
         unlink(socket_path);
     progress = NULL;
     atomic_store(&cancelled, false);
+    if (!sigismember(&previous, SIGPIPE)) {
+        struct timespec timeout = {0};
+        while (sigtimedwait(&blocked, NULL, &timeout) >= 0) {}
+    }
     pthread_sigmask(SIG_SETMASK, &previous, NULL);
     pthread_mutex_unlock(&transfer_lock);
     return result;

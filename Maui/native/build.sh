@@ -24,7 +24,6 @@ if [[ "$MODE" == android ]]; then
     export AR=llvm-ar RANLIB=llvm-ranlib STRIP=llvm-strip
     export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
     HOST=(--host=aarch64-linux-android)
-    export CFLAGS="$CFLAGS -D__ANDROID_API__=26"
     OUTPUT="$HERE/output/arm64-v8a"
 elif [[ "$MODE" == host ]]; then
     OUTPUT="$HERE/output/host"
@@ -55,7 +54,10 @@ autobuild() {
         else
             NOCONFIGURE=1 ./autogen.sh
         fi
-        ./configure "${HOST[@]}" --prefix="$PREFIX" --disable-shared --enable-static "$@"
+        ./configure "${HOST[@]}" --prefix="$PREFIX" --disable-shared --enable-static "$@" || {
+            cat config.log >&2
+            return 1
+        }
         if [[ "$name" == libimobiledevice ]]; then
             make -C common -j"$JOBS"
             make -C src -j"$JOBS"

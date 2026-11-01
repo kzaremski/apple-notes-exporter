@@ -95,6 +95,7 @@ public sealed class MainPage : ContentPage
             "Ensure sufficient free space and keep both phones connected.", "Transfer", "Cancel"))
             return;
 
+        transfer.IsEnabled = false;
         try
         {
             await UsbPermission.RequestAsync();
@@ -103,6 +104,10 @@ public sealed class MainPage : ContentPage
         catch (Exception exception) when (exception is IOException or InvalidOperationException or UnauthorizedAccessException)
         {
             status.Text = exception.Message;
+        }
+        finally
+        {
+            transfer.IsEnabled = !TransferSession.IsBusy;
         }
     }
 
