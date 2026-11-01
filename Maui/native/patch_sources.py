@@ -66,6 +66,21 @@ text = replace_once(
 )
 text = replace_once(text, "static int quit_flag = 0;", "static _Atomic int quit_flag = 0;")
 text = replace_once(text, "int main(int argc, char *argv[])", "static int backup_main(int argc, char *argv[])")
+start = text.index("static void print_progress_real(double progress, int flush)")
+end = text.index("\nstatic double overall_progress", start)
+text = text[:start] + """
+static void print_progress_real(double progress, int flush)
+{
+    (void)flush;
+    notes_printf("iPhone backup: %.0f%%", progress);
+}
+
+static void print_progress(uint64_t current, uint64_t total)
+{
+    if (total)
+        notes_printf("Receiving backup file: %.0f%%", (double)current / (double)total * 100.0);
+}
+""" + text[end:]
 for line in ["signal(SIGINT, clean_exit);", "signal(SIGTERM, clean_exit);",
              "signal(SIGQUIT, clean_exit);", "signal(SIGPIPE, SIG_IGN);"]:
     text = replace_once(text, line, "/* Signals belong to the Android runtime, not this embedded tool. */")

@@ -33,12 +33,20 @@ jobs:
         run: dotnet workload install maui-android
       - name: Portable parser checks
         run: dotnet run --project Maui/AppleNotes.Core.Tests --configuration Release
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: Maui/native/.build/android
+          key: android-usb-native-${{ hashFiles('Maui/native/build.sh', 'Maui/native/patch_sources.py') }}
       - name: Build native direct-USB backend
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           bash Maui/native/build.sh android
+      - uses: actions/cache/save@v4
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: Maui/native/.build/android
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - name: Build signed sideload APK
         run: |
           dotnet publish Maui/AppleNotes.Android/AppleNotes.Android.csproj \

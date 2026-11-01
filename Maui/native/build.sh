@@ -90,7 +90,8 @@ if [[ "$MODE" == android ]]; then
         touch "$WORK/openssl.done"
     fi
     autobuild curl --with-openssl="$PREFIX" --disable-curl --without-libpsl --without-zstd \
-        --without-brotli --without-libidn2 --without-librtmp --disable-ldap --disable-ldaps --without-libssh2
+        --without-brotli --without-libidn2 --without-librtmp --disable-ldap --disable-ldaps --without-libssh2 \
+        --without-zlib
     autobuild libusb --disable-udev
 fi
 
