@@ -1,3 +1,5 @@
+using Microsoft.Maui.Controls.Hosting;
+
 namespace AppleNotes.AndroidApp;
 
 public static class MauiProgram

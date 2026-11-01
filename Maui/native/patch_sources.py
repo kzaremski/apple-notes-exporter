@@ -91,11 +91,12 @@ tool.write_text(text)
 
 # Bionic implements pthread functions in libc; there is no separate libpthread.
 if sys.argv[2] == "android":
-    configure = root / "libimobiledevice/configure.ac"
-    text = configure.read_text()
-    text = replace_once(
-        text,
-        "AC_CHECK_LIB(pthread, [pthread_once], [], [AC_MSG_ERROR([pthread with pthread_once required to build $PACKAGE_NAME])])",
-        "AC_CHECK_FUNCS([pthread_once])",
-    )
-    configure.write_text(text)
+    for package in ["libimobiledevice", "glue"]:
+        configure = root / package / "configure.ac"
+        text = configure.read_text()
+        text = replace_once(
+            text,
+            "AC_CHECK_LIB(pthread, [pthread_once], [], [AC_MSG_ERROR([pthread with pthread_once required to build $PACKAGE_NAME])])",
+            "AC_CHECK_FUNCS([pthread_once])",
+        )
+        configure.write_text(text)

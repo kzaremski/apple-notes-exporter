@@ -17,6 +17,7 @@ HOST=()
 
 if [[ "$MODE" == android ]]; then
     : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to an installed Android NDK (r27 or newer)}"
+    export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
     TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
     export PATH="$TOOLCHAIN/bin:$PATH"
     export CC=aarch64-linux-android26-clang CXX=aarch64-linux-android26-clang++
@@ -49,7 +50,11 @@ autobuild() {
     if [[ -f "$WORK/$name.done" ]]; then return; fi
     (
         cd "$SOURCES/$name"
-        NOCONFIGURE=1 ./autogen.sh
+        if [[ "$name" == curl ]]; then
+            autoreconf -fi
+        else
+            NOCONFIGURE=1 ./autogen.sh
+        fi
         ./configure "${HOST[@]}" --prefix="$PREFIX" --disable-shared --enable-static "$@"
         if [[ "$name" == libimobiledevice ]]; then
             make -C common -j"$JOBS"
@@ -78,7 +83,7 @@ if [[ "$MODE" == android ]]; then
     if [[ ! -f "$WORK/openssl.done" ]]; then
         (
             cd "$SOURCES/openssl"
-            ./Configure android-arm64 -D__ANDROID_API__=26 --prefix="$PREFIX" no-shared no-tests
+            ./Configure android-arm64 -fPIC -D__ANDROID_API__=26 --prefix="$PREFIX" no-shared no-tests
             make -j"$JOBS"
             make install_sw
         )

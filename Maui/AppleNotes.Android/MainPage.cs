@@ -1,4 +1,5 @@
 using AppleNotes.AndroidApp.Platforms.Android;
+using Microsoft.Maui.Graphics;
 
 namespace AppleNotes.AndroidApp;
 
@@ -61,6 +62,7 @@ public sealed class MainPage : ContentPage
     {
         base.OnAppearing();
         TransferSession.Changed += SessionChanged;
+        TransferSession.Restore();
         Refresh();
     }
 

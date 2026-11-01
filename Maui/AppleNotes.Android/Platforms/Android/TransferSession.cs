@@ -13,7 +13,7 @@ internal static class TransferSession
     private static readonly string Notes = Path.Combine(Root, "notes");
     private static readonly string Archive = Path.Combine(FileSystem.CacheDirectory, "Apple Notes.zip");
     private static readonly object Gate = new();
-    private static bool cancelled;
+    private static volatile bool cancelled;
     private static bool nativeRunning;
     private static readonly NativeUsb.Progress Progress = Update;
 
@@ -57,6 +57,8 @@ internal static class TransferSession
                 using var connection = manager.OpenDevice(device)
                     ?? throw new IOException("Android could not open the iPhone USB connection.");
                 Directory.CreateDirectory(Root);
+                if (Directory.Exists(Backup))
+                    Directory.Delete(Backup, recursive: true);
                 Directory.CreateDirectory(Backup);
                 int code;
                 lock (Gate)
@@ -83,7 +85,8 @@ internal static class TransferSession
                 var destination = Path.Combine(Root, $"notes-{Guid.NewGuid():N}");
                 Directory.CreateDirectory(destination);
                 var result = BackupReader.Read(Backup, destination);
-                File.WriteAllText(Path.Combine(destination, "notes.json"), JsonSerializer.Serialize(result.Notes));
+                File.WriteAllText(Path.Combine(destination, "notes.json"),
+                    JsonSerializer.Serialize(result.Notes.ToArray(), NoteJson.Default.NoteArray));
                 if (Directory.Exists(Notes))
                     Directory.Delete(Notes, recursive: true);
                 Directory.Move(destination, Notes);
@@ -129,6 +132,26 @@ internal static class TransferSession
             ZipFile.CreateFromDirectory(Notes, Archive);
         });
         return Archive;
+    }
+
+    public static void Restore()
+    {
+        if (IsRunning || Result is not null)
+            return;
+        var saved = Path.Combine(Notes, "notes.json");
+        if (!File.Exists(saved))
+            return;
+        try
+        {
+            var notes = JsonSerializer.Deserialize(File.ReadAllText(saved), NoteJson.Default.NoteArray)
+                ?? throw new InvalidDataException("The saved note list is empty or invalid.");
+            Result = new TransferResult(notes, Notes);
+            Update($"Loaded {notes.Length} previously transferred notes.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            Update($"Could not load the saved transfer: {exception.Message}");
+        }
     }
 
     public static void Erase()

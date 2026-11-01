@@ -12,7 +12,7 @@ internal static class BackupReader
         if (manifests.Length != 1)
             throw new InvalidDataException("The iPhone did not produce exactly one readable backup manifest.");
         var backup = Path.GetDirectoryName(manifests[0])!;
-        using var manifest = SQLiteDatabase.OpenDatabase(manifests[0], null, DatabaseOpenFlags.ReadOnly)
+        using var manifest = SQLiteDatabase.OpenDatabase(manifests[0], null, DatabaseOpenFlags.OpenReadonly)
             ?? throw new InvalidDataException("The backup manifest could not be opened.");
         using (var files = manifest.RawQuery("SELECT fileID, relativePath FROM Files WHERE domain = ? AND flags = 1",
                    [BackupPaths.NotesDomain]))
