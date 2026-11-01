@@ -6,7 +6,7 @@ namespace AppleNotes.AndroidApp.Platforms.Android;
 
 internal static class BackupReader
 {
-    public static TransferResult Read(string backupRoot, string destination)
+    public static TransferResult Read(string backupRoot, string destination, CancellationToken cancellationToken)
     {
         var manifests = Directory.GetFiles(backupRoot, "Manifest.db", SearchOption.AllDirectories);
         if (manifests.Length != 1)
@@ -19,6 +19,7 @@ internal static class BackupReader
         {
             while (files.MoveToNext())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var source = BackupPaths.ResolveFile(backup, files.GetString(0)!);
                 var target = BackupPaths.ResolveRelative(destination, files.GetString(1)!);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -55,6 +56,7 @@ internal static class BackupReader
         var notes = new List<Note>();
         while (rows.MoveToNext())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var id = rows.GetLong(0).ToString(System.Globalization.CultureInfo.InvariantCulture);
             var title = rows.GetString(1)!;
             var folderName = rows.GetString(2)!;

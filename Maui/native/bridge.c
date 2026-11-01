@@ -236,10 +236,10 @@ cleanup:
     if (thread_started)
         pthread_join(thread, NULL);
     else if (clients_initialized) {
-        client_shutdown();
         if (usb_initialized)
             usb_shutdown();
         device_shutdown();
+        client_shutdown();
     }
     if (listener >= 0)
         close(listener);

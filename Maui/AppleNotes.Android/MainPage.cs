@@ -76,12 +76,12 @@ public sealed class MainPage : ContentPage
 
     private void Refresh()
     {
-        var running = TransferSession.IsRunning;
-        transfer.IsEnabled = !running;
-        cancel.IsVisible = running;
-        erase.IsEnabled = !running;
-        share.IsEnabled = !running && TransferSession.Result is not null;
-        busy.IsRunning = running;
+        var active = TransferSession.IsBusy;
+        transfer.IsEnabled = !active;
+        cancel.IsVisible = TransferSession.IsRunning;
+        erase.IsEnabled = !active;
+        share.IsEnabled = !active && TransferSession.Result is not null;
+        busy.IsRunning = active;
         if (TransferSession.Status is not null)
             status.Text = TransferSession.Status;
         notes.ItemsSource = TransferSession.Result?.Notes;

@@ -15,9 +15,13 @@ internal static class TransferSession
     private static readonly object Gate = new();
     private static volatile bool cancelled;
     private static bool nativeRunning;
-    private static readonly NativeUsb.Progress Progress = Update;
+    private static long lastProgress;
+    private static CancellationTokenSource? extractionCancellation;
+    private static readonly NativeUsb.Progress Progress = NativeProgress;
 
     public static bool IsRunning { get; private set; }
+    public static bool IsExporting { get; private set; }
+    public static bool IsBusy => IsRunning || IsExporting;
     public static string? Status { get; private set; }
     public static TransferResult? Result { get; private set; }
     public static event Action? Changed;
@@ -26,10 +30,11 @@ internal static class TransferSession
     {
         lock (Gate)
         {
-            if (IsRunning)
-                throw new InvalidOperationException("A transfer is already running.");
+            if (IsBusy)
+                throw new InvalidOperationException("A transfer or export is already running.");
             IsRunning = true;
             cancelled = false;
+            extractionCancellation = new CancellationTokenSource();
         }
         Update("Starting USB transfer...");
         try
@@ -40,6 +45,8 @@ internal static class TransferSession
         catch
         {
             IsRunning = false;
+            extractionCancellation.Dispose();
+            extractionCancellation = null;
             Update("Android could not start the USB foreground service.");
             throw;
         }
@@ -84,12 +91,11 @@ internal static class TransferSession
                 Update("Extracting Notes from the local backup...");
                 var destination = Path.Combine(Root, $"notes-{Guid.NewGuid():N}");
                 Directory.CreateDirectory(destination);
-                var result = BackupReader.Read(Backup, destination);
+                var result = BackupReader.Read(Backup, destination, extractionCancellation!.Token);
                 File.WriteAllText(Path.Combine(destination, "notes.json"),
                     JsonSerializer.Serialize(result.Notes.ToArray(), NoteJson.Default.NoteArray));
-                if (Directory.Exists(Notes))
-                    Directory.Delete(Notes, recursive: true);
-                Directory.Move(destination, Notes);
+                extractionCancellation.Token.ThrowIfCancellationRequested();
+                NotesStorage.Commit(destination, Notes);
                 Result = result with { Directory = Notes };
                 Directory.Delete(Backup, recursive: true);
                 Update($"Transferred {result.Notes.Count} notes. {result.UnreadableCount} could not be decoded. " +
@@ -100,13 +106,20 @@ internal static class TransferSession
         {
             Update("Transfer cancelled. Temporary data remains private; use Delete local transfer and pairing to remove it.");
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            InvalidOperationException or DllNotFoundException or EntryPointNotFoundException or
+            BadImageFormatException or Java.Lang.Exception)
         {
             Update($"Transfer failed: {exception.Message}");
         }
         finally
         {
-            IsRunning = false;
+            lock (Gate)
+            {
+                IsRunning = false;
+                extractionCancellation?.Dispose();
+                extractionCancellation = null;
+            }
             Changed?.Invoke();
         }
     }
@@ -116,6 +129,7 @@ internal static class TransferSession
         lock (Gate)
         {
             cancelled = true;
+            extractionCancellation?.Cancel();
             if (nativeRunning)
                 NativeUsb.notes_cancel();
         }
@@ -124,25 +138,39 @@ internal static class TransferSession
 
     public static async Task<string> CreateArchiveAsync()
     {
-        if (IsRunning || Result is null)
-            throw new InvalidOperationException("Complete a notes transfer before exporting.");
-        await Task.Run(() =>
+        lock (Gate)
         {
-            File.Delete(Archive);
-            ZipFile.CreateFromDirectory(Notes, Archive);
-        });
-        return Archive;
+            if (IsBusy || Result is null)
+                throw new InvalidOperationException("Complete a notes transfer before exporting.");
+            IsExporting = true;
+        }
+        Changed?.Invoke();
+        try
+        {
+            await Task.Run(() =>
+            {
+                File.Delete(Archive);
+                ZipFile.CreateFromDirectory(Notes, Archive);
+            });
+            return Archive;
+        }
+        finally
+        {
+            IsExporting = false;
+            Changed?.Invoke();
+        }
     }
 
     public static void Restore()
     {
-        if (IsRunning || Result is not null)
+        if (IsBusy || Result is not null)
             return;
         var saved = Path.Combine(Notes, "notes.json");
-        if (!File.Exists(saved))
-            return;
         try
         {
+            NotesStorage.Recover(Notes);
+            if (!File.Exists(saved))
+                return;
             var notes = JsonSerializer.Deserialize(File.ReadAllText(saved), NoteJson.Default.NoteArray)
                 ?? throw new InvalidDataException("The saved note list is empty or invalid.");
             Result = new TransferResult(notes, Notes);
@@ -156,7 +184,7 @@ internal static class TransferSession
 
     public static void Erase()
     {
-        if (IsRunning)
+        if (IsBusy)
             throw new InvalidOperationException("Cancel the transfer before deleting its data.");
         if (Directory.Exists(Root))
             Directory.Delete(Root, recursive: true);
@@ -169,5 +197,14 @@ internal static class TransferSession
     {
         Status = message;
         Changed?.Invoke();
+    }
+
+    private static void NativeProgress(string message)
+    {
+        var now = Environment.TickCount64;
+        if (message.Contains('%') && now - Interlocked.Read(ref lastProgress) < 250)
+            return;
+        Interlocked.Exchange(ref lastProgress, now);
+        Update(message.Trim());
     }
 }

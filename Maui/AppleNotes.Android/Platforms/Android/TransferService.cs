@@ -10,6 +10,7 @@ public sealed class TransferService : Service
 {
     private const string Channel = "notes-usb";
     private bool started;
+    private PowerManager.WakeLock? wakeLock;
 
     public override IBinder? OnBind(Intent? intent) => null;
 
@@ -39,10 +40,15 @@ public sealed class TransferService : Service
     {
         try
         {
+            var power = (PowerManager)GetSystemService(PowerService)!;
+            wakeLock = power.NewWakeLock(WakeLockFlags.Partial, "NotesCableTransfer:USB");
+            wakeLock!.Acquire();
             await TransferSession.RunAsync();
         }
         finally
         {
+            if (wakeLock?.IsHeld == true)
+                wakeLock.Release();
             StopForeground(StopForegroundFlags.Remove);
             StopSelf();
         }
@@ -52,6 +58,10 @@ public sealed class TransferService : Service
     {
         if (TransferSession.IsRunning)
             TransferSession.Cancel();
+        if (wakeLock?.IsHeld == true)
+            wakeLock.Release();
+        wakeLock?.Dispose();
+        wakeLock = null;
         base.OnDestroy();
     }
 }

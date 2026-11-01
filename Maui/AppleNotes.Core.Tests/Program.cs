@@ -59,6 +59,45 @@ Test("Supports sharded and flat backup layouts", () =>
         Directory.Delete(root, recursive: true);
     }
 });
+Test("Commits a new transfer without mixing old Notes files", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), $"notes-commit-{Guid.NewGuid():N}");
+    var current = Path.Combine(root, "notes");
+    var staging = Path.Combine(root, "staging");
+    Directory.CreateDirectory(current);
+    Directory.CreateDirectory(staging);
+    try
+    {
+        File.WriteAllText(Path.Combine(current, "old"), "old");
+        File.WriteAllText(Path.Combine(staging, "new"), "new");
+        NotesStorage.Commit(staging, current);
+        Equal("new", File.ReadAllText(Path.Combine(current, "new")));
+        if (File.Exists(Path.Combine(current, "old")) || Directory.Exists(current + ".previous"))
+            throw new Exception("Stale Notes files survived commit.");
+        Throws<DirectoryNotFoundException>(() => NotesStorage.Commit(staging, current));
+        Equal("new", File.ReadAllText(Path.Combine(current, "new")));
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+});
+Test("Recovers a transfer interrupted during directory replacement", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), $"notes-recover-{Guid.NewGuid():N}");
+    var current = Path.Combine(root, "notes");
+    Directory.CreateDirectory(current + ".previous");
+    try
+    {
+        File.WriteAllText(Path.Combine(current + ".previous", "saved"), "saved");
+        NotesStorage.Recover(current);
+        Equal("saved", File.ReadAllText(Path.Combine(current, "saved")));
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+});
 Console.WriteLine($"{passed} checks passed.");
 
 void Test(string name, Action action)

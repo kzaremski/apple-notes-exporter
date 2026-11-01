@@ -63,3 +63,4 @@ Signing.local.xcconfig
 **/obj/
 Maui/native/.build/
 Maui/native/output/
+Maui/native/__pycache__/
