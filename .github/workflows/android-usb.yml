@@ -1,0 +1,59 @@
+name: Android USB APK
+
+on:
+  push:
+    paths: ["Maui/**", ".github/workflows/android-usb.yml"]
+  pull_request:
+    paths: ["Maui/**", ".github/workflows/android-usb.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Native build prerequisites
+        run: sudo apt-get update -qq && sudo apt-get install -y autoconf automake libtool-bin pkg-config
+      - name: Android SDK and NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+      - name: Restore MAUI Android workload
+        run: dotnet workload install maui-android
+      - name: Portable parser checks
+        run: dotnet run --project Maui/AppleNotes.Core.Tests --configuration Release
+      - name: Build native direct-USB backend
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          bash Maui/native/build.sh android
+      - name: Build signed sideload APK
+        run: |
+          dotnet publish Maui/AppleNotes.Android/AppleNotes.Android.csproj \
+            --configuration Release -p:AndroidKeyStore=false \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" -p:JavaSdkDirectory="$JAVA_HOME"
+      - name: Verify native backend is packaged
+        run: |
+          APK="$(find Maui/AppleNotes.Android/bin/Release -name '*-Signed.apk' -print -quit)"
+          test -n "$APK"
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libnotesusb.so'
+          mkdir -p artifacts
+          cp "$APK" artifacts/NotesCableTransfer-arm64.apk
+          sha256sum artifacts/NotesCableTransfer-arm64.apk > artifacts/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NotesCableTransfer-arm64
+          path: artifacts/
+          if-no-files-found: error

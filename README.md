@@ -13,6 +13,11 @@ MacOS app written in Swift that bulk exports Apple Notes (including iCloud Notes
 
 Built by [Konstantin Zaremski](https://konstantin.zarem.ski)
 
+An experimental **Android .NET MAUI direct-USB client** is being developed in
+[`Maui/`](Maui/README.md). It connects an iPhone directly to an Android USB host
+and uses Apple's backup protocol, rather than requiring a macOS desktop.
+See its documentation for current limitations and APK build instructions.
+
 ![Screenshot of version 2.1 of the Apple Notes Exporter](screenshots/v2.1.png)
 
 ## Purpose & Rationale

@@ -57,3 +57,9 @@ Signing.local.xcconfig
 
 # Scratchpad (local notes, never commit)
 .scratchpad/
+
+# .NET MAUI / Android USB port
+**/bin/
+**/obj/
+Maui/native/.build/
+Maui/native/output/

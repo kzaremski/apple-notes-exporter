@@ -1,0 +1,4 @@
+{
+    global: notes_transfer; notes_cancel;
+    local: *;
+};
