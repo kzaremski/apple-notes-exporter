@@ -1,7 +1,7 @@
 # Apple Notes Exporter - Makefile
 # For terminal-based development workflow
 
-.PHONY: help build run clean logs test test-ui test-cli test-all test-formats rebuild install icon \
+.PHONY: help build build-macos run clean logs test test-ui test-cli test-all test-formats rebuild install icon \
         release release-archive release-export release-notarize release-zip release-verify release-clean
 
 # Configuration
@@ -10,6 +10,8 @@ SCHEME = Apple Notes Exporter
 CONFIG = Debug
 BUILD_DIR = Apple Notes Exporter/build
 APP_NAME = Apple Notes Exporter.app
+ANDROID_PROJECT = Maui/AppleNotes.Android/AppleNotes.Android.csproj
+ANDROID_PUBLISH_DIR = Maui/AppleNotes.Android/bin/Release/net10.0-android/android-arm64/publish
 BUNDLE_ID = com.konstantinzaremski.Apple-Notes-Exporter
 ICON_SVG = icon/icon.svg
 ICON_DIR = icon
@@ -45,12 +47,13 @@ RELEASE_ZIP_NAME = AppleNotesExporter_v$(RELEASE_VERSION)$(RELEASE_SUFFIX)
 
 # Default target
 help:
-	@echo "Apple Notes Exporter - Make targets:"
+	@echo "Notes Cable Transfer - Make targets:"
 	@echo ""
-	@echo "  make build        - Build the app (Debug; CLI + MCP embedded in SharedSupport)"
-	@echo "  make run          - Build and run the app"
-	@echo "  make clean        - Clean build artifacts"
-	@echo "  make rebuild      - Clean and build"
+	@echo "  make build        - Build the ARM64 Android sideload APK"
+	@echo "  make build-macos  - Build the macOS app (Debug; CLI + MCP embedded)"
+	@echo "  make run          - Build and run the macOS app"
+	@echo "  make clean        - Clean Android and macOS build artifacts"
+	@echo "  make rebuild      - Clean and build the Android APK"
 	@echo "  make logs         - Stream app logs (run in separate terminal)"
 	@echo "  make test         - Run unit tests (skips UI tests; unsigned Debug)"
 	@echo "  make test-cli     - Offline CLI checks (help, sync-status history, missing db)"
@@ -73,11 +76,30 @@ help:
 	@echo "                          CDHashes for the release notes."
 	@echo "  make release-clean   - Remove the release/ output directory."
 	@echo ""
-	@echo "The notes-export CLI and notes-export-mcp server are built as dependencies"
-	@echo "of the main app target and embedded into Contents/SharedSupport/ of the .app."
+	@echo "The Android build requires .NET MAUI Android, JDK 21, the Android SDK and NDK,"
+	@echo "and the native build prerequisites documented in Maui/README.md."
 
-# Build the project. UNSIGNED flags let local dev builds work without a dev cert.
+# Build the Android app and its native USB backend.
 build:
+	@set -eu; \
+		: "$${ANDROID_HOME:?Set ANDROID_HOME to the Android SDK directory}"; \
+		: "$${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to an installed Android NDK}"; \
+		: "$${JAVA_HOME:?Set JAVA_HOME to JDK 21}"; \
+		echo "🔨 Building ARM64 Android APK..."; \
+		bash Maui/native/build.sh android; \
+		dotnet publish "$(ANDROID_PROJECT)" --configuration Release \
+			-p:AndroidKeyStore=false \
+			-p:AndroidSdkDirectory="$$ANDROID_HOME" \
+			-p:JavaSdkDirectory="$$JAVA_HOME"; \
+		APK="$$(find "$(ANDROID_PUBLISH_DIR)" -maxdepth 1 -name '*-Signed.apk' -print -quit)"; \
+		if [ -z "$$APK" ]; then \
+			echo "❌ Signed APK not found in $(ANDROID_PUBLISH_DIR)"; \
+			exit 1; \
+		fi; \
+		echo "✅ APK built: $$APK"
+
+# Build the macOS project. UNSIGNED flags allow local builds without a dev cert.
+build-macos:
 	@echo "🔨 Building $(SCHEME)..."
 	@set -o pipefail && xcodebuild -project "$(PROJECT)" \
 		-scheme "$(SCHEME)" \
@@ -103,7 +125,7 @@ OUTPUT ?= $(HOME)/Downloads/ane-format-test
 FILTER ?=
 FORMATS ?= html pdf markdown rtf txt tex json jsonl xml csv opml org rst adoc docx odt epub enex
 
-test-formats: build
+test-formats: build-macos
 	@CLI="$(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export"; \
 	if [ ! -x "$$CLI" ]; then echo "❌ Embedded CLI not found at $$CLI"; exit 1; fi; \
 	mkdir -p "$(OUTPUT)"; \
@@ -139,7 +161,7 @@ test-formats: build
 CLI_BIN = $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export
 MCP_BIN = $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)/Contents/SharedSupport/notes-export-mcp
 
-test-cli: build
+test-cli: build-macos
 	@if [ ! -x "$(CLI_BIN)" ]; then echo "❌ CLI not found at $(CLI_BIN)"; exit 1; fi
 	@if [ ! -x "$(MCP_BIN)" ]; then echo "❌ MCP not found at $(MCP_BIN)"; exit 1; fi
 	@bash scripts/test-cli-offline.sh "$(CLI_BIN)"
@@ -150,7 +172,7 @@ test-cli: build
 # and no Full Disk Access, so it runs in CI.
 FIXTURE_DB = $(BUILD_DIR)/fixture/NoteStore.sqlite
 
-test-matrix: build
+test-matrix: build-macos
 	@if [ ! -x "$(CLI_BIN)" ]; then echo "❌ CLI not found at $(CLI_BIN)"; exit 1; fi
 	@bash scripts/make-fixture-notestore.sh "$(FIXTURE_DB)"
 	@python3 scripts/test-export-matrix.py "$(CLI_BIN)" "$(FIXTURE_DB)"
@@ -158,17 +180,19 @@ test-matrix: build
 test-all: test test-cli test-matrix
 
 # Build and run
-run: build
+run: build-macos
 	@echo "🚀 Launching $(APP_NAME)..."
 	@open "$(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)"
 
 # Clean build artifacts
 clean:
-	@echo "🧹 Cleaning build artifacts..."
-	xcodebuild -project "$(PROJECT)" \
-		-scheme "$(SCHEME)" \
-		clean
-	rm -rf "$(BUILD_DIR)"
+	@echo "🧹 Cleaning Android and macOS build artifacts..."
+	@if command -v xcodebuild >/dev/null 2>&1; then \
+		xcodebuild -project "$(PROJECT)" -scheme "$(SCHEME)" clean; \
+	else \
+		echo "Skipping Xcode clean (xcodebuild unavailable)"; \
+	fi
+	rm -rf "$(BUILD_DIR)" Maui/AppleNotes.Android/bin Maui/AppleNotes.Android/obj Maui/native/output
 
 # Clean and rebuild
 rebuild: clean build
