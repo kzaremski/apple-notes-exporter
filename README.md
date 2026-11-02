@@ -85,15 +85,15 @@ In brief, on Linux with .NET 10, JDK 21, the Android SDK and NDK, and the native
 build prerequisites installed:
 
 ```sh
-dotnet workload install maui-android
 export ANDROID_HOME=/path/to/android-sdk
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
 export JAVA_HOME=/path/to/jdk-21
-bash Maui/native/build.sh android
-dotnet publish Maui/AppleNotes.Android/AppleNotes.Android.csproj \
-  --configuration Release -p:AndroidKeyStore=false \
-  -p:AndroidSdkDirectory="$ANDROID_HOME" -p:JavaSdkDirectory="$JAVA_HOME"
+dotnet workload install maui-android
+make build
 ```
+
+The ARM64 APK is written under
+`Maui/AppleNotes.Android/bin/Release/net10.0-android/android-arm64/publish/`.
 
 The portable parser checks can be run without an Android device:
 
