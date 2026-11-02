@@ -2,9 +2,9 @@ name: Android USB APK
 
 on:
   push:
-    paths: ["Maui/**", ".github/workflows/android-usb.yml"]
+    paths: ["Maui/**", ".github/workflows/android-usb.yml", "Makefile"]
   pull_request:
-    paths: ["Maui/**", ".github/workflows/android-usb.yml"]
+    paths: ["Maui/**", ".github/workflows/android-usb.yml", "Makefile"]
   workflow_dispatch:
 
 permissions:
@@ -38,20 +38,13 @@ jobs:
         with:
           path: Maui/native/.build/android
           key: android-usb-native-${{ hashFiles('Maui/native/build.sh', 'Maui/native/patch_sources.py') }}
-      - name: Build native direct-USB backend
-        run: |
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
-          bash Maui/native/build.sh android
+      - name: Build ARM64 sideload APK
+        run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018" make build
       - uses: actions/cache/save@v4
         if: steps.native-cache.outputs.cache-hit != 'true'
         with:
           path: Maui/native/.build/android
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
-      - name: Build signed sideload APK
-        run: |
-          dotnet publish Maui/AppleNotes.Android/AppleNotes.Android.csproj \
-            --configuration Release -p:AndroidKeyStore=false \
-            -p:AndroidSdkDirectory="$ANDROID_HOME" -p:JavaSdkDirectory="$JAVA_HOME"
       - name: Verify native backend is packaged
         run: |
           APK="$(find Maui/AppleNotes.Android/bin/Release -name '*-Signed.apk' -print -quit)"

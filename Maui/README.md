@@ -67,10 +67,7 @@ dotnet workload install maui-android
 export ANDROID_HOME=/path/to/android-sdk
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
 export JAVA_HOME=/path/to/jdk-21
-bash Maui/native/build.sh android
-dotnet publish Maui/AppleNotes.Android/AppleNotes.Android.csproj -c Release \
-  -p:AndroidKeyStore=false -p:AndroidSdkDirectory="$ANDROID_HOME" \
-  -p:JavaSdkDirectory="$JAVA_HOME"
+make build
 ```
 
 The `*-Signed.apk` under
