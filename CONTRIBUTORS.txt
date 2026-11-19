@@ -5,3 +5,4 @@ Contributors:
 - Sascha Schneppmüller (GitHub: @Schneppi) - Redesigned app icon
 - David Ginsburg (GitHub: @davideg) - Fixed Markdown export to decode HTML entities
 - Vaughan Risher (GitHub: @vrisher) - Preserved image attachments in Markdown exports
+- Camille Damore (GitHub: @camilledamore) - Fixed notes with titles differing only by case overwriting each other on export

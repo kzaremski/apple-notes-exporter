@@ -632,6 +632,42 @@ final class ExportSupportTests: XCTestCase {
         XCTAssertNotEqual((rel as NSString).lastPathComponent.lowercased(), "index.html")
     }
 
+    func test_buildInternalLinkPathMap_titlesDifferingOnlyByCaseDoNotShareAFile() throws {
+        // "Art" and "art" are one file on the default (case-insensitive) macOS volume,
+        // so the second note would silently overwrite the first.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-linkmap-case-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        func makeNote(_ id: String, _ title: String) -> NotesNote {
+            NotesNote(
+                id: id, title: title, plaintext: "body", htmlBody: nil,
+                creationDate: Date(), modificationDate: Date(),
+                folderId: "f", accountId: "a", attachments: []
+            )
+        }
+        let notes = [makeNote("1", "Art"), makeNote("2", "art"), makeNote("3", "ART")]
+        let map = buildInternalLinkPathMap(
+            allNotes: notes,
+            notesWithPaths: notes.map { (note: $0, folderURL: dir) },
+            outputRoot: dir,
+            format: .markdown,
+            addDatePrefix: false,
+            dateFormat: "yyyy-MM-dd",
+            existingManifest: nil
+        )
+        let keys = notes.compactMap { map[$0.id].map(exportFilenameKey) }
+        XCTAssertEqual(keys.count, 3)
+        XCTAssertEqual(Set(keys).count, 3, "case-only title differences must not share a file: \(map)")
+    }
+
+    func test_exportFilenameKey_ignoresCaseAndUnicodeNormalization() {
+        XCTAssertEqual(exportFilenameKey("Art.md"), exportFilenameKey("art.md"))
+        XCTAssertEqual(exportFilenameKey("Caf\u{00E9}.md"), exportFilenameKey("Cafe\u{0301}.md"))
+        XCTAssertNotEqual(exportFilenameKey("Art.md"), exportFilenameKey("Art (2).md"))
+    }
+
     // MARK: - defaultNotesFolder / localized default folder
 
     private func note(_ id: String, folder: String, account: String = "1") -> NotesNote {
