@@ -308,19 +308,22 @@ func buildInternalLinkPathMap(
         }
 
         let folderKey = folderURL.standardizedFileURL.path
+        // Names are compared by `exportFilenameKey`, not exactly: the default macOS
+        // volume (APFS/HFS+) is case- and normalization-insensitive, so "Art.md" and
+        // "art.md" are the same file there and the second write would overwrite the first.
         var used = reservedByFolder[folderKey] ?? []
         // HTML exports write index.html as a folder listing; never let a note claim that name.
         if format == .html {
-            used.insert("index.html")
+            used.insert(exportFilenameKey("index.html"))
         }
 
         var filename = "\(baseName).\(format.fileExtension)"
         var counter = 2
-        while used.contains(filename) && counter <= 10000 {
+        while used.contains(exportFilenameKey(filename)) && counter <= 10000 {
             filename = "\(baseName) (\(counter)).\(format.fileExtension)"
             counter += 1
         }
-        used.insert(filename)
+        used.insert(exportFilenameKey(filename))
         reservedByFolder[folderKey] = used
 
         let fullPath = folderURL.appendingPathComponent(filename).standardizedFileURL.path
@@ -1022,6 +1025,12 @@ func generateUniqueExportFilename(baseName: String, extension ext: String, inDir
         counter += 1
     }
     return "\(baseName)_\(UUID().uuidString).\(ext)"
+}
+
+/// Key under which two filenames count as the same file on a default macOS volume:
+/// case-insensitive and Unicode-normalization-insensitive.
+func exportFilenameKey(_ filename: String) -> String {
+    filename.precomposedStringWithCanonicalMapping.lowercased()
 }
 
 /// Split a filename into name and extension at the last dot.
